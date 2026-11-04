@@ -29,7 +29,7 @@ final class ObserverTests: XCTestCase {
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
         var observedTimerText: String?
-        fixture.session.onChange = { observedTimerText = fixture.session.timerDisplayText }
+        fixture.session.onChange = { observedTimerText = fixture.session.tracking.timerText }
 
         fixture.clock.now.addTimeInterval(4)
         fixture.clock.uptime += 4
@@ -53,7 +53,7 @@ final class ObserverTests: XCTestCase {
         var observedBusy: Bool?
         var observedDisplayScheduled: Bool?
         fixture.session.onChange = {
-            observedTimerText = fixture.session.timerDisplayText
+            observedTimerText = fixture.session.tracking.timerText
             observedBusy = fixture.client.hasPendingRequests
             observedDisplayScheduled = fixture.scheduler.display != nil
         }

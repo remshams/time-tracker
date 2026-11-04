@@ -16,9 +16,10 @@ public final class TaskDailyTotal {
 
 /// Holds today's task totals for the whole app.
 ///
-/// Views read `status` and each task's `TaskDailyTotal`; `TrackerSession` writes the report and calls `publish`
-/// each time it publishes a change, including the one-second display tick. `publish` assigns the status and a
-/// task's total only when they change, so a tick redraws only the running task's label.
+/// Views read `status` and each task's `TaskDailyTotal`; the menu bar also reads the day's total, the explanation
+/// and each task's duration. `TrackerSession` writes the report and calls `publish` each time it publishes a
+/// change, including the one-second display tick and the menu bar's minute tick. `publish` assigns each value
+/// only when it changes, so a tick redraws only the running task's label.
 @Observable
 public final class DailyTotalsStore: ChangeGuardedStore {
     struct Request {
@@ -33,9 +34,15 @@ public final class DailyTotalsStore: ChangeGuardedStore {
 
     /// The status views show; `.unavailable` once the loaded day has ended.
     public private(set) var status: DailyTotalsStatus = .unavailable
+    /// Today's total including the running worklog, or `nil` while no report covers today.
+    public private(set) var dayTotal: TimeInterval?
+    /// Explains where today's totals come from, or why they are unavailable.
+    public private(set) var totalsExplanation = "Today's total is unavailable"
+    /// Today's duration for each catalog task that a report covers.
+    public private(set) var taskDurations: [String: TimeInterval] = [:]
     private let calendar: Calendar
-    // Views observe only `status` and each task's model. Ignoring the rest keeps a tick from redrawing views
-    // that read the store, such as the sidebar that looks up task models with `taskTotal(taskID:)`.
+    // Views observe only the public values and each task's model. Ignoring the rest keeps a tick from redrawing
+    // views that read the store, such as the sidebar that looks up task models with `taskTotal(taskID:)`.
     @ObservationIgnored private var request: Request?
     @ObservationIgnored private var rows: [String: Int64] = [:]
     @ObservationIgnored private var reportedActive: WorklogItem?
@@ -184,10 +191,18 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         }
     }
 
-    /// Shows the current status and each task's total. The session calls this each time it publishes.
+    /// Shows the current status, the day's total and each task's total. The session calls this each time it
+    /// publishes.
     func publish(tasks: [TaskItem], active: WorklogItem?, clock: any TrackerClock) {
         set(\.status, shownStatus(clock: clock))
+        set(\.dayTotal, totalDuration(active: active, clock: clock))
         let explanation = explanation(clock: clock)
+        set(\.totalsExplanation, explanation)
+        set(
+            \.taskDurations,
+            tasks.reduce(into: [:]) { durations, task in
+                durations[task.id] = duration(taskID: task.id, active: active, clock: clock)
+            })
         taskTotals = Dictionary(
             uniqueKeysWithValues: tasks.map {
                 (

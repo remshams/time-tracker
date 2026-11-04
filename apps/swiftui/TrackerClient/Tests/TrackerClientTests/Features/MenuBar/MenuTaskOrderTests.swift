@@ -65,29 +65,30 @@ final class MenuTaskOrderTests: XCTestCase {
                 TaskReportTotal(taskId: running.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: earlierToday.id, durationMicroseconds: 20_000_000),
             ])
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         XCTAssertEqual(observer.taskOrder, .newestFirst)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [running.id, earlierToday.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [recentIdle.id, staleIdle.id, secondTask.id])
 
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        observer.menuOpened()
         let captured = observer.content
-        observer.setTaskOrder(.name, session: fixture.session, showDailyTotal: true)
+        observer.setTaskOrder(.name)
         XCTAssertEqual(observer.taskOrder, .name)
         XCTAssertEqual(observer.content, captured, "An open menu must keep its rows in place.")
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed()
         XCTAssertNotEqual(observer.content, captured)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [earlierToday.id, running.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [recentIdle.id, secondTask.id, staleIdle.id])
 
         let byName = observer.content
-        observer.setTaskOrder(.oldestFirst, session: fixture.session, showDailyTotal: true)
+        observer.setTaskOrder(.oldestFirst)
         XCTAssertNotEqual(observer.content, byName)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [earlierToday.id, running.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [staleIdle.id, recentIdle.id, secondTask.id])
 
         let created = TrackerMenuPresentationObserver(
-            session: fixture.session, showDailyTotal: true, taskOrder: .oldestFirst)
+            sources: menu.sources, showDailyTotal: true, taskOrder: .oldestFirst)
         XCTAssertEqual(created.content, observer.content)
     }
 }

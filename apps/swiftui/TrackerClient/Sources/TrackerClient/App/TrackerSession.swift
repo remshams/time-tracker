@@ -12,15 +12,17 @@ public final class TrackerSession {
     public let tracking = TrackingStore()
     /// Views read today's status and task totals here; the session writes them.
     public let dailyTotals: DailyTotalsStore
+    /// The menu bar reads the last tracked task here; the session writes it.
+    public let menuBar: MenuBarStore
 
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
-    private let clock: any TrackerClock
+    // Tests compare the published store values with values computed from this clock.
+    let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
     private let settingsRepository: any ConnectionSettingsRepository
     private let trackingPreferencesRepository: any TrackingPreferencesRepository
     private let automation: TrackingAutomationState
-    private let lastTracked: LastTrackedTaskState
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
     private let archiving = TaskArchivingState()
@@ -31,6 +33,8 @@ public final class TrackerSession {
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
     private var rolloverTimer: (any TrackerCancellation)?
+    private var menuBarClock: (any TrackerCancellation)?
+    private var menuBarClockEnabled = false
     // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
     private var started = false
     // One poll at a time: no poll is scheduled while a refresh is waiting.
@@ -57,7 +61,7 @@ public final class TrackerSession {
         automation = TrackingAutomationState(preferences: trackingPreferences.load())
         let initialSettings = settings.load() ?? .local
         connection = ConnectionStore(settings: initialSettings)
-        lastTracked = LastTrackedTaskState(repository: lastTrackedTasks, settings: initialSettings)
+        menuBar = MenuBarStore(repository: lastTrackedTasks, settings: initialSettings)
         dailyTotals.updateDay(at: clock.now)
     }
 
@@ -65,16 +69,17 @@ public final class TrackerSession {
         displayTimer?.cancel()
         pollTimer?.cancel()
         rolloverTimer?.cancel()
+        menuBarClock?.cancel()
     }
 
     public var pauseOnScreenLock: Bool { automation.enabled }
     public var autoPauseStatusText: String? { automation.statusText }
     public var tasks: [TaskItem] { taskCatalog.tasks }
-    // The menu, the availability checks and the tests read these until they read the tracking store.
+    // The availability checks and the tests read these.
     public var active: WorklogItem? { tracking.active }
     public var trackingError: String? { tracking.recordedError }
     public var selectedTaskID: String? { taskCatalog.selectedTaskID }
-    // TrackerMenuContent and TrackerMenuValues read these three until the menu observes the connection store.
+    // Tests read these three.
     public var connectionSettings: ConnectionSettings { connection.settings }
     public var connectionStatusText: String { connection.statusText }
     public var isStale: Bool { connection.stale }
@@ -100,11 +105,10 @@ public final class TrackerSession {
     }
     public var canStopTracking: Bool { canSendTracking && active != nil }
     private var canSendTracking: Bool { connection.confirmed && !connection.stale && !tracking.isSubmitting }
-    public var lastTrackedTaskID: String? { lastTracked.taskID }
-    public var lastTrackedTask: TaskItem? { lastTrackedTaskID.flatMap { task(withID: $0) } }
     public var menuPrimaryAction: MenuPrimaryAction {
         guard !automation.locked, canSendTracking else { return .disabled }
         if let active { return .stop(worklogID: active.id) }
+        let lastTrackedTask = menuBar.lastTrackedTaskID.flatMap { self.task(withID: $0) }
         guard let task = lastTrackedTask, !task.archived else { return .openMenu }
         return canStartTracking(taskID: task.id) ? .start(taskID: task.id) : .disabled
     }
@@ -125,27 +129,10 @@ public final class TrackerSession {
         guard let active else { return "No timer running" }
         return taskName(active.taskId)
     }
-    /// Computed from the clock on each read, so the menu's minute tick shows the current time.
-    public var timerDisplayText: String { tracking.displayText(clock: clock, confirmed: connection.confirmed) }
     public var elapsed: TimeInterval? { tracking.elapsed(clock: clock) }
-    // The menu and the tests read these until they read the daily totals store.
-    public var dailyTotalsStatus: DailyTotalsStatus { dailyTotals.shownStatus(clock: clock) }
-    public var dailyTotalsError: String? { dailyTotals.error }
-    public var dailyTotalsDayStart: Date? { dailyTotals.day?.start }
-    public var totalDailyDuration: TimeInterval? {
-        dailyTotals.totalDuration(active: active, clock: clock)
-    }
-    public var totalDailyDurationText: String {
-        totalDailyDuration.map(formatClockDuration) ?? "Unavailable"
-    }
-    public var dailyTotalsExplanation: String { dailyTotals.explanation(clock: clock) }
-    /// Tasks with time logged today, in task list order. The menu applies its own task order.
-    public var todayTasks: [TaskItem] { tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 } }
-    public func dailyDuration(taskID: String) -> TimeInterval? {
+    /// Computed from the clock on each read, so copying from the menu uses the current time.
+    func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
-    }
-    public func dailyDurationText(taskID: String) -> String {
-        dailyDuration(taskID: taskID).map(formatClockDuration) ?? "Unavailable"
     }
 
     public func start() {
@@ -184,6 +171,13 @@ public final class TrackerSession {
         let previouslyVisible = uiVisible
         menuOpen = false
         visibilityChanged(previouslyVisible: previouslyVisible)
+    }
+
+    /// Republishes once a minute while a timer runs, so the menu bar's daily total keeps counting while no
+    /// window or menu is open. The app turns this on while the menu bar shows the daily total.
+    public func setMenuBarClock(_ enabled: Bool) {
+        menuBarClockEnabled = enabled
+        updateMenuBarClock()
     }
 
     public func sleep() {
@@ -737,7 +731,7 @@ public final class TrackerSession {
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && worklogHistory.unavailable
         connection.acceptTaskList()
-        lastTracked.observe(resources, settings: connection.settings)
+        menuBar.observe(resources, settings: connection.settings)
         let previousActive = active
         automation.observeActive(resources.tracking.value)
         tracking.apply(resources.tracking.value, clock: clock)
@@ -814,6 +808,7 @@ public final class TrackerSession {
     }
 
     private func updateDisplayTimer() {
+        updateMenuBarClock()
         let needed = started && !sleeping && uiVisible && active != nil
         if !needed {
             cancelDisplay()
@@ -830,9 +825,23 @@ public final class TrackerSession {
         }
     }
 
+    private func updateMenuBarClock() {
+        guard started, !sleeping, menuBarClockEnabled, active != nil else {
+            menuBarClock?.cancel()
+            menuBarClock = nil
+            return
+        }
+        guard menuBarClock == nil else { return }
+        menuBarClock = scheduler.schedule(after: 60, repeating: true, tolerance: 5) { [weak self] in
+            self?.publish()
+        }
+    }
+
     private func cancelTimers() {
         cancelPolling()
         cancelDisplay()
+        menuBarClock?.cancel()
+        menuBarClock = nil
         rolloverTimer?.cancel()
         rolloverTimer = nil
     }
@@ -898,5 +907,14 @@ public final class TrackerSession {
         tracking.publish(clock: clock, confirmed: connection.confirmed)
         dailyTotals.publish(tasks: tasks, active: active, clock: clock)
         onChange?()
+    }
+}
+
+public extension TrackerMenuSources {
+    /// Reads the menu's stores from the session and the values that combine features from `presentation`.
+    init(session: TrackerSession, presentation: TrackerPresentation) {
+        self.init(
+            catalog: session.taskCatalog, connection: session.connection, tracking: session.tracking,
+            dailyTotals: session.dailyTotals, menuBar: session.menuBar, presentation: presentation)
     }
 }

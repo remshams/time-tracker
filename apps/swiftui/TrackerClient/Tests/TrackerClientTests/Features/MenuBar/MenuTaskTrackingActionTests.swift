@@ -7,7 +7,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        let content = TrackerMenuContent(fixture.session, taskOrder: .newestFirst)
+        let content = TrackerMenuContent(.current(fixture.session), taskOrder: .newestFirst)
         let running = try XCTUnwrap((content.todayTasks + content.otherTasks).first { $0.id == firstTask.id })
         let idle = try XCTUnwrap(content.otherTasks.first { $0.id == secondTask.id })
         XCTAssertEqual(running.trackingAction(in: content), .stop(activeWorklog.id))
@@ -20,7 +20,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.session.startTracking(taskID: secondTask.id)
-        let content = TrackerMenuContent(fixture.session, taskOrder: .newestFirst)
+        let content = TrackerMenuContent(.current(fixture.session), taskOrder: .newestFirst)
         XCTAssertFalse(content.canStopTracking)
         let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
         XCTAssertNil(running.trackingAction(in: content))
@@ -34,7 +34,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        let content = TrackerMenuContent(fixture.session, taskOrder: .newestFirst)
+        let content = TrackerMenuContent(.current(fixture.session), taskOrder: .newestFirst)
         XCTAssertNil(content.activeWorklogID)
         let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
         XCTAssertNil(running.trackingAction(in: content))
@@ -49,7 +49,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         try await fixture.settled()
-        let content = TrackerMenuContent(fixture.session, taskOrder: .newestFirst)
+        let content = TrackerMenuContent(.current(fixture.session), taskOrder: .newestFirst)
         XCTAssertTrue(content.isStale)
         let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
         let idle = TrackerMenuTask(task: secondTask, durationText: "-", isRunning: false, canStart: true)
@@ -64,7 +64,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [archivedTask], active: nil),
             rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 60_000_000)])
-        let content = TrackerMenuContent(fixture.session, taskOrder: .newestFirst)
+        let content = TrackerMenuContent(.current(fixture.session), taskOrder: .newestFirst)
         let entry = try XCTUnwrap(content.todayTasks.first)
         XCTAssertNil(entry.trackingAction(in: content))
         let outdated = TrackerMenuTask(
@@ -83,9 +83,9 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
+        observer.menuOpened()
         let captured = observer.content
         let entry = try XCTUnwrap((captured.todayTasks + captured.otherTasks).first)
         let changed = WorklogItem(
@@ -97,6 +97,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
+        try await menu.settled()
         XCTAssertEqual(entry.trackingAction(in: observer.content), .stop(activeWorklog.id))
         guard case .stop(let id) = try XCTUnwrap(entry.trackingAction(in: captured)) else {
             return XCTFail("Expected the captured stop action")
@@ -105,7 +106,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         fixture.session.stopTracking(worklogID: id)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.active?.id, changed.id)
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed()
         XCTAssertEqual(entry.trackingAction(in: observer.content), .stop(changed.id))
     }
 }

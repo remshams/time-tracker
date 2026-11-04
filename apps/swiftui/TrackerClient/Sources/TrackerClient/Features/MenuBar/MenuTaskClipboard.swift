@@ -6,7 +6,7 @@ public extension TrackerSession {
         connection: ConnectionSettings
     ) -> String? {
         // A dropdown opened on one data source must not copy from another.
-        guard connectionSettings == connection,
+        guard self.connection.settings == connection,
             let task = menuTask(withID: taskID)
         else { return nil }
         switch action {
