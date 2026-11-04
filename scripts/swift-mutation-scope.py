@@ -31,7 +31,7 @@ LAST_TASK = "Features/MenuBar/LastTrackedTaskState.swift"
 MENU_ORDER = "Features/MenuBar/MenuTaskOrder.swift"
 MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
 MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
-CONNECTION = "Features/Connection/ConnectionState.swift"
+CONNECTION = "Features/Connection/ConnectionStore.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationState.swift"
 CREATION = "Features/TaskCreation/TaskCreationState.swift"
 RENAME = "Features/TaskRename/TaskRenameState.swift"
@@ -43,6 +43,7 @@ MOVE = "Features/WorklogMove/WorklogMoveState.swift"
 DELETION = "Features/WorklogDeletion/WorklogDeletionState.swift"
 INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
 TIME_FORMATTING = "Shared/TimeFormatting.swift"
+CHANGE_GUARD = "Shared/ChangeGuardedStore.swift"
 
 # Map each suite's assertions to complete files, including its session coordinator.
 # Update this map when a suite gains assertions about another production component.
@@ -145,9 +146,13 @@ TEST_PRODUCTION = {
 }
 # A suite that exercises a key file also exercises its companions. #257 moved the
 # elapsed time helpers from TrackingState.swift to TimeFormatting.swift, so every
-# suite mapped to TRACKING runs them. A direct change to a key file still selects
-# only that file.
-TEST_PRODUCTION_COMPANIONS = {TRACKING: (TIME_FORMATTING,)}
+# suite mapped to TRACKING runs them. The observable stores and the presentation
+# assign through the shared change-guarded helper. A direct change to a key file
+# still selects only that file.
+TEST_PRODUCTION_COMPANIONS = {
+    TRACKING: (TIME_FORMATTING,),
+    **{store: (CHANGE_GUARD,) for store in (PRESENTATION, CATALOG, HISTORY, CONNECTION)},
+}
 
 
 def test_production(test: str) -> list[str]:
@@ -166,7 +171,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
-    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY],
+    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION],
 }
 # A PR that deletes a file and adds its successor in the same diff can map the
 # deleted path to the successor here. The successor's own scope covers the
