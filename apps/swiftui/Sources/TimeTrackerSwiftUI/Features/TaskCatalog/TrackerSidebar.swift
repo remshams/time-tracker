@@ -4,6 +4,7 @@ import TrackerClient
 struct TrackerSidebar: View {
     let store: TrackerStore
     @Environment(TaskCatalogStore.self) private var catalog
+    @Environment(ConnectionStore.self) private var connection
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { catalog.tab }, set: { store.changeTab($0) })
@@ -40,10 +41,10 @@ struct TrackerSidebar: View {
                     HStack(spacing: 8) {
                         TaskIndicatorView(
                             taskID: task.id,
-                            isRunning: !store.isStale && store.active?.taskId == task.id
+                            isRunning: !connection.stale && store.active?.taskId == task.id
                         )
                         .accessibilityIdentifier(
-                            !store.isStale && store.active?.taskId == task.id
+                            !connection.stale && store.active?.taskId == task.id
                                 ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
                         Text(task.name)
                             .lineLimit(2)

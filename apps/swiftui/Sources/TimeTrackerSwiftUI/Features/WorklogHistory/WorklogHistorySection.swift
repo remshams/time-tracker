@@ -86,10 +86,11 @@ private struct WorklogHistoryHeading: View {
 private struct HistoryPaginationButton: View {
     let store: TrackerStore
     @Environment(WorklogHistoryStore.self) private var history
+    @Environment(ConnectionStore.self) private var connection
 
     var body: some View {
         Button("Load older worklogs") { store.loadOlder() }
             .accessibilityIdentifier("worklog-history.load-older")
-            .disabled(store.isStale || history.isLoading)
+            .disabled(connection.stale || history.isLoading)
     }
 }

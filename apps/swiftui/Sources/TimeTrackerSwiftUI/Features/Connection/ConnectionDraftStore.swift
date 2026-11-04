@@ -14,7 +14,7 @@ final class ConnectionDraftStore {
 
     init(store: TrackerStore) {
         self.store = store
-        settings = store.connectionSettings
+        settings = store.connection.settings
     }
 
     var missingEndpoint: Bool {
@@ -23,7 +23,7 @@ final class ConnectionDraftStore {
 
     /// Starts a new presentation with the current settings and no result.
     func reset() {
-        settings = store.connectionSettings
+        settings = store.connection.settings
         operationPending = false
         resultMessage = nil
         resultSucceeded = false
@@ -58,7 +58,7 @@ final class ConnectionDraftStore {
             self.resultMessage =
                 self.resultSucceeded
                 ? "Connected. This data source will be used next time you open the app."
-                : self.store.connectionMessage ?? "Could not connect. Please try again."
+                : self.store.connection.message ?? "Could not connect. Please try again."
             self.operationPending = false
         }
     }
@@ -80,6 +80,6 @@ private struct ConnectionDraftLifecycle: ViewModifier {
         content
             .onAppear { draft.reset() }
             .onChange(of: draft.settings) { _, _ in draft.clearResult() }
-            .onChange(of: store.connectionSettings) { _, settings in draft.settings = settings }
+            .onChange(of: store.connection.settings) { _, settings in draft.settings = settings }
     }
 }

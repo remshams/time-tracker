@@ -11,12 +11,12 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            ConnectionSettingsSection(store: store, draft: connectionDraft)
+            ConnectionSettingsSection(draft: connectionDraft)
             TrackingSettingsSection(store: store)
             MenuBarSettingsSection(store: store)
             MenuShortcutSettingsSection(store: store)
             ConnectionActionsSection(draft: connectionDraft)
-            CurrentConnectionSection(store: store)
+            CurrentConnectionSection()
         }
         .formStyle(.grouped)
         .frame(width: 540)
