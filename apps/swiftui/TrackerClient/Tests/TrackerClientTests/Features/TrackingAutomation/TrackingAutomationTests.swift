@@ -96,6 +96,21 @@ final class TrackingAutomationTests: XCTestCase {
             }.count, 1)
     }
 
+    func testPausingClearsAnEarlierTrackingError() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.session.startTracking(taskID: secondTask.id)
+        try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
+        try await fixture.client.next().succeed(running)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.trackingError, "Start rejected")
+
+        try await acknowledgePause(fixture)
+        XCTAssertNil(fixture.session.trackingError)
+        XCTAssertNil(fixture.session.tracking.error)
+    }
+
     func testUnlockDuringUnsuccessfulPauseNeverResumes() async throws {
         for didFail in [false, true] {
             let fixture = Fixture(pauseOnScreenLock: true)
