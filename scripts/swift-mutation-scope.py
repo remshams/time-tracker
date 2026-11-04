@@ -27,7 +27,8 @@ TOTALS = "Features/DailyTotals/DailyTotalsStore.swift"
 MENU = "Features/MenuBar/TrackerMenuContent.swift"
 MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
-LAST_TASK = "Features/MenuBar/LastTrackedTaskState.swift"
+MENU_BAR_STORE = "Features/MenuBar/MenuBarStore.swift"
+MENU_SOURCES = "Features/MenuBar/TrackerMenuSources.swift"
 MENU_ORDER = "Features/MenuBar/MenuTaskOrder.swift"
 MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
 MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
@@ -53,7 +54,7 @@ TEST_PRODUCTION = {
     ],
     "App/HistoryPresentationTests.swift": [SESSION, PRESENTATION, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
-        SESSION, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, LAST_TASK,
+        SESSION, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, MENU_BAR_STORE,
     ],
     "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
     "App/PresentationTests.swift": [
@@ -77,29 +78,29 @@ TEST_PRODUCTION = {
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
-        SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION, CATALOG, LAST_TASK,
-        INDICATOR,
+        SESSION, PRESENTATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION,
+        CATALOG, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        SESSION, PRESENTATION, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING,
-        CATALOG, CONNECTION, LAST_TASK, INDICATOR,
+        SESSION, PRESENTATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING,
+        CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskOrderTests.swift": [
-        SESSION, MENU_ORDER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
-        LAST_TASK, INDICATOR,
+        SESSION, PRESENTATION, MENU_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TOTALS, TRACKING,
+        CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
-        SESSION, MENU_CLIPBOARD, MENU_SHORTCUTS,
-        MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, LAST_TASK, INDICATOR,
+        SESSION, PRESENTATION, MENU_CLIPBOARD, MENU_SHORTCUTS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
+        TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskTrackingActionTests.swift": [
-        SESSION, "Features/MenuBar/MenuTaskTrackingAction.swift", MENU_OBSERVER, MENU, MENU_VALUES, TRACKING,
-        MENU_CLIPBOARD, MENU_SHORTCUTS,
-        CATALOG, CONNECTION, LAST_TASK, INDICATOR,
+        SESSION, PRESENTATION, "Features/MenuBar/MenuTaskTrackingAction.swift", MENU_OBSERVER, MENU_SOURCES, MENU,
+        MENU_VALUES, TRACKING, MENU_CLIPBOARD, MENU_SHORTCUTS, TOTALS,
+        CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
-        SESSION, LAST_TASK, INDICATOR, MENU_OBSERVER, MENU, MENU_VALUES,
-        TRACKING, CATALOG, CONNECTION, AUTOMATION,
+        SESSION, PRESENTATION, MENU_BAR_STORE, INDICATOR, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
+        TRACKING, CATALOG, CONNECTION, AUTOMATION, TOTALS,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
@@ -122,7 +123,7 @@ TEST_PRODUCTION = {
     ],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
-        SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION,
+        SESSION, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION,
     ],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
         SESSION, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY, CREATION,
@@ -151,7 +152,7 @@ TEST_PRODUCTION = {
 # still selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
-    **{store: (CHANGE_GUARD,) for store in (PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS)},
+    **{store: (CHANGE_GUARD,) for store in (PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE)},
 }
 
 
@@ -168,10 +169,23 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    ("Shared fixture only tells the display timer from the menu bar clock; the changed timer suites define scope",
+     (("    var display: ScheduledAction? { active.last { $0.repeating } }\n",
+       "    var display: ScheduledAction? { active.last { $0.repeating && $0.delay == 1 } }\n"
+       "    var menuBarClock: ScheduledAction? { active.last { $0.repeating && $0.delay == 60 } }\n"),),
+     None, None,
+     ("App/LifecycleTests.swift", "Features/MenuBar/MenuPresentationTests.swift"),
+     ("App/LifecycleTests.swift", "App/ObserverTests.swift", "Features/MenuBar/MenuLiveValuesTests.swift",
+      "Features/MenuBar/MenuPresentationTests.swift")),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS],
+    "Support/MenuHarness.swift": [
+        PRESENTATION, SESSION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION, TRACKING, TOTALS,
+        MENU_BAR_STORE,
+    ],
 }
 # A PR that deletes a file and adds its successor in the same diff can map the
 # deleted path to the successor here. The successor's own scope covers the
