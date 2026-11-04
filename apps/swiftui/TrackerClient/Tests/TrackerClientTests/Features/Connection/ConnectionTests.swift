@@ -245,6 +245,20 @@ final class ConnectionTests: XCTestCase {
     }
 
     @MainActor
+    func testConnectionFailurePublishesSoTrackingAvailabilityUpdates() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        let harness = PresentationHarness(session: fixture.session)
+        XCTAssertTrue(harness.presentation.canStartTracking(taskID: firstTask.id))
+
+        fixture.scheduler.poll?.fire()
+        try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        try await harness.settled(fixture)
+        XCTAssertFalse(harness.presentation.canStartTracking(taskID: firstTask.id))
+    }
+
+    @MainActor
     func testUnchangedPollNotifiesNoConnectionReader() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
