@@ -5,6 +5,7 @@ import TrackerClient
 
 final class TrackerStatusItemController: NSObject {
     private let store: TrackerStore
+    private let menu: TrackerMenuPresentationObserver
     private var statusItem: NSStatusItem?
     private var subscriptions = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
@@ -15,8 +16,9 @@ final class TrackerStatusItemController: NSObject {
     private var taskRows: [String: MenuTaskRow] = [:]
     private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
-    init(store: TrackerStore) {
+    init(store: TrackerStore, menu: TrackerMenuPresentationObserver) {
         self.store = store
+        self.menu = menu
         super.init()
     }
 
@@ -35,12 +37,11 @@ final class TrackerStatusItemController: NSObject {
                 MainActor.assumeIsolated { self?.updateLabel() }
             }
         }
-        store.menu.label.objectWillChange.sink { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateLabel() }
-        }.store(in: &subscriptions)
-        store.menu.valuesDidChange.sink { [weak self] values in
-            MainActor.assumeIsolated { self?.updateMenuValues(values) }
-        }.store(in: &subscriptions)
+        menu.onLabelChange = { [weak self] in self?.updateLabel() }
+        menu.onValuesChange = { [weak self] in
+            guard let self else { return }
+            updateMenuValues(menu.values)
+        }
         let registration = GlobalMenuShortcutRegistration { [weak self] in self?.toggleMenu() }
         shortcutRegistration = registration
         store.registerMenuShortcut = { [weak registration] shortcut in
@@ -69,7 +70,7 @@ final class TrackerStatusItemController: NSObject {
 
     private func updateLabel() {
         guard let button = statusItem?.button else { return }
-        let label = store.menu.label.content
+        let label = menu.label
         button.image = TaskDotImage.make(
             color: label.indicator.color,
             isRunning: label.indicator.isRunning,
@@ -111,10 +112,10 @@ final class TrackerStatusItemController: NSObject {
     private func showNativeMenu() {
         guard nativeMenu == nil, let statusItem, let button = statusItem.button else { return }
         store.menuOpened()
-        let content = store.menu.content
+        let content = self.menu.content
         let menu = makeMenu(content, appearance: NSApplication.shared.effectiveAppearance)
         nativeMenu = menu
-        updateMenuValues(store.menu.values)
+        updateMenuValues(self.menu.values)
         button.highlight(true)
         shortcutRegistration?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
         defer {

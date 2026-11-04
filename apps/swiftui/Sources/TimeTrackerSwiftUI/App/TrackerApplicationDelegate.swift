@@ -32,7 +32,7 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 
 final class TrackerAppRuntime {
     let store = TrackerStore()
-    private lazy var statusItem = TrackerStatusItemController(store: store)
+    private lazy var statusItem = TrackerStatusItemController(store: store, menu: store.menu)
     lazy var presentation = TrackerTaskPresentationCoordinator(store: store) { [weak self] in
         self?.showTracker()
     }

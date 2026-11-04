@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import Observation
 import TrackerClient
@@ -16,7 +15,8 @@ final class TrackerStore {
     private(set) var menuGlobalShortcutError: String?
     @ObservationIgnored var registerMenuShortcut: ((MenuShortcut) -> String?)?
     var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
-    let menu: TrackerMenuStore
+    /// The AppKit status menu reads its content, label and live values here.
+    let menu: TrackerMenuPresentationObserver
     let creation: TaskCreationStore
     let rename: TaskRenameStore
     let bulkArchiving: BulkTaskArchivingStore
@@ -45,8 +45,9 @@ final class TrackerStore {
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
         presentation = TrackerPresentation(session: session)
-        menu = TrackerMenuStore(
-            session: session, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
+        menu = TrackerMenuPresentationObserver(
+            sources: TrackerMenuSources(session: session, presentation: presentation),
+            showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
@@ -56,10 +57,9 @@ final class TrackerStore {
         deletion = WorklogDeletionStore(session: session, presentation: presentation)
         session.onChange = { [weak self] in
             guard let self else { return }
-            updateMenuBarTimer()
             presentation.update(from: session)
-            menu.update()
         }
+        session.setMenuBarClock(showDailyTotal)
         lifecycle = MacLifecycleObserver(session: session)
         lifecycle?.start()
         session.start()
@@ -87,7 +87,7 @@ final class TrackerStore {
         showDailyTotalInMenuBar = enabled
         menuBarPreferences.save(enabled)
         menu.setShowDailyTotal(enabled)
-        updateMenuBarTimer()
+        session.setMenuBarClock(enabled)
     }
 
     func setMenuTaskOrder(_ order: MenuTaskOrder) {
@@ -95,10 +95,6 @@ final class TrackerStore {
         menuTaskOrder = order
         menuBarPreferences.saveTaskOrder(order)
         menu.setTaskOrder(order)
-    }
-
-    private func updateMenuBarTimer() {
-        menu.updateMenuBarTimer(isRunning: showDailyTotalInMenuBar && session.active != nil)
     }
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
@@ -155,8 +151,9 @@ final class TrackerStore {
     func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
 
     func menuOpened() {
-        menu.menuOpened()
+        // The session publishes first, so the menu captures current values even when no display tick ran.
         session.menuOpened()
+        menu.menuOpened()
     }
 
     func menuClosed() {
@@ -170,75 +167,3 @@ final class TrackerStore {
         await session.connect(settings)
     }
 }
-
-/// Owns the menu bar's snapshot and the minute clock that refreshes its daily total.
-final class TrackerMenuStore {
-    let label: TrackerMenuLabelStore
-    let valuesDidChange = PassthroughSubject<TrackerMenuValues, Never>()
-    private let session: TrackerSession
-    private let presentation: TrackerMenuPresentationObserver
-    private var showDailyTotal: Bool
-    private var menuBarTimer: Timer?
-
-    init(session: TrackerSession, showDailyTotal: Bool, taskOrder: MenuTaskOrder) {
-        self.session = session
-        self.showDailyTotal = showDailyTotal
-        presentation = TrackerMenuPresentationObserver(
-            session: session, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
-        label = TrackerMenuLabelStore(presentation: presentation)
-        presentation.onValuesChange = { [weak self] in
-            guard let self else { return }
-            valuesDidChange.send(presentation.values)
-        }
-    }
-
-    isolated deinit { menuBarTimer?.invalidate() }
-
-    var content: TrackerMenuContent { presentation.content }
-    var values: TrackerMenuValues { presentation.values }
-
-    func update() { presentation.update(from: session, showDailyTotal: showDailyTotal) }
-
-    /// Refreshes the menu bar's daily total once a minute while a timer runs.
-    func updateMenuBarTimer(isRunning: Bool) {
-        guard isRunning else {
-            menuBarTimer?.invalidate()
-            menuBarTimer = nil
-            return
-        }
-        guard menuBarTimer == nil else { return }
-        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.update() }
-        }
-        timer.tolerance = 5
-        menuBarTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    func setShowDailyTotal(_ enabled: Bool) {
-        showDailyTotal = enabled
-        update()
-    }
-
-    func setTaskOrder(_ order: MenuTaskOrder) {
-        presentation.setTaskOrder(order, session: session, showDailyTotal: showDailyTotal)
-    }
-
-    func menuOpened() { presentation.menuOpened(from: session, showDailyTotal: showDailyTotal) }
-    func menuClosed() { presentation.menuClosed(from: session, showDailyTotal: showDailyTotal) }
-}
-
-final class TrackerMenuLabelStore {
-    let objectWillChange = ObservableObjectPublisher()
-    private let presentation: TrackerMenuPresentationObserver
-
-    init(presentation: TrackerMenuPresentationObserver) {
-        self.presentation = presentation
-        presentation.onLabelChange = { [weak self] in self?.objectWillChange.send() }
-    }
-
-    var content: TrackerMenuLabelContent { presentation.label }
-}
-
-// The AppKit status item subscribes to this publisher; SwiftUI views do not observe it.
-extension TrackerMenuLabelStore: ObservableObject {}
