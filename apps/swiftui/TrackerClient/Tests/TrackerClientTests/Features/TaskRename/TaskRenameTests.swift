@@ -242,7 +242,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
         XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         XCTAssertTrue(fixture.session.taskRename.canSubmit)
-        XCTAssertFalse(fixture.session.canStopTracking)
+        XCTAssertFalse(fixture.trackingActions.canStopTracking)
         XCTAssertEqual(fixture.session.active, activeWorklog)
     }
 
@@ -261,9 +261,9 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
-        XCTAssertTrue(fixture.session.canStopTracking)
-        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
-        fixture.session.stopTracking(worklogID: activeWorklog.id)
+        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         stop.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
@@ -397,7 +397,7 @@ final class TaskRenameTests: XCTestCase {
             .rename(
                 task: firstTask.id, expectedName: firstTask.name, name: "Renamed while locked",
                 at: "2025-01-01T00:00:00.000Z"))
-        fixture.session.screenLocked(at: fixture.clock.now)
+        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         poll.succeed(resources)
         let pause = try await fixture.client.next()
         XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
@@ -414,7 +414,7 @@ final class TaskRenameTests: XCTestCase {
         }
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         fixture.clock.now.addTimeInterval(30)
-        fixture.session.screenUnlocked(at: fixture.clock.now)
+        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: "2025-01-01T00:00:30.000Z"))
         let resumed = WorklogItem(id: "resumed", taskId: firstTask.id, start: "2025-01-01T00:00:30.000Z", end: nil)

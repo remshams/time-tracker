@@ -1,8 +1,11 @@
 import Foundation
 
 public final class TrackerSession {
-    /// Loads, refreshes and polls the stores, runs the timers and publishes after each change.
+    /// Loads, refreshes and polls the stores, runs the timers and the screen-lock auto-pause, and publishes after
+    /// each change.
     public let sync: TrackerSync
+    /// Starts and stops tracking and decides which of those requests are possible.
+    public let trackingActions: TrackingActions
     /// Views read the task list, tab and selection here; the sync and the session write them.
     public let taskCatalog = TaskCatalogStore()
     /// Views read the selected task's worklog pages and the history panel's state here; the store loads the pages
@@ -17,13 +20,13 @@ public final class TrackerSession {
     public let dailyTotals: DailyTotalsStore
     /// The menu bar reads the last tracked task here; the sync writes it.
     public let menuBar: MenuBarStore
+    /// Views read the auto-pause preference and status here; the sync writes them.
+    public let trackingAutomation: TrackingAutomationStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
     private let settingsRepository: any ConnectionSettingsRepository
-    private let trackingPreferencesRepository: any TrackingPreferencesRepository
-    private let automation: TrackingAutomationState
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
     private let archiving = TaskArchivingState()
@@ -44,8 +47,7 @@ public final class TrackerSession {
         dailyTotals = DailyTotalsStore(calendar: calendar)
         self.clock = clock
         settingsRepository = settings
-        trackingPreferencesRepository = trackingPreferences
-        automation = TrackingAutomationState(preferences: trackingPreferences.load())
+        trackingAutomation = TrackingAutomationStore(preferences: trackingPreferences.load())
         let initialSettings = settings.load() ?? .local
         connection = ConnectionStore(settings: initialSettings)
         menuBar = MenuBarStore(repository: lastTrackedTasks, settings: initialSettings)
@@ -53,11 +55,12 @@ public final class TrackerSession {
         sync = TrackerSync(
             client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
-            menuBar: menuBar, automation: automation)
+            menuBar: menuBar, automation: trackingAutomation, trackingPreferences: trackingPreferences)
+        trackingActions = TrackingActions(
+            client: client, clock: clock, sync: sync, catalog: taskCatalog, connection: connection,
+            tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
     }
 
-    public var pauseOnScreenLock: Bool { automation.enabled }
-    public var autoPauseStatusText: String? { automation.statusText }
     public var tasks: [TaskItem] { taskCatalog.tasks }
     // The availability checks and the tests read these.
     public var active: WorklogItem? { tracking.active }
@@ -78,35 +81,6 @@ public final class TrackerSession {
     public var canOpenWorklogMove: Bool { connection.confirmed }
     public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
     public var canOpenWorklogDeletion: Bool { connection.confirmed }
-
-    public var canStartSelectedTask: Bool {
-        guard let selectedTaskID else { return false }
-        return canStartTracking(taskID: selectedTaskID)
-    }
-    public func canStartTracking(taskID: String) -> Bool {
-        guard canSendTracking, let task = task(withID: taskID) else { return false }
-        return !task.archived && active?.taskId != task.id
-    }
-    public var canStopTracking: Bool { canSendTracking && active != nil }
-    private var canSendTracking: Bool { connection.confirmed && !connection.stale && !tracking.isSubmitting }
-    public var menuPrimaryAction: MenuPrimaryAction {
-        guard !automation.locked, canSendTracking else { return .disabled }
-        if let active { return .stop(worklogID: active.id) }
-        let lastTrackedTask = menuBar.lastTrackedTaskID.flatMap { self.task(withID: $0) }
-        guard let task = lastTrackedTask, !task.archived else { return .openMenu }
-        return canStartTracking(taskID: task.id) ? .start(taskID: task.id) : .disabled
-    }
-
-    @discardableResult
-    public func performMenuPrimaryAction() -> MenuPrimaryAction {
-        let action = menuPrimaryAction
-        switch action {
-        case .stop(let worklogID): stopTracking(worklogID: worklogID)
-        case .start(let taskID): startTracking(taskID: taskID)
-        case .openMenu, .disabled: break
-        }
-        return action
-    }
 
     public var runningTaskName: String {
         guard connection.confirmed else { return "Waiting for tracker state" }
@@ -396,31 +370,6 @@ public final class TrackerSession {
         }
     }
 
-    public func setPauseOnScreenLock(_ enabled: Bool) {
-        guard automation.setEnabled(enabled) else { return }
-        trackingPreferencesRepository.save(TrackingPreferences(pauseOnScreenLock: enabled))
-        if enabled && automation.locked { pauseTracking(at: clock.now) }
-        sync.publish()
-    }
-
-    public func screenLocked(at date: Date) {
-        guard automation.lock() else { return }
-        if automation.enabled { pauseTracking(at: date) }
-        sync.publish()
-    }
-
-    public func screenUnlocked(at date: Date) {
-        if let resume = automation.unlock(at: date) {
-            Task { [weak self] in
-                guard let self else { return }
-                await resumeTracking(resume)
-                await sync.reloadTaskList()
-                sync.publish()
-            }
-        }
-        sync.publish()
-    }
-
     public func changeTab(_ newTab: TaskTab) {
         guard taskCatalog.changeTab(newTab) else { return }
         sync.reloadHistory()
@@ -457,77 +406,6 @@ public final class TrackerSession {
         return true
     }
 
-    public func startTracking(taskID: String) {
-        guard canStartTracking(taskID: taskID) else { return }
-        let expectedActiveID = active?.id
-        let occurredAt = formatTimestamp(clock.now)
-        sendTracking { client in
-            _ = try await client.startTracking(
-                taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
-        }
-    }
-
-    public func stopTracking(worklogID: String) {
-        guard canStopTracking, active?.id == worklogID else { return }
-        let occurredAt = formatTimestamp(clock.now)
-        sendTracking { client in
-            _ = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
-        }
-    }
-
-    public func dismissTrackingError() {
-        tracking.clearError()
-        sync.publish()
-    }
-
-    private func sendTracking(_ request: @escaping @MainActor (any TrackerClient) async throws -> Void) {
-        automation.cancel()
-        tracking.clearError()
-        tracking.beginSubmitting()
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await request(client)
-            } catch {
-                recordTrackingFailure(error)
-            }
-            await sync.reloadTaskList()
-            tracking.endSubmitting()
-            sync.publish()
-        }
-    }
-
-    private func pauseTracking(at date: Date) {
-        guard let worklog = active, automation.beginPause() else { return }
-        tracking.clearError()
-        let occurredAt = formatTimestamp(date)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await client.pauseTracking(worklogID: worklog.id, occurredAt: occurredAt)
-                if let resume = automation.paused(taskID: worklog.taskId, didStop: result.didStop) {
-                    await resumeTracking(resume)
-                }
-            } catch {
-                automation.pauseFailed()
-                recordTrackingFailure(error)
-            }
-            await sync.reloadTaskList()
-            sync.publish()
-        }
-    }
-
-    /// Only follows a successful pause, which already cleared the tracking error.
-    private func resumeTracking(_ resume: TrackingAutomationState.Resume) async {
-        do {
-            _ = try await client.resumeTracking(
-                taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
-        } catch {
-            recordTrackingFailure(error)
-        }
-    }
-
     private func loadBulkArchivePreview(_ search: BulkTaskArchivingState.Search?) {
         guard let search else { return }
         Task { [weak self] in
@@ -542,17 +420,6 @@ public final class TrackerSession {
             }
             sync.publish()
         }
-    }
-
-    private func writeFailure(_ error: Error) -> Error {
-        guard let failure = error as? BridgeFailure, failure.uncertain else { return error }
-        return BridgeFailure(
-            message: "Could not confirm the change. Check the reloaded data before trying again. \(failure.message)",
-            kind: failure.kind, uncertain: true, requiresRefresh: failure.requiresRefresh)
-    }
-
-    private func recordTrackingFailure(_ error: Error) {
-        tracking.recordError(writeFailure(error).localizedDescription)
     }
 
     /// Publishes the write result, reloads the task list, runs `afterReload`, and publishes again.
@@ -603,7 +470,7 @@ public final class TrackerSession {
     private func worklog(withID id: String) -> WorklogItem? { worklogHistory.worklogs.first { $0.id == id } }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
-        automation.cancel()
+        sync.cancelAutoResume()
         connection.apply(settings)
         dailyTotals.clear(at: clock.now)
         settingsRepository.save(settings)
@@ -619,6 +486,7 @@ public extension TrackerMenuSources {
     init(session: TrackerSession, presentation: TrackerPresentation) {
         self.init(
             catalog: session.taskCatalog, connection: session.connection, tracking: session.tracking,
-            dailyTotals: session.dailyTotals, menuBar: session.menuBar, presentation: presentation)
+            dailyTotals: session.dailyTotals, menuBar: session.menuBar, automation: session.trackingAutomation,
+            presentation: presentation)
     }
 }

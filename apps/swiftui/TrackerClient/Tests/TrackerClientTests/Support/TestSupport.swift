@@ -412,6 +412,8 @@ final class Fixture {
     let settings: MemorySettings
     let session: TrackerSession
     var sync: TrackerSync { session.sync }
+    var trackingActions: TrackingActions { session.trackingActions }
+    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
     let preferences: MemoryTrackingPreferences
     private let reportsEnabled: Bool
 

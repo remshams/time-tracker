@@ -207,13 +207,13 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.cancelWorklogDeletion()
         XCTAssertTrue(fixture.session.worklogDeletion.isPresented)
         XCTAssertEqual(deletions(fixture), 1)
-        XCTAssertTrue(fixture.session.canStopTracking)
+        XCTAssertTrue(fixture.trackingActions.canStopTracking)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         fixture.sync.onChange = nil
         try await fixture.update("the poll result") { poll.succeed(running) }
 
-        fixture.session.stopTracking(worklogID: activeWorklog.id)
+        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         let stopped = TaskListResources(tasks: [firstTask, secondTask], active: nil)

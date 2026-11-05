@@ -44,17 +44,20 @@ public struct TrackerMenuSources: Sendable {
     let tracking: TrackingStore
     let dailyTotals: DailyTotalsStore
     let menuBar: MenuBarStore
+    let automation: TrackingAutomationStore
     let presentation: TrackerPresentation
 
     public init(
         catalog: TaskCatalogStore, connection: ConnectionStore, tracking: TrackingStore,
-        dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, presentation: TrackerPresentation
+        dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
+        presentation: TrackerPresentation
     ) {
         self.catalog = catalog
         self.connection = connection
         self.tracking = tracking
         self.dailyTotals = dailyTotals
         self.menuBar = menuBar
+        self.automation = automation
         self.presentation = presentation
     }
 
@@ -69,7 +72,7 @@ public struct TrackerMenuSources: Sendable {
             timerText: tracking.timerText,
             trackingError: tracking.error,
             runningTaskName: presentation.runningTaskName,
-            autoPauseStatusText: presentation.autoPauseStatusText,
+            autoPauseStatusText: automation.statusText,
             canStopTracking: presentation.canStopTracking,
             startableTaskIDs: presentation.startableTaskIDs,
             dailyTotalsStatus: dailyTotals.status,
