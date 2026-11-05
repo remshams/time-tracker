@@ -224,12 +224,14 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   and the values that combine features from `TrackerPresentation` through one
   `Observations` loop. `TrackerSync` loads, refreshes and polls the stores,
   runs the display, rollover and menu bar timers, handles visibility, sleep
-  and wake, and pauses and resumes tracking when the screen locks and unlocks.
+  and wake, pauses and resumes tracking when the screen locks and unlocks,
+  and switches the connection.
   `TrackingActions` starts and stops tracking and decides which of those
   requests are possible; it calls `TrackerSync` to reload and publish, and the
   sync never calls it. The session creates the stores, `TrackerSync` and
-  `TrackingActions`; its connection change and editor flows call `TrackerSync`
-  to reload and publish. `WorklogHistoryStore` sends its own page requests and reports
+  `TrackingActions`; its editor flows call `TrackerSync` to reload and publish.
+  Settings checks a connection with the stateless `testConnectionSettings`
+  function, which leaves the current connection unchanged. `WorklogHistoryStore` sends its own page requests and reports
   each page or failure to `TrackerSync`, which records connection failures.
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
