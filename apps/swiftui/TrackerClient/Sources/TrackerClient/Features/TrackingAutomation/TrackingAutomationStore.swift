@@ -4,8 +4,7 @@ import Observation
 /// Holds the screen-lock auto-pause preference, its status and its bookkeeping for the whole app.
 ///
 /// Views read `enabled` and `statusText`; `TrackerSync` writes them. Each observed property is assigned only
-/// when its value changes. The status text changes only when `TrackerSync` publishes, as the presentation
-/// copied it before.
+/// when its value changes. The status text changes only when `TrackerSync` publishes.
 @Observable
 public final class TrackingAutomationStore: ChangeGuardedStore {
     struct Resume {
