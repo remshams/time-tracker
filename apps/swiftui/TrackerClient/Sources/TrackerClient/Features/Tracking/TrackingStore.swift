@@ -3,7 +3,7 @@ import Observation
 
 /// Holds the running worklog, the tracking error, the in-flight flag and the timer text for the whole app.
 ///
-/// Views read the public properties; `TrackerSync` and `TrackerSession` write them. Each observed property is
+/// Views read the public properties; `TrackerSync` and `TrackingActions` write them. Each observed property is
 /// assigned only when its value changes, so a display tick redraws the timer text only when the shown second
 /// changes. The timer text and the error change only when `TrackerSync` publishes.
 @Observable
@@ -13,7 +13,7 @@ public final class TrackingStore: ChangeGuardedStore {
     public private(set) var isSubmitting = false
     /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
     public private(set) var timerText = "Unavailable"
-    // The session records an error here when a request fails, and `publish` shows it at the next
+    // The sync records an error here when a tracking request fails, and `publish` shows it at the next
     // publish, normally the one after the reload, as the presentation did.
     @ObservationIgnored private(set) var recordedError: String?
     // The elapsed time is measured from these with the monotonic uptime, so views don't observe them.

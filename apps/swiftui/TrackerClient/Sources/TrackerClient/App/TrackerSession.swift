@@ -1,22 +1,22 @@
 import Foundation
 
 public final class TrackerSession {
-    /// Loads, refreshes and polls the stores, runs the timers and the screen-lock auto-pause, and publishes after
-    /// each change.
+    /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
+    /// change, and publishes after each change.
     public let sync: TrackerSync
     /// Starts and stops tracking and decides which of those requests are possible.
     public let trackingActions: TrackingActions
     /// Views read the task list, tab and selection here; the sync and the session write them.
     public let taskCatalog = TaskCatalogStore()
     /// Views read the selected task's worklog pages and the history panel's state here; the store loads the pages
-    /// when the sync or the session asks it to.
+    /// when the sync asks it to.
     public let worklogHistory: WorklogHistoryStore
-    /// Views read the connection settings and status here; the sync and the session write them.
+    /// Views read the connection settings and status here; the sync writes them.
     public let connection: ConnectionStore
-    /// Views read the running worklog, the tracking error and the timer text here; the sync and the session write
-    /// them.
+    /// Views read the running worklog, the tracking error and the timer text here; the sync and `trackingActions`
+    /// write them.
     public let tracking = TrackingStore()
-    /// Views read today's status and task totals here; the sync and the session write them.
+    /// Views read today's status and task totals here; the sync writes them.
     public let dailyTotals: DailyTotalsStore
     /// The menu bar reads the last tracked task here; the sync writes it.
     public let menuBar: MenuBarStore
@@ -26,7 +26,6 @@ public final class TrackerSession {
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
-    private let settingsRepository: any ConnectionSettingsRepository
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
     private let archiving = TaskArchivingState()
@@ -46,7 +45,6 @@ public final class TrackerSession {
         worklogHistory = WorklogHistoryStore(client: client)
         dailyTotals = DailyTotalsStore(calendar: calendar)
         self.clock = clock
-        settingsRepository = settings
         trackingAutomation = TrackingAutomationStore(preferences: trackingPreferences.load())
         let initialSettings = settings.load() ?? .local
         connection = ConnectionStore(settings: initialSettings)
@@ -55,7 +53,8 @@ public final class TrackerSession {
         sync = TrackerSync(
             client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
-            menuBar: menuBar, automation: trackingAutomation, trackingPreferences: trackingPreferences)
+            menuBar: menuBar, automation: trackingAutomation, settings: settings,
+            trackingPreferences: trackingPreferences)
         trackingActions = TrackingActions(
             client: client, clock: clock, sync: sync, catalog: taskCatalog, connection: connection,
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
@@ -382,30 +381,6 @@ public final class TrackerSession {
         sync.publish()
     }
 
-    public func testConnection(_ settings: ConnectionSettings) async throws {
-        try await client.test(connection.normalized(settings))
-    }
-
-    public func connect(_ settings: ConnectionSettings) async -> Bool {
-        guard !connection.changing else { return false }
-        connection.beginChange()
-        sync.publish()
-        defer {
-            connection.endChange()
-            sync.publish()
-        }
-        do {
-            let normalized = try connection.normalized(settings)
-            finishConnection(try await client.connect(normalized), settings: normalized)
-        } catch {
-            connection.rejectChange(error)
-            return false
-        }
-        await sync.loadReport()
-        sync.schedulePolling()
-        return true
-    }
-
     private func loadBulkArchivePreview(_ search: BulkTaskArchivingState.Search?) {
         guard let search else { return }
         Task { [weak self] in
@@ -468,17 +443,6 @@ public final class TrackerSession {
     }
 
     private func worklog(withID id: String) -> WorklogItem? { worklogHistory.worklogs.first { $0.id == id } }
-
-    private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
-        sync.cancelAutoResume()
-        connection.apply(settings)
-        dailyTotals.clear(at: clock.now)
-        settingsRepository.save(settings)
-        taskCatalog.resetSelections()
-        worklogHistory.request(selectedTaskID: nil)
-        tracking.clearError()
-        sync.acceptTaskList(resources)
-    }
 }
 
 public extension TrackerMenuSources {

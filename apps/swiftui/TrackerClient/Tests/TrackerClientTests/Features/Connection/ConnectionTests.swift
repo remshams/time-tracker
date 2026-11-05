@@ -4,6 +4,17 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
+    func testNormalizedSettingsTrimTheServerURLAndRequireOneOnlyInServerMode() async throws {
+        let server = ConnectionSettings(mode: .server, serverURL: " \nhttps://tracker.example\t")
+        XCTAssertEqual(try server.normalized(), serverSettings)
+        let local = ConnectionSettings(mode: .local, serverURL: " \n")
+        XCTAssertEqual(try local.normalized(), ConnectionSettings(mode: .local, serverURL: ""))
+        XCTAssertThrowsError(try ConnectionSettings(mode: .server, serverURL: " \t").normalized()) {
+            XCTAssertEqual($0.localizedDescription, "Enter a server URL.")
+        }
+    }
+
+    @MainActor
     func testSuccessfulConnectionRestartsPollingAfterAProtocolFailure() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -14,7 +25,7 @@ final class ConnectionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertNil(fixture.scheduler.poll)
 
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connecting)
@@ -37,7 +48,7 @@ final class ConnectionTests: XCTestCase {
         let remoteTask = TaskItem(id: "remote-task", name: "Remote task", archived: false, latestStart: nil)
         let remoteWorklog = WorklogItem(
             id: "remote-worklog", taskId: remoteTask.id, start: activeWorklog.start, end: nil)
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         request.succeed(TaskListResources(tasks: [remoteTask], active: remoteWorklog))
         let connected = try await fixture.taskValue(connecting)
@@ -64,7 +75,7 @@ final class ConnectionTests: XCTestCase {
         initial.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "old-source", reset: false))
         try await fixture.settled()
 
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let connect = try await fixture.client.next()
         connect.succeed(resources)
         let connected = try await fixture.taskValue(connecting)
@@ -87,7 +98,7 @@ final class ConnectionTests: XCTestCase {
         previousHistory.succeed(emptyPage)
         try await fixture.settled()
 
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         request.succeed(resources)
         let connected = try await fixture.taskValue(connecting)
@@ -127,7 +138,7 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start()
         let candidate = ConnectionSettings(mode: .server, serverURL: " \nhttps://tracker.example\t")
-        let testing = Task { try await fixture.session.testConnection(candidate) }
+        let testing = Task { try await testConnectionSettings(candidate, client: fixture.client) }
         let request = try await fixture.client.next()
         XCTAssertEqual(request.operation, .test(serverSettings))
         XCTAssertTrue(fixture.client.hasPendingRequests)
@@ -150,7 +161,7 @@ final class ConnectionTests: XCTestCase {
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await fixture.settled()
 
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         XCTAssertEqual(request.operation, .connect(serverSettings))
         XCTAssertTrue(fixture.session.connection.changing)
@@ -189,7 +200,7 @@ final class ConnectionTests: XCTestCase {
             fixture.session.trackingError,
             "Could not confirm the change. Check the reloaded data before trying again. Write failed")
 
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         request.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connecting)
@@ -213,7 +224,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: activeWorklog))
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         request.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let connected = try await fixture.taskValue(connecting)
@@ -235,7 +246,7 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start()
         let connecting = Task {
-            await fixture.session.connect(ConnectionSettings(mode: .server, serverURL: " \n"))
+            await fixture.sync.connect(ConnectionSettings(mode: .server, serverURL: " \n"))
         }
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
@@ -306,14 +317,14 @@ final class ConnectionTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let probes = ConnectionProbes(fixture.session.connection)
 
-        let rejected = Task { await fixture.session.connect(serverSettings) }
+        let rejected = Task { await fixture.sync.connect(serverSettings) }
         let candidate = try await fixture.client.next()
         XCTAssertEqual(probes.changed(), ["changing"])
         candidate.fail(BridgeFailure(message: "Candidate offline"))
         _ = try await fixture.taskValue(rejected)
         XCTAssertEqual(probes.changed(), ["message", "changing"])
 
-        let accepted = Task { await fixture.session.connect(serverSettings) }
+        let accepted = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         XCTAssertEqual(probes.changed(), ["changing"])
         request.succeed(TaskListResources(tasks: [firstTask], active: nil))

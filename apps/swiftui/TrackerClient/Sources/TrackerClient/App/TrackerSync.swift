@@ -1,7 +1,8 @@
 import Foundation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
-/// rollover and menu bar timers, window and menu visibility, sleep and wake, and the screen-lock auto-pause.
+/// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause and the
+/// connection change.
 ///
 /// `TrackerSession` creates the stores and passes them in. Its flows and `TrackingActions` call the
 /// package-internal methods below, for example to reload the task list or the history, record a failure and
@@ -20,6 +21,7 @@ public final class TrackerSync {
     private let dailyTotals: DailyTotalsStore
     private let menuBar: MenuBarStore
     private let automation: TrackingAutomationStore
+    private let settingsRepository: any ConnectionSettingsRepository
     private let trackingPreferences: any TrackingPreferencesRepository
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
@@ -39,7 +41,7 @@ public final class TrackerSync {
         client: any TrackerClient, reports: (any ReportClient)?, clock: any TrackerClock,
         scheduler: any TrackerScheduler, catalog: TaskCatalogStore, history: WorklogHistoryStore,
         connection: ConnectionStore, tracking: TrackingStore, dailyTotals: DailyTotalsStore,
-        menuBar: MenuBarStore, automation: TrackingAutomationStore,
+        menuBar: MenuBarStore, automation: TrackingAutomationStore, settings: any ConnectionSettingsRepository,
         trackingPreferences: any TrackingPreferencesRepository
     ) {
         self.client = client
@@ -53,6 +55,7 @@ public final class TrackerSync {
         self.dailyTotals = dailyTotals
         self.menuBar = menuBar
         self.automation = automation
+        settingsRepository = settings
         self.trackingPreferences = trackingPreferences
     }
 
@@ -142,6 +145,28 @@ public final class TrackerSync {
         publish()
     }
 
+    /// Switches to `settings`, saves them and loads their task list and today's totals. Returns false when
+    /// another change is running or the tracker rejects the settings; the current connection then stays.
+    public func connect(_ settings: ConnectionSettings) async -> Bool {
+        guard !connection.changing else { return false }
+        connection.beginChange()
+        publish()
+        defer {
+            connection.endChange()
+            publish()
+        }
+        do {
+            let normalized = try settings.normalized()
+            finishConnection(try await client.connect(normalized), settings: normalized)
+        } catch {
+            connection.rejectChange(error)
+            return false
+        }
+        await loadReport()
+        schedulePolling()
+        return true
+    }
+
     /// Turns the screen-lock auto-pause on or off and saves the preference. Turning it on while the screen is
     /// locked pauses the running timer.
     public func setPauseOnScreenLock(_ enabled: Bool) {
@@ -190,7 +215,7 @@ public final class TrackerSync {
         await loadReport()
     }
 
-    func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
+    private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable
         connection.acceptTaskList()
@@ -211,7 +236,7 @@ public final class TrackerSync {
         publish()
     }
 
-    func loadReport() async {
+    private func loadReport() async {
         guard let reports, let requested = dailyTotals.begin(clock: clock) else { return }
         // A first request shows the loading status, which the menu reads from the store.
         publish()
@@ -249,7 +274,7 @@ public final class TrackerSync {
         return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
     }
 
-    func schedulePolling() {
+    private func schedulePolling() {
         cancelPolling()
         guard started, !sleeping, !refreshing, !connection.protocolBlocked else { return }
         let interval = TrackerPollingPolicy.interval(visible: uiVisible, failures: connection.failures)
@@ -273,6 +298,17 @@ public final class TrackerSync {
             if let failure, requiresConnectionRecovery(failure) { recordConnectionFailure(failure) }
             publish()
         }
+    }
+
+    private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
+        automation.cancel()
+        connection.apply(settings)
+        dailyTotals.clear(at: clock.now)
+        settingsRepository.save(settings)
+        catalog.resetSelections()
+        history.request(selectedTaskID: nil)
+        tracking.clearError()
+        acceptTaskList(resources)
     }
 
     private func pauseTracking(at date: Date) {

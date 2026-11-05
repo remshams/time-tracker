@@ -855,13 +855,13 @@ final class DailyTotalsSessionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources, rows: [total(firstTask, 100)])
-        let failed = Task { await fixture.session.connect(serverSettings) }
+        let failed = Task { await fixture.sync.connect(serverSettings) }
         let failure = try await fixture.client.next()
         failure.fail(BridgeFailure(message: "Candidate offline"))
         let failedResult = try await fixture.taskValue(failed)
         XCTAssertFalse(failedResult)
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 100)
-        let connected = Task { await fixture.session.connect(serverSettings) }
+        let connected = Task { await fixture.sync.connect(serverSettings) }
         let connect = try await fixture.client.next()
         connect.succeed(resources)
         let report = try await fixture.client.next()

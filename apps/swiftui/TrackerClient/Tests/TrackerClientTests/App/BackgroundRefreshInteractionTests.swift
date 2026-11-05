@@ -103,7 +103,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         try await fixture.start()
         fixture.sync.refresh()
         let poll = try await fixture.client.next()
-        let testing = Task { try await fixture.session.testConnection(serverSettings) }
+        let testing = Task { try await testConnectionSettings(serverSettings, client: fixture.client) }
         let test = try await fixture.client.next()
         XCTAssertEqual(test.operation, .test(serverSettings))
         test.tested()

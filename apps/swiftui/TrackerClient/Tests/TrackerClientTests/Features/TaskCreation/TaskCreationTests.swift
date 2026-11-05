@@ -401,7 +401,7 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.setTaskCreationName("Pending task")
         fixture.session.submitTaskCreation()
         let creation = try await fixture.client.next()
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         XCTAssertEqual(connection.operation, .connect(serverSettings))
         connection.succeed(emptyTaskListResources)
@@ -443,7 +443,7 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.start()
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Draft task")
-        let connect = Task { await fixture.session.connect(serverSettings) }
+        let connect = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connect)
