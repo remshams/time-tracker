@@ -55,14 +55,14 @@ final class TrackerStore {
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
         move = WorklogMoveStore(session: session, presentation: presentation)
         deletion = WorklogDeletionStore(session: session, presentation: presentation)
-        session.onChange = { [weak self] in
+        session.sync.onChange = { [weak self] in
             guard let self else { return }
             presentation.update(from: session)
         }
-        session.setMenuBarClock(showDailyTotal)
+        session.sync.setMenuBarClockEnabled(showDailyTotal)
         lifecycle = MacLifecycleObserver(session: session)
         lifecycle?.start()
-        session.start()
+        session.sync.start()
     }
 
     /// Views read the task list, tab and selection from this store through the SwiftUI environment.
@@ -87,7 +87,7 @@ final class TrackerStore {
         showDailyTotalInMenuBar = enabled
         menuBarPreferences.save(enabled)
         menu.setShowDailyTotal(enabled)
-        session.setMenuBarClock(enabled)
+        session.sync.setMenuBarClockEnabled(enabled)
     }
 
     func setMenuTaskOrder(_ order: MenuTaskOrder) {
@@ -142,22 +142,22 @@ final class TrackerStore {
     }
     func changeTab(_ tab: TaskTab) { session.changeTab(tab) }
     func select(_ taskID: String?) { session.select(taskID) }
-    func refresh() { session.refresh() }
-    func retryHistory() { session.retryHistory() }
-    func loadOlder() { session.loadOlder() }
+    func refresh() { session.sync.refresh() }
+    func retryHistory() { session.sync.retryHistory() }
+    func loadOlder() { session.sync.loadOlder() }
     func startTracking(taskID: String) { session.startTracking(taskID: taskID) }
     func stopTracking(worklogID: String) { session.stopTracking(worklogID: worklogID) }
     func dismissTrackingError() { session.dismissTrackingError() }
     func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
 
     func menuOpened() {
-        // The session publishes first, so the menu captures current values even when no display tick ran.
-        session.menuOpened()
+        // The sync publishes first, so the menu captures current values even when no display tick ran.
+        session.sync.setMenuVisible(true)
         menu.menuOpened()
     }
 
     func menuClosed() {
-        session.menuClosed()
+        session.sync.setMenuVisible(false)
         menu.menuClosed()
     }
     func testConnection(_ settings: ConnectionSettings) async throws {

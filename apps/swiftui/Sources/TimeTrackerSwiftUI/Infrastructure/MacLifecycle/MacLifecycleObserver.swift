@@ -2,11 +2,14 @@ import AppKit
 import TrackerClient
 
 final class MacLifecycleObserver {
+    // The session handles screen lock events; the sync handles visibility, sleep and wake.
     private weak var session: TrackerSession?
+    private weak var sync: TrackerSync?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     init(session: TrackerSession) {
         self.session = session
+        sync = session.sync
     }
 
     func start() {
@@ -22,10 +25,10 @@ final class MacLifecycleObserver {
         ]
         for name in windowEvents { observe(center, name) { $0.updateVisibility() } }
         let workspace = NSWorkspace.shared.notificationCenter
-        observe(workspace, NSWorkspace.willSleepNotification) { $0.session?.sleep() }
+        observe(workspace, NSWorkspace.willSleepNotification) { $0.sync?.sleep() }
         observe(workspace, NSWorkspace.didWakeNotification) {
             $0.updateVisibility()
-            $0.session?.wake()
+            $0.sync?.wake()
         }
         let distributed = DistributedNotificationCenter.default()
         observeScreenEvent(distributed, Notification.Name("com.apple.screenIsLocked"), locked: true)
@@ -36,10 +39,10 @@ final class MacLifecycleObserver {
                     let name = Notification.Name("\(suite).\(locked ? "lock" : "unlock")")
                     observeScreenEvent(distributed, name, locked: locked)
                 }
-                observe(distributed, Notification.Name("\(suite).sleep")) { $0.session?.sleep() }
+                observe(distributed, Notification.Name("\(suite).sleep")) { $0.sync?.sleep() }
                 observe(distributed, Notification.Name("\(suite).wake")) {
                     $0.updateVisibility()
-                    $0.session?.wake()
+                    $0.sync?.wake()
                 }
             }
         #endif
@@ -67,7 +70,7 @@ final class MacLifecycleObserver {
         let visible = NSApplication.shared.windows.contains {
             $0.styleMask.contains(.titled) && $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)
         }
-        session?.setWindowVisible(visible)
+        sync?.setWindowVisible(visible)
     }
 
     private func observeScreenEvent(_ center: NotificationCenter, _ name: Notification.Name, locked: Bool) {
