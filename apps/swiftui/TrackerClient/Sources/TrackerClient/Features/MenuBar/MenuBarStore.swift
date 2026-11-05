@@ -16,7 +16,7 @@ public extension ConnectionSettings {
 
 /// Holds the menu bar's own state for the whole app: the last tracked task of the current connection.
 ///
-/// The menu reads `lastTrackedTaskID`; `TrackerSession` calls `observe` after each task list. The task is
+/// The menu reads `lastTrackedTaskID`; `TrackerSync` calls `observe` after each task list. The task is
 /// remembered per connection and saved to the repository, so switching connections back restores it.
 @Observable
 public final class MenuBarStore: ChangeGuardedStore {
