@@ -14,6 +14,7 @@ struct TimeTrackerApp: App {
                 .environment(delegate.runtime.store.connection)
                 .environment(delegate.runtime.store.tracking)
                 .environment(delegate.runtime.store.dailyTotals)
+                .environment(delegate.runtime.store.trackingAutomation)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
@@ -23,6 +24,7 @@ struct TimeTrackerApp: App {
         Window("Settings", id: TrackerSceneID.settings) {
             SettingsView(store: delegate.runtime.store)
                 .environment(delegate.runtime.store.connection)
+                .environment(delegate.runtime.store.trackingAutomation)
                 .frame(height: 680)
         }
         .defaultSize(width: 540, height: 680)

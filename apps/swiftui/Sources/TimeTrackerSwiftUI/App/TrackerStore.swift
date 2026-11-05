@@ -60,7 +60,7 @@ final class TrackerStore {
             presentation.update(from: session)
         }
         session.sync.setMenuBarClockEnabled(showDailyTotal)
-        lifecycle = MacLifecycleObserver(session: session)
+        lifecycle = MacLifecycleObserver(sync: session.sync)
         lifecycle?.start()
         session.sync.start()
     }
@@ -75,10 +75,10 @@ final class TrackerStore {
     var tracking: TrackingStore { session.tracking }
     /// Views read today's status and task totals from this store the same way.
     var dailyTotals: DailyTotalsStore { session.dailyTotals }
+    /// Views read the auto-pause preference and status from this store the same way.
+    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
 
     // Views read these through the observable presentation, so each view redraws only for values it reads.
-    var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
-    var autoPauseStatusText: String? { presentation.autoPauseStatusText }
     var canStopTracking: Bool { presentation.canStopTracking }
     func canStartTracking(taskID: String) -> Bool { presentation.canStartTracking(taskID: taskID) }
 
@@ -97,7 +97,7 @@ final class TrackerStore {
         menu.setTaskOrder(order)
     }
 
-    func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
+    func setPauseOnScreenLock(_ enabled: Bool) { session.sync.setPauseOnScreenLock(enabled) }
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
         var candidate = action == .openMenu ? MenuKeyboardShortcuts() : menuShortcuts
         candidate[action] = shortcut
@@ -145,10 +145,10 @@ final class TrackerStore {
     func refresh() { session.sync.refresh() }
     func retryHistory() { session.sync.retryHistory() }
     func loadOlder() { session.sync.loadOlder() }
-    func startTracking(taskID: String) { session.startTracking(taskID: taskID) }
-    func stopTracking(worklogID: String) { session.stopTracking(worklogID: worklogID) }
-    func dismissTrackingError() { session.dismissTrackingError() }
-    func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
+    func startTracking(taskID: String) { session.trackingActions.startTracking(taskID: taskID) }
+    func stopTracking(worklogID: String) { session.trackingActions.stopTracking(worklogID: worklogID) }
+    func dismissTrackingError() { session.trackingActions.dismissTrackingError() }
+    func performMenuPrimaryAction() -> MenuPrimaryAction { session.trackingActions.performMenuPrimaryAction() }
 
     func menuOpened() {
         // The sync publishes first, so the menu captures current values even when no display tick ran.

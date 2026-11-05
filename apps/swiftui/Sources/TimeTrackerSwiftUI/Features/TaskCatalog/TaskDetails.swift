@@ -5,6 +5,7 @@ struct TaskDetails: View {
     let store: TrackerStore
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
+    @Environment(TrackingAutomationStore.self) private var automation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,7 +37,7 @@ struct TaskDetails: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        if let status = store.autoPauseStatusText {
+                        if let status = automation.statusText {
                             Text(status)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

@@ -2,15 +2,11 @@ import AppKit
 import TrackerClient
 
 final class MacLifecycleObserver {
-    // The session handles screen lock events; the sync handles visibility, sleep and wake.
-    private weak var session: TrackerSession?
+    // The sync handles visibility, sleep and wake, and screen lock events.
     private weak var sync: TrackerSync?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
-    init(session: TrackerSession) {
-        self.session = session
-        sync = session.sync
-    }
+    init(sync: TrackerSync) { self.sync = sync }
 
     func start() {
         guard observers.isEmpty else { return }
@@ -78,11 +74,7 @@ final class MacLifecycleObserver {
             let occurredAt = Date()
             // The main queue preserves the notification order and the captured event time.
             MainActor.assumeIsolated {
-                if locked {
-                    self?.session?.screenLocked(at: occurredAt)
-                } else {
-                    self?.session?.screenUnlocked(at: occurredAt)
-                }
+                self?.sync?.setScreenLocked(locked, at: occurredAt)
             }
         }
         observers.append((center, observer))
