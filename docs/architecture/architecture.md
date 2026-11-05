@@ -136,7 +136,7 @@ title: Applications
 ---
 flowchart TD
     mac["TimeTrackerSwiftUI<br>apps/swiftui/Sources/TimeTrackerSwiftUI<br>Scenes, views, AppKit integration, TrackerWorker"]:::module
-    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerSession and TrackerSync"]:::module
+    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerSession, TrackerSync and TrackingActions"]:::module
     bridge["tracker-swift-bridge<br>apps/swiftui/bridge<br>C ABI, JSON results, Tokio runtime"]:::module
     tui["tracker-tui<br>apps/tui<br>The tt event loop, screens, rendering"]:::module
     cli["tracker-cli<br>apps/cli<br>The tt-cli commands, JSON, exit codes"]:::module
@@ -246,15 +246,15 @@ title: Starting tracking in the macOS app in remote mode
 sequenceDiagram
     actor User
     participant App as macOS app
-    participant Session as TrackingActions and TrackerSync
+    participant Tracking as TrackingActions and TrackerSync
     participant Worker as TrackerWorker and bridge
     participant Remote as tracker-remote
     participant Server as tracker-server
     participant Application as tracker-application
     participant Storage as tracker-storage
     User->>App: Start on a task
-    App->>Session: start, click time, expected worklog
-    Session->>Worker: start request
+    App->>Tracking: start, click time, expected worklog
+    Tracking->>Worker: start request
     Worker->>Remote: start tracking through TrackerBackend
     Remote->>Server: PUT /v1/tracking, reviewed values, request ID
     Server->>Application: start under the operation lock
@@ -262,17 +262,17 @@ sequenceDiagram
     alt another client changed tracking
         Storage--xServer: active worklog differs
         Server--xRemote: HTTP 409 conflict
-        Remote--xSession: error shown in the feature
+        Remote--xTracking: error shown in the feature
     else stored values match
         Storage-->>Server: new active worklog
         Server-->>Remote: command receipt
-        Remote-->>Session: saved
+        Remote-->>Tracking: saved
     end
-    Session->>Worker: reload tasks and today's totals
+    Tracking->>Worker: reload tasks and today's totals
     Remote->>Server: GET /v1/state/daily-overview
     Server-->>Remote: tasks, tracking and totals, one transaction
-    Remote-->>Session: daily overview
-    Session-->>App: changed values only
+    Remote-->>Tracking: daily overview
+    Tracking-->>App: changed values only
 ```
 
 The worker lane covers `TrackerWorker`, the `tt_bridge_start_tracking_if_active_at`
