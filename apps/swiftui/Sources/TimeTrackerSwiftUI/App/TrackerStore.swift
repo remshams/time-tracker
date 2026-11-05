@@ -5,6 +5,8 @@ import TrackerClient
 @Observable
 final class TrackerStore {
     private let session: TrackerSession
+    // Connection tests go straight to the worker; they don't touch the session's state.
+    private let worker: TrackerWorker
     private let presentation: TrackerPresentation
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
@@ -37,6 +39,7 @@ final class TrackerStore {
         keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
         menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
+        self.worker = worker
         session = TrackerSession(
             client: worker, clock: SystemTrackerClock(),
             scheduler: RunLoopTrackerScheduler(),
@@ -161,9 +164,9 @@ final class TrackerStore {
         menu.menuClosed()
     }
     func testConnection(_ settings: ConnectionSettings) async throws {
-        try await session.testConnection(settings)
+        try await testConnectionSettings(settings, client: worker)
     }
     func connect(_ settings: ConnectionSettings) async -> Bool {
-        await session.connect(settings)
+        await session.sync.connect(settings)
     }
 }
