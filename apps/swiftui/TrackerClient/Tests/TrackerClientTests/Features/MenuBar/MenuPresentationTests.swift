@@ -6,7 +6,7 @@ final class MenuPresentationTests: XCTestCase {
     func testOpenSubmenuKeepsNavigationStableWhileValuesAdvanceAcrossTicksAndPolls() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
         try await fixture.start(resources, rows: rows)
@@ -19,7 +19,7 @@ final class MenuPresentationTests: XCTestCase {
         let window = PresentationHarness(session: fixture.session)
         let windowTicks = window.counter(PresentationReads.timer)
         let windowControls = window.counter(PresentationReads.controls)
-        fixture.session.onChange = {
+        fixture.sync.onChange = {
             menu.update()
             window.update()
         }
@@ -106,7 +106,7 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
-        fixture.session.setMenuBarClock(true)
+        fixture.sync.setMenuBarClockEnabled(true)
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
         var changes = 0
@@ -256,7 +256,7 @@ final class MenuPresentationTests: XCTestCase {
     func testLoadingAndFailedReportsShareTheirExplanationWithTheMenu() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        fixture.session.start()
+        fixture.sync.start()
         let open = try await fixture.client.next()
         open.succeed(emptyTaskListResources)
         let report = try await fixture.client.next()

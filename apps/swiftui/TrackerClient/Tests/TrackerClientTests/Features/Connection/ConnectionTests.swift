@@ -8,7 +8,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let incompatible = try await fixture.client.next()
         incompatible.fail(BridgeFailure(message: "Unsupported protocol", kind: "protocol"))
         try await fixture.settled()
@@ -59,7 +59,7 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let initial = try await fixture.client.next()
         initial.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "old-source", reset: false))
         try await fixture.settled()
@@ -103,7 +103,7 @@ final class ConnectionTests: XCTestCase {
     func testOfflineStartupKeepsSavedServerAndDisablesCommands() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        fixture.session.start()
+        fixture.sync.start()
         let open = try await fixture.client.next()
         XCTAssertEqual(open.operation, .open(serverSettings))
         open.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
@@ -145,7 +145,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await fixture.settled()
@@ -173,7 +173,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()

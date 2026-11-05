@@ -367,7 +367,7 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(resources)
-        fixture.session.setWindowVisible(false)
+        fixture.sync.setWindowVisible(false)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Offline", kind: "unavailable"))
@@ -389,7 +389,7 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(resources)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         XCTAssertTrue(fixture.session.canArchiveTask(taskID: secondTask.id))
         fixture.session.openTaskArchive(taskID: secondTask.id)
@@ -453,7 +453,7 @@ final class TaskArchivingTests: XCTestCase {
                 presentation.canUnarchiveTask(taskID: archivedTask.id)
             )
         }
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         refresh.succeed(TaskListResources(tasks: resources.catalog.value, active: activeWorklog))
         let history = try await fixture.client.next()

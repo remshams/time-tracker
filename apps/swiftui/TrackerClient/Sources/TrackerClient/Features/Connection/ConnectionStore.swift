@@ -3,8 +3,8 @@ import Observation
 
 /// Holds the connection settings and status for the whole app.
 ///
-/// Views read the public properties; `TrackerSession` writes them. Each property is assigned only when its
-/// value changes, so an unchanged poll redraws no connection reader.
+/// Views read the public properties; `TrackerSync` and `TrackerSession` write them. Each property is assigned
+/// only when its value changes, so an unchanged poll redraws no connection reader.
 @Observable
 public final class ConnectionStore: ChangeGuardedStore {
     public private(set) var settings: ConnectionSettings

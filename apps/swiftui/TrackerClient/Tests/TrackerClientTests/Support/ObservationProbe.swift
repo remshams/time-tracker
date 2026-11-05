@@ -73,7 +73,7 @@ final class PresentationHarness {
     }
 
     /// Restores the session change handler after a fixture helper replaced it.
-    func attach() { session.onChange = { [weak self] in self?.update() } }
+    func attach() { session.sync.onChange = { [weak self] in self?.update() } }
 
     func update() {
         presentation.update(from: session)

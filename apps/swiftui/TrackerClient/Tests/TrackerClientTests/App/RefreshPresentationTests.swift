@@ -13,8 +13,8 @@ final class RefreshPresentationTests: XCTestCase {
         XCTAssertNil(fixture.session.active)
         XCTAssertEqual(fixture.session.runningTaskName, "No timer running")
         var observations: [([TaskItem], WorklogItem?)] = []
-        fixture.session.onChange = { observations.append((fixture.session.tasks, fixture.session.active)) }
-        fixture.session.refresh()
+        fixture.sync.onChange = { observations.append((fixture.session.tasks, fixture.session.active)) }
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         let running = WorklogItem(id: "worklog-second", taskId: secondTask.id, start: activeWorklog.start, end: nil)
         let next = TaskListResources(tasks: [firstTask, secondTask], active: running)
@@ -28,7 +28,7 @@ final class RefreshPresentationTests: XCTestCase {
     func testRunningTotalTicksInvalidateOnlyRunningTaskRow() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         try await fixture.start(
             TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog),
             rows: [
@@ -79,7 +79,7 @@ final class RefreshPresentationTests: XCTestCase {
         XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:10")
         XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: secondTask.id).content?.text, "00:00:25")
         // Closing the menu that isn't open publishes again without changing any value.
-        fixture.session.menuClosed()
+        fixture.sync.setMenuVisible(false)
         XCTAssertEqual(totals.changed(), [], "An unchanged report must not publish row updates again.")
     }
 

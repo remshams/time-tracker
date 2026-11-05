@@ -1,11 +1,12 @@
 import Foundation
 
 public final class TrackerSession {
-    public var onChange: (() -> Void)?
+    /// Loads, refreshes and polls the stores, runs the timers and publishes after each change.
+    public let sync: TrackerSync
     /// Views read the task list, tab and selection here; the session writes them.
     public let taskCatalog = TaskCatalogStore()
-    /// Views read the selected task's worklog pages and the history panel's state here; the session writes them.
-    public let worklogHistory = WorklogHistoryStore()
+    /// Views read the selected task's worklog pages and the history panel's state here; the store loads them.
+    public let worklogHistory: WorklogHistoryStore
     /// Views read the connection settings and status here; the session writes them.
     public let connection: ConnectionStore
     /// Views read the running worklog, the tracking error and the timer text here; the session writes them.
@@ -16,10 +17,8 @@ public final class TrackerSession {
     public let menuBar: MenuBarStore
 
     private let client: any TrackerClient
-    private let reports: (any ReportClient)?
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
-    private let scheduler: any TrackerScheduler
     private let settingsRepository: any ConnectionSettingsRepository
     private let trackingPreferencesRepository: any TrackingPreferencesRepository
     private let automation: TrackingAutomationState
@@ -30,19 +29,6 @@ public final class TrackerSession {
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
     private let deletion = WorklogDeletionState()
-    private var displayTimer: (any TrackerCancellation)?
-    private var pollTimer: (any TrackerCancellation)?
-    private var rolloverTimer: (any TrackerCancellation)?
-    private var menuBarClock: (any TrackerCancellation)?
-    private var menuBarClockEnabled = false
-    // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
-    private var started = false
-    // One poll at a time: no poll is scheduled while a refresh is waiting.
-    private var refreshing = false
-    private var sleeping = false
-    private var windowVisible = false
-    private var menuOpen = false
-    private var uiVisible: Bool { windowVisible || menuOpen }
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -52,10 +38,9 @@ public final class TrackerSession {
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
         self.client = client
-        self.reports = reports
+        worklogHistory = WorklogHistoryStore(client: client)
         dailyTotals = DailyTotalsStore(calendar: calendar)
         self.clock = clock
-        self.scheduler = scheduler
         settingsRepository = settings
         trackingPreferencesRepository = trackingPreferences
         automation = TrackingAutomationState(preferences: trackingPreferences.load())
@@ -63,13 +48,10 @@ public final class TrackerSession {
         connection = ConnectionStore(settings: initialSettings)
         menuBar = MenuBarStore(repository: lastTrackedTasks, settings: initialSettings)
         dailyTotals.updateDay(at: clock.now)
-    }
-
-    isolated deinit {
-        displayTimer?.cancel()
-        pollTimer?.cancel()
-        rolloverTimer?.cancel()
-        menuBarClock?.cancel()
+        sync = TrackerSync(
+            client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
+            history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
+            menuBar: menuBar, automation: automation)
     }
 
     public var pauseOnScreenLock: Bool { automation.enabled }
@@ -135,92 +117,29 @@ public final class TrackerSession {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
     }
 
-    public func start() {
-        guard !started else { return }
-        started = true
-        dailyTotals.updateDay(at: clock.now)
-        updateRolloverTimer()
-        updateDisplayTimer()
-        refreshing = true
-        let settings = connection.settings
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                acceptTaskList(try await client.openConfigured(settings))
-                await loadReport()
-            } catch {
-                recordConnectionFailure(error)
-            }
-            finishRefresh()
-        }
-    }
-
-    public func setWindowVisible(_ visible: Bool) {
-        let previouslyVisible = uiVisible
-        windowVisible = visible
-        visibilityChanged(previouslyVisible: previouslyVisible)
-    }
-
-    public func menuOpened() {
-        let previouslyVisible = uiVisible
-        menuOpen = true
-        visibilityChanged(previouslyVisible: previouslyVisible)
-    }
-
-    public func menuClosed() {
-        let previouslyVisible = uiVisible
-        menuOpen = false
-        visibilityChanged(previouslyVisible: previouslyVisible)
-    }
-
-    /// Republishes once a minute while a timer runs, so the menu bar's daily total keeps counting while no
-    /// window or menu is open. The app turns this on while the menu bar shows the daily total.
-    public func setMenuBarClock(_ enabled: Bool) {
-        menuBarClockEnabled = enabled
-        updateMenuBarClock()
-    }
-
-    public func sleep() {
-        guard started else { return }
-        sleeping = true
-        cancelTimers()
-        publish()
-    }
-
-    public func wake() {
-        guard started else { return }
-        sleeping = false
-        tracking.resetElapsedAnchor(clock: clock)
-        dailyTotals.updateDay(at: clock.now)
-        dailyTotals.reanchor(clock: clock)
-        updateDisplayTimer()
-        updateRolloverTimer()
-        refresh()
-    }
-
     public var bulkTaskArchiving: BulkTaskArchivingPresentation { bulkArchiving.presentation }
     public var canOpenBulkTaskArchiving: Bool { connection.confirmed }
 
     public func openBulkTaskArchiving() {
         guard canOpenBulkTaskArchiving else { return }
         loadBulkArchivePreview(bulkArchiving.open(asOf: formatTimestamp(clock.now)))
-        publish()
+        sync.publish()
     }
     public func updateBulkArchiveDays(_ text: String) {
         loadBulkArchivePreview(bulkArchiving.updateDays(text, asOf: formatTimestamp(clock.now)))
-        publish()
+        sync.publish()
     }
     public func refreshBulkArchivePreview() {
         loadBulkArchivePreview(bulkArchiving.requestPreview(asOf: formatTimestamp(clock.now)))
-        publish()
+        sync.publish()
     }
     public func cancelBulkTaskArchiving() {
         bulkArchiving.cancel()
-        publish()
+        sync.publish()
     }
     public func submitBulkTaskArchiving() {
         guard let preview = bulkArchiving.submit() else { return }
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -248,7 +167,7 @@ public final class TrackerSession {
     public func openTaskArchive(taskID: String) {
         guard canArchiveTask(taskID: taskID), let task = task(withID: taskID) else { return }
         archiving.open(task, action: .archive)
-        publish()
+        sync.publish()
     }
 
     public func unarchiveTask(taskID: String) {
@@ -259,13 +178,13 @@ public final class TrackerSession {
 
     public func cancelTaskArchiving() {
         archiving.cancel()
-        publish()
+        sync.publish()
     }
 
     public func submitTaskArchiving() {
         guard let request = archiving.submit() else { return }
         let occurredAt = formatTimestamp(clock.now)
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -290,26 +209,26 @@ public final class TrackerSession {
     public func openTaskCreation() {
         guard canOpenTaskCreation else { return }
         creation.open()
-        publish()
+        sync.publish()
     }
 
     public func setTaskCreationName(_ name: String) {
         creation.updateName(name)
-        publish()
+        sync.publish()
     }
 
     public func cancelTaskCreation() {
         creation.cancel()
-        publish()
+        sync.publish()
     }
 
     public func submitTaskCreation() {
         guard let name = creation.submit() else {
-            publish()
+            sync.publish()
             return
         }
         let occurredAt = formatTimestamp(clock.now)
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -327,26 +246,26 @@ public final class TrackerSession {
         guard canOpenTaskRename else { return }
         let target = taskID.flatMap { task(withID: $0) } ?? (taskID == nil ? selectedTask : nil)
         rename.open(target)
-        publish()
+        sync.publish()
     }
 
     public func setTaskRenameName(_ name: String) {
         rename.updateName(name)
-        publish()
+        sync.publish()
     }
 
     public func cancelTaskRename() {
         rename.cancel()
-        publish()
+        sync.publish()
     }
 
     public func submitTaskRename() {
         guard let request = rename.submit() else {
-            publish()
+            sync.publish()
             return
         }
         let occurredAt = formatTimestamp(clock.now)
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -364,43 +283,43 @@ public final class TrackerSession {
     public func openWorklogCorrection(worklogID: String) {
         guard canOpenWorklogCorrection, let worklog = worklogForEditor(worklogID) else { return }
         correction.open(worklog, taskName: taskName(worklog.taskId))
-        publish()
+        sync.publish()
     }
 
     public func openWorklogMove(worklogID: String) {
         guard canOpenWorklogMove, let worklog = worklogForEditor(worklogID) else { return }
         loadMoveCandidates(move.open(worklog, sourceTaskName: taskName(worklog.taskId)))
-        publish()
+        sync.publish()
     }
 
     public func setWorklogMoveQuery(_ query: String) {
         loadMoveCandidates(move.updateQuery(query))
-        publish()
+        sync.publish()
     }
 
     public func retryWorklogMoveCandidates() {
         loadMoveCandidates(move.retrySearch())
-        publish()
+        sync.publish()
     }
 
     public func selectWorklogMoveDestination(taskID: String) {
         move.select(taskID)
-        publish()
+        sync.publish()
     }
 
     public func moveWorklogDestinationSelection(by offset: Int) {
         move.moveSelection(by: offset)
-        publish()
+        sync.publish()
     }
 
     public func cancelWorklogMove() {
         move.cancel()
-        publish()
+        sync.publish()
     }
 
     public func submitWorklogMove() {
         guard let request = move.submit() else { return }
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -416,25 +335,25 @@ public final class TrackerSession {
 
     public func setWorklogCorrectionStart(_ date: Date) {
         correction.updateStart(date)
-        publish()
+        sync.publish()
     }
 
     public func setWorklogCorrectionEnd(_ date: Date) {
         correction.updateEnd(date)
-        publish()
+        sync.publish()
     }
 
     public func cancelWorklogCorrection() {
         correction.cancel()
-        publish()
+        sync.publish()
     }
 
     public func submitWorklogCorrection() {
         guard let request = correction.submit(at: clock.now) else {
-            publish()
+            sync.publish()
             return
         }
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -452,17 +371,17 @@ public final class TrackerSession {
     public func openWorklogDeletion(worklogID: String) {
         guard canOpenWorklogDeletion, let worklog = worklog(withID: worklogID) else { return }
         deletion.open(worklog, taskName: taskName(worklog.taskId))
-        publish()
+        sync.publish()
     }
 
     public func cancelWorklogDeletion() {
         deletion.cancel()
-        publish()
+        sync.publish()
     }
 
     public func submitWorklogDeletion() {
         guard let expected = deletion.submit() else { return }
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -479,13 +398,13 @@ public final class TrackerSession {
         guard automation.setEnabled(enabled) else { return }
         trackingPreferencesRepository.save(TrackingPreferences(pauseOnScreenLock: enabled))
         if enabled && automation.locked { pauseTracking(at: clock.now) }
-        publish()
+        sync.publish()
     }
 
     public func screenLocked(at date: Date) {
         guard automation.lock() else { return }
         if automation.enabled { pauseTracking(at: date) }
-        publish()
+        sync.publish()
     }
 
     public func screenUnlocked(at date: Date) {
@@ -493,33 +412,23 @@ public final class TrackerSession {
             Task { [weak self] in
                 guard let self else { return }
                 await resumeTracking(resume)
-                await reloadTaskList()
-                publish()
+                await sync.reloadTaskList()
+                sync.publish()
             }
         }
-        publish()
+        sync.publish()
     }
 
     public func changeTab(_ newTab: TaskTab) {
         guard taskCatalog.changeTab(newTab) else { return }
-        requestHistory()
-        publish()
+        sync.reloadHistory()
+        sync.publish()
     }
 
     public func select(_ taskID: String?) {
         guard taskCatalog.select(taskID) else { return }
-        requestHistory()
-        publish()
-    }
-
-    public func refresh() {
-        beginRefresh()
-    }
-
-    public func retryHistory() {
-        guard started else { return }
-        requestHistory()
-        publish()
+        sync.reloadHistory()
+        sync.publish()
     }
 
     public func testConnection(_ settings: ConnectionSettings) async throws {
@@ -529,10 +438,10 @@ public final class TrackerSession {
     public func connect(_ settings: ConnectionSettings) async -> Bool {
         guard !connection.changing else { return false }
         connection.beginChange()
-        publish()
+        sync.publish()
         defer {
             connection.endChange()
-            publish()
+            sync.publish()
         }
         do {
             let normalized = try connection.normalized(settings)
@@ -541,8 +450,8 @@ public final class TrackerSession {
             connection.rejectChange(error)
             return false
         }
-        await loadReport()
-        schedulePolling()
+        await sync.loadReport()
+        sync.schedulePolling()
         return true
     }
 
@@ -566,24 +475,14 @@ public final class TrackerSession {
 
     public func dismissTrackingError() {
         tracking.clearError()
-        publish()
-    }
-
-    public func loadOlder() {
-        guard !connection.stale, !worklogHistory.isLoading, let taskID = selectedTaskID,
-            let cursor = worklogHistory.nextCursor
-        else {
-            return
-        }
-        loadHistory(taskID: taskID, cursor: cursor)
-        publish()
+        sync.publish()
     }
 
     private func sendTracking(_ request: @escaping @MainActor (any TrackerClient) async throws -> Void) {
         automation.cancel()
         tracking.clearError()
         tracking.beginSubmitting()
-        publish()
+        sync.publish()
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -591,9 +490,9 @@ public final class TrackerSession {
             } catch {
                 recordTrackingFailure(error)
             }
-            await reloadTaskList()
+            await sync.reloadTaskList()
             tracking.endSubmitting()
-            publish()
+            sync.publish()
         }
     }
 
@@ -612,8 +511,8 @@ public final class TrackerSession {
                 automation.pauseFailed()
                 recordTrackingFailure(error)
             }
-            await reloadTaskList()
-            publish()
+            await sync.reloadTaskList()
+            sync.publish()
         }
     }
 
@@ -637,9 +536,9 @@ public final class TrackerSession {
             } catch {
                 guard bulkArchiving.matches(search) else { return }
                 bulkArchiving.failSearch(error, search: search)
-                if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
+                if sync.requiresConnectionRecovery(error) { sync.recordConnectionFailure(error) }
             }
-            publish()
+            sync.publish()
         }
     }
 
@@ -654,62 +553,26 @@ public final class TrackerSession {
         tracking.recordError(writeFailure(error).localizedDescription)
     }
 
-    /// Callers pass read failures, which the bridge never marks as uncertain.
-    private func requiresConnectionRecovery(_ error: Error) -> Bool {
-        guard let failure = error as? BridgeFailure else { return false }
-        return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
-    }
-
-    /// Reloads the task list and, with a report client, today's totals.
-    private func reloadTaskList() async {
-        dailyTotals.updateDay(at: clock.now)
-        if reports == nil || !connection.confirmed || connection.stale {
-            do {
-                acceptTaskList(try await client.refreshTaskList(settings: connection.settings))
-            } catch {
-                recordConnectionFailure(error)
-                return
-            }
-        }
-        await loadReport()
-    }
-
-    private func beginRefresh() {
-        guard started, !sleeping, !refreshing else { return }
-        refreshing = true
-        cancelPolling()
-        Task { [weak self] in
-            guard let self else { return }
-            await reloadTaskList()
-            finishRefresh()
-        }
-    }
-
-    private func finishRefresh() {
-        refreshing = false
-        schedulePolling()
-    }
-
     /// Publishes the write result, reloads the task list, runs `afterReload`, and publishes again.
     private func reloadAfterTaskWrite(afterReload: () -> Void = {}) async {
-        publish()
-        await reloadTaskList()
+        sync.publish()
+        await sync.reloadTaskList()
         afterReload()
-        publish()
+        sync.publish()
     }
 
     private func showCreatedTask(_ created: TaskItem) {
         let confirmed = task(withID: created.id) ?? created
         let changedTab = taskCatalog.changeTab(confirmed.archived ? .archived : .active)
         let changedSelection = taskCatalog.select(created.id)
-        if changedTab || changedSelection { requestHistory() }
+        if changedTab || changedSelection { sync.reloadHistory() }
     }
 
     private func reloadAfterWorklogWrite() async {
-        publish()
-        await reloadTaskList()
-        requestHistory()
-        publish()
+        sync.publish()
+        await sync.reloadTaskList()
+        sync.reloadHistory()
+        sync.publish()
     }
 
     private func loadMoveCandidates(_ search: WorklogMoveState.Search?) {
@@ -723,165 +586,8 @@ public final class TrackerSession {
             } catch {
                 move.failSearch(error, search: search)
             }
-            publish()
+            sync.publish()
         }
-    }
-
-    private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
-        dailyTotals.updateDay(at: clock.now)
-        let retryFailedHistory = connection.stale && worklogHistory.unavailable
-        connection.acceptTaskList()
-        menuBar.observe(resources, settings: connection.settings)
-        let previousActive = active
-        automation.observeActive(resources.tracking.value)
-        tracking.apply(resources.tracking.value, clock: clock)
-        if reports != nil && requestReport { dailyTotals.invalidate() }
-        let selectionChanged = taskCatalog.apply(
-            resources.catalog.value, previousActive: previousActive, active: active)
-        if selectionChanged || retryFailedHistory {
-            requestHistory()
-        } else if !worklogHistory.unavailable {
-            worklogHistory.clearError()
-        }
-        updateDisplayTimer()
-        updateRolloverTimer()
-        publish()
-    }
-
-    private func loadReport() async {
-        guard let reports, let requested = dailyTotals.begin(clock: clock) else { return }
-        // A first request shows the loading status, which the menu reads from the store.
-        publish()
-        do {
-            let refreshed = try await reports.refreshTaskListWithTotals(
-                settings: connection.settings, start: requested.start,
-                end: requested.end, now: requested.now)
-            try dailyTotals.validate(refreshed.report, tracking: refreshed.taskList.tracking)
-            dailyTotals.accept(
-                refreshed.report, tracking: refreshed.taskList.tracking,
-                requested: requested, clock: clock)
-            acceptTaskList(refreshed.taskList, requestReport: false)
-        } catch {
-            dailyTotals.fail(error, clock: clock)
-            if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
-            publish()
-        }
-    }
-
-    private func recordConnectionFailure(_ failure: Error) {
-        connection.recordFailure(failure)
-        schedulePolling()
-        worklogHistory.showError(failure.localizedDescription)
-        publish()
-    }
-
-    private func requestHistory() {
-        worklogHistory.request(selectedTaskID: selectedTaskID)
-        guard let taskID = selectedTaskID else { return }
-        loadHistory(taskID: taskID, cursor: nil)
-    }
-
-    private func loadHistory(taskID: String, cursor: String?) {
-        worklogHistory.beginLoading()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let page = try await client.history(taskID: taskID, cursor: cursor)
-                // Drop a page whose task is no longer selected.
-                guard taskID == selectedTaskID else { return }
-                worklogHistory.accept(page, cursor: cursor)
-            } catch {
-                guard taskID == selectedTaskID else { return }
-                worklogHistory.fail(error)
-                if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
-            }
-            publish()
-        }
-    }
-
-    private func schedulePolling() {
-        cancelPolling()
-        guard started, !sleeping, !refreshing, !connection.protocolBlocked else { return }
-        let interval = TrackerPollingPolicy.interval(visible: uiVisible, failures: connection.failures)
-        pollTimer = scheduler.schedule(after: interval, repeating: false, tolerance: min(5, interval * 0.2)) {
-            [weak self] in
-            self?.beginRefresh()
-        }
-    }
-
-    private func updateDisplayTimer() {
-        updateMenuBarClock()
-        let needed = started && !sleeping && uiVisible && active != nil
-        if !needed {
-            cancelDisplay()
-            return
-        }
-        guard displayTimer == nil else { return }
-        displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
-            guard let self else { return }
-            if reports != nil, dailyTotals.updateDay(at: clock.now) {
-                updateRolloverTimer()
-                if !connection.protocolBlocked { refresh() }
-            }
-            publish()
-        }
-    }
-
-    private func updateMenuBarClock() {
-        guard started, !sleeping, menuBarClockEnabled, active != nil else {
-            menuBarClock?.cancel()
-            menuBarClock = nil
-            return
-        }
-        guard menuBarClock == nil else { return }
-        menuBarClock = scheduler.schedule(after: 60, repeating: true, tolerance: 5) { [weak self] in
-            self?.publish()
-        }
-    }
-
-    private func cancelTimers() {
-        cancelPolling()
-        cancelDisplay()
-        menuBarClock?.cancel()
-        menuBarClock = nil
-        rolloverTimer?.cancel()
-        rolloverTimer = nil
-    }
-
-    private func updateRolloverTimer() {
-        rolloverTimer?.cancel()
-        rolloverTimer = nil
-        guard reports != nil, started, !sleeping, let day = dailyTotals.day else { return }
-        rolloverTimer = scheduler.schedule(
-            after: max(0.001, day.end.timeIntervalSince(clock.now)),
-            repeating: false, tolerance: 0
-        ) { [weak self] in
-            guard let self else { return }
-            dailyTotals.updateDay(at: clock.now)
-            updateRolloverTimer()
-            if !connection.protocolBlocked { refresh() }
-            publish()
-        }
-    }
-
-    private func cancelPolling() {
-        pollTimer?.cancel()
-        pollTimer = nil
-    }
-
-    private func cancelDisplay() {
-        displayTimer?.cancel()
-        displayTimer = nil
-    }
-
-    private func visibilityChanged(previouslyVisible: Bool) {
-        updateDisplayTimer()
-        if uiVisible && !previouslyVisible {
-            refresh()
-        } else if uiVisible != previouslyVisible {
-            schedulePolling()
-        }
-        publish()
     }
 
     private func task(withID id: String) -> TaskItem? { tasks.first { $0.id == id } }
@@ -902,13 +608,7 @@ public final class TrackerSession {
         taskCatalog.resetSelections()
         worklogHistory.request(selectedTaskID: nil)
         tracking.clearError()
-        acceptTaskList(resources)
-    }
-
-    private func publish() {
-        tracking.publish(clock: clock, confirmed: connection.confirmed)
-        dailyTotals.publish(tasks: tasks, active: active, clock: clock)
-        onChange?()
+        sync.acceptTaskList(resources)
     }
 }
 

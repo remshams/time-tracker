@@ -14,7 +14,7 @@ final class WorklogMoveTests: XCTestCase {
         let log = worklog ?? precise
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: log.end == nil ? log : nil))
         if log.end != nil {
-            fixture.session.retryHistory()
+            fixture.sync.retryHistory()
             let page = try await fixture.client.next()
             page.succeed(HistoryPage(worklogs: [log], nextCursor: "older", reset: false))
             try await fixture.settled()
@@ -74,7 +74,7 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let initial = try await fixture.client.next()
         initial.succeed(HistoryPage(worklogs: [log, oldWorklog], nextCursor: "older", reset: false))
         try await fixture.settled()
@@ -268,7 +268,7 @@ final class WorklogMoveTests: XCTestCase {
         defer { fixture.cleanup() }
         let running = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(running)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
@@ -409,7 +409,7 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: [precise], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -525,7 +525,7 @@ final class WorklogMoveTests: XCTestCase {
         _ = try await open(fixture)
         fixture.session.setWorklogMoveQuery("Destination")
         let search = try await fixture.client.next()
-        fixture.session.sleep()
+        fixture.sync.sleep()
         try await loadCandidates(fixture, search)
 
         XCTAssertFalse(fixture.session.worklogMove.isSearching)
@@ -538,7 +538,7 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         let changed = WorklogItem(
             id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
@@ -598,7 +598,7 @@ final class WorklogMoveTests: XCTestCase {
         let log = try await open(fixture)
         let third = TaskItem(id: "third", name: "Third task", archived: false, latestStart: nil)
         let tasks = [firstTask, secondTask, third]
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         refresh.succeed(TaskListResources(tasks: tasks, active: nil))
         try await fixture.settled()
@@ -648,7 +648,7 @@ final class WorklogMoveTests: XCTestCase {
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
         let running = TaskListResources(tasks: [firstTask, secondTask], active: log)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         fixture.session.submitWorklogMove()
         let command = try await fixture.client.next()

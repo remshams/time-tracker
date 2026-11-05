@@ -365,7 +365,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         defer { fixture.cleanup() }
         XCTAssertNil(fixture.totalDuration)
         XCTAssertEqual(fixture.totalDurationText, "Unavailable")
-        fixture.session.start()
+        fixture.sync.start()
         let open = try await fixture.client.next()
         open.succeed(emptyTaskListResources)
         let report = try await fixture.client.next()
@@ -448,7 +448,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         var observedStatuses: [DailyTotalsStatus] = []
         var observedErrors: [String?] = []
         var previous = (fixture.totalsDayStart, harness.dailyTotals.status)
-        fixture.session.onChange = {
+        fixture.sync.onChange = {
             harness.update()
             let current = (fixture.totalsDayStart, harness.dailyTotals.status)
             guard current != previous else { return }
@@ -457,7 +457,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             observedStatuses.append(harness.dailyTotals.status)
             observedErrors.append(fixture.totalsError)
         }
-        fixture.session.start()
+        fixture.sync.start()
         let open = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(86_400)
         open.succeed(emptyTaskListResources)
@@ -484,7 +484,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         fixture.clock.now = dailyDate("2025-01-01T23:59:58.000Z")
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources, rows: [total(firstTask, 30)])
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let yesterday = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(2)
         yesterday.fail(BridgeFailure(message: "Yesterday's report failed"))
@@ -524,7 +524,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.totalsError, "Yesterday unavailable")
         fixture.clock.now.addTimeInterval(86_400)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         XCTAssertEqual(fixture.totalsDayStart, fixture.clock.now)
         XCTAssertNil(fixture.totalsError)
@@ -552,7 +552,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         fixture.clock.now.addTimeInterval(1)
         var observedDays: [Date?] = []
         var observedErrors: [String?] = []
-        fixture.session.onChange = {
+        fixture.sync.onChange = {
             if fixture.session.active == nil {
                 observedDays.append(fixture.totalsDayStart)
                 observedErrors.append(fixture.totalsError)
@@ -589,7 +589,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         let initialRollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
         XCTAssertEqual(initialRollover.delay, 12 * 3_600)
         NSTimeZone.default = TimeZone(identifier: "America/New_York")!
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let changedZone = try await fixture.client.next()
         guard case .report(_, let start, let end, _) = changedZone.operation else {
             return XCTFail("The changed timezone must refresh the authoritative report.")
@@ -626,7 +626,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             id: "new-active", taskId: secondTask.id,
             start: "2025-01-01T00:00:00.000Z", end: nil)
         var publishedTotals: [TimeInterval?] = []
-        fixture.session.onChange = {
+        fixture.sync.onChange = {
             if fixture.session.active == newActive {
                 publishedTotals.append(fixture.session.dailyDuration(taskID: secondTask.id))
             }
@@ -672,7 +672,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     func testDisplayTicksUpdateOnlyTheRunningTaskTotalAndDoNotInvalidateTaskLists() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 10)])
         let harness = PresentationHarness(session: fixture.session)
@@ -706,7 +706,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertFalse(fixture.session.canStopTracking)
         XCTAssertEqual(fixture.totalsStatus, .cached)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(.local))
         refresh.succeed(resources)
@@ -748,7 +748,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             } else {
                 XCTAssertNotNil(fixture.scheduler.poll)
             }
-            fixture.session.refresh()
+            fixture.sync.refresh()
             let refresh = try await fixture.client.next()
             XCTAssertEqual(refresh.operation, .refresh(.local), failure.message)
             refresh.succeed(resources)
@@ -798,14 +798,14 @@ final class DailyTotalsSessionTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [total(firstTask, 10)])
         XCTAssertEqual(fixture.totalsStatus, .current)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertEqual(fixture.totalsStatus, .current)
 
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(.local))
         refresh.succeed(resources)
@@ -825,7 +825,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         for useDisplayTimer in [false, true] {
             let fixture = Fixture(reports: true, calendar: dailyCalendar())
             defer { fixture.cleanup() }
-            fixture.session.setWindowVisible(true)
+            fixture.sync.setWindowVisible(true)
             let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
             try await fixture.start(resources, rows: [total(firstTask, 4)])
             let display = try XCTUnwrap(fixture.scheduler.display)
@@ -932,7 +932,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources, rows: [total(firstTask, 30)])
         let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.delay == 2 })
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let yesterday = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(2)
         rollover.fire()
@@ -960,15 +960,15 @@ final class DailyTotalsSessionTests: XCTestCase {
     func testSleepCancelsRolloverAndWakeReanchorsBeforeRefreshingReport() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [total(firstTask, 4)])
         let timers = fixture.scheduler.active
-        fixture.session.sleep()
+        fixture.sync.sleep()
         XCTAssertTrue(timers.allSatisfy(\.cancelled))
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         fixture.clock.now.addTimeInterval(300)
-        fixture.session.wake()
+        fixture.sync.wake()
         let wake = try await fixture.client.next()
         guard case .report = wake.operation else {
             return XCTFail("Healthy wake must refresh the authoritative report.")

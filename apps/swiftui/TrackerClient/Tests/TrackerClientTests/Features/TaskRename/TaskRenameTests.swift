@@ -143,7 +143,7 @@ final class TaskRenameTests: XCTestCase {
         try await fixture.start(resources)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Draft name")
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         XCTAssertTrue(fixture.session.canOpenTaskRename)
         fixture.session.submitTaskRename()
@@ -386,7 +386,7 @@ final class TaskRenameTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Renamed while locked")
