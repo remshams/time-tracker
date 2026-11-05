@@ -198,7 +198,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "focused")
         self.assertIn(scope.SOURCES + "Features/TaskCreation/TaskCreationState.swift", result["files"])
-        self.assertIn(scope.SOURCES + "Features/TrackingAutomation/TrackingAutomationState.swift", result["files"])
+        self.assertIn(scope.SOURCES + "Features/TrackingAutomation/TrackingAutomationStore.swift", result["files"])
 
     def test_docs_only_change_records_explicit_empty_scope(self):
         self.write("README.md", "Updated documentation\n")
