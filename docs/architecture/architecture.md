@@ -242,7 +242,7 @@ title: Starting tracking in the macOS app in remote mode
 sequenceDiagram
     actor User
     participant App as macOS app
-    participant Session as TrackerSession
+    participant Session as TrackerSession and TrackerSync
     participant Worker as TrackerWorker and bridge
     participant Remote as tracker-remote
     participant Server as tracker-server
