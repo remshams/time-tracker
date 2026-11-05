@@ -208,7 +208,7 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   (`tt_bridge_unarchive_task_at`) and bulk archive
   (`tt_bridge_archive_inactive_tasks_at`) carry none.
 - [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift):
-  feature state, `TrackerSession` and `TrackerSync` behind injected client,
+  feature state, `TrackerSession`, `TrackerSync` and `TrackingActions` behind injected client,
   report, clock, scheduler and settings interfaces. Each action sends its request right away; each feature
   disables only its own controls while a request runs
   ([ADR 0026](adr/0026-use-swift-observation-for-native-presentation.md),
@@ -217,15 +217,19 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   task's worklogs from `WorklogHistoryStore`, the connection settings and
   status from `ConnectionStore`, the running worklog, tracking error and timer
   text from `TrackingStore`, today's status and task totals from
-  `DailyTotalsStore`, and the other session values from `TrackerPresentation`
+  `DailyTotalsStore`, the auto-pause preference and status from
+  `TrackingAutomationStore`, and the other session values from `TrackerPresentation`
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
   bar observer reads these stores, the last tracked task from `MenuBarStore`
   and the values that combine features from `TrackerPresentation` through one
   `Observations` loop. `TrackerSync` loads, refreshes and polls the stores,
-  runs the display, rollover and menu bar timers and handles visibility, sleep
-  and wake. The session creates the stores and passes them in; its tracking,
-  auto-pause, connection change and editor flows call `TrackerSync` to reload
-  and publish. `WorklogHistoryStore` sends its own page requests and reports
+  runs the display, rollover and menu bar timers, handles visibility, sleep
+  and wake, and pauses and resumes tracking when the screen locks and unlocks.
+  `TrackingActions` starts and stops tracking and decides which of those
+  requests are possible; it calls `TrackerSync` to reload and publish, and the
+  sync never calls it. The session creates the stores, `TrackerSync` and
+  `TrackingActions`; its connection change and editor flows call `TrackerSync`
+  to reload and publish. `WorklogHistoryStore` sends its own page requests and reports
   each page or failure to `TrackerSync`, which records connection failures.
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
@@ -242,7 +246,7 @@ title: Starting tracking in the macOS app in remote mode
 sequenceDiagram
     actor User
     participant App as macOS app
-    participant Session as TrackerSession and TrackerSync
+    participant Session as TrackingActions and TrackerSync
     participant Worker as TrackerWorker and bridge
     participant Remote as tracker-remote
     participant Server as tracker-server
