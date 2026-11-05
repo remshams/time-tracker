@@ -130,9 +130,9 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture(lastTrackedTasks: repository)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .stop(worklogID: activeWorklog.id))
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .stop(worklogID: activeWorklog.id))
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         stop.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
@@ -143,7 +143,7 @@ final class StatusItemTests: XCTestCase {
         let selectionHistory = try await fixture.client.next()
         selectionHistory.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .start(taskID: firstTask.id))
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .start(taskID: firstTask.id))
         let start = try await fixture.client.next()
         XCTAssertEqual(start.operation, .start(task: firstTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))
         start.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
@@ -160,7 +160,7 @@ final class StatusItemTests: XCTestCase {
             defer { fixture.cleanup() }
             try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: nil))
             let count = fixture.client.operations.count
-            XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .openMenu)
+            XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .openMenu)
             XCTAssertEqual(fixture.client.operations.count, count)
             let label = TrackerMenuLabelContent(.current(fixture.session), showDailyTotal: false)
             XCTAssertEqual(label.indicator.taskID, remembered)
@@ -180,13 +180,13 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture(lastTrackedTasks: repository)
         defer { fixture.cleanup() }
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         try await fixture.start(TaskListResources(tasks: [renamed], active: nil))
         let label = TrackerMenuLabelContent(.current(fixture.session), showDailyTotal: false)
         XCTAssertEqual(label.help, "Stopped. Last tracked: Renamed task")
         XCTAssertEqual(label.indicator.color, TaskColor.forTaskID(firstTask.id))
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: firstTask.id))
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .start(taskID: firstTask.id))
     }
 
     @MainActor
@@ -198,13 +198,13 @@ final class StatusItemTests: XCTestCase {
         let refresh = try await fixture.client.next()
         refresh.fail(BridgeFailure(message: "Offline"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         let label = TrackerMenuLabelContent(.current(fixture.session), showDailyTotal: false)
         XCTAssertEqual(label.indicator.symbol, "circle")
         XCTAssertEqual(label.help, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         let count = fixture.client.operations.count
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.client.operations.count, count)
     }
 
@@ -216,10 +216,10 @@ final class StatusItemTests: XCTestCase {
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connection = try await fixture.client.next()
         XCTAssertTrue(fixture.session.connection.changing)
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .disabled)
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .disabled)
         connection.fail(BridgeFailure(message: "Connection rejected"))
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
@@ -255,7 +255,7 @@ final class StatusItemTests: XCTestCase {
         XCTAssertTrue(connected)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, secondTask.id)
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: secondTask.id))
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .start(taskID: secondTask.id))
         XCTAssertEqual(repository.tasks[ConnectionSettings.local.trackingIdentityKey], firstTask.id)
         XCTAssertEqual(repository.tasks[serverSettings.trackingIdentityKey], secondTask.id)
     }
@@ -267,17 +267,17 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture(lastTrackedTasks: repository)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        fixture.session.startTracking(taskID: secondTask.id)
+        fixture.trackingActions.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
         start.fail(BridgeFailure(message: "Rejected start"))
         let reconciliation = try await fixture.client.next()
         XCTAssertEqual(reconciliation.operation, .refresh(fixture.session.connectionSettings))
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         reconciliation.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: firstTask.id))
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .start(taskID: firstTask.id))
         XCTAssertEqual(repository.writes.count, 1)
     }
 
@@ -298,7 +298,7 @@ final class StatusItemTests: XCTestCase {
         try await fixture.settled()
         try await menu.settled()
         XCTAssertEqual(observer.label.indicator.taskID, firstTask.id)
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .stop(worklogID: replacement.id))
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .stop(worklogID: replacement.id))
         observer.menuClosed()
         XCTAssertEqual(observer.label.indicator.taskID, secondTask.id)
         XCTAssertEqual(observer.label.status, "Tracking: Second task")
@@ -309,11 +309,11 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.screenLocked(at: fixture.clock.now)
+        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         let count = fixture.client.operations.count
-        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
+        XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.client.operations.count, count)
-        fixture.session.screenUnlocked(at: fixture.clock.now)
-        XCTAssertEqual(fixture.session.menuPrimaryAction, .stop(worklogID: activeWorklog.id))
+        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .stop(worklogID: activeWorklog.id))
     }
 }

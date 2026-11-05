@@ -19,7 +19,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        fixture.session.startTracking(taskID: secondTask.id)
+        fixture.trackingActions.startTracking(taskID: secondTask.id)
         let content = TrackerMenuContent(.current(fixture.session), taskOrder: .newestFirst)
         XCTAssertFalse(content.canStopTracking)
         let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
@@ -103,7 +103,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
             return XCTFail("Expected the captured stop action")
         }
         let count = fixture.client.operations.count
-        fixture.session.stopTracking(worklogID: id)
+        fixture.trackingActions.stopTracking(worklogID: id)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.active?.id, changed.id)
         observer.menuClosed()

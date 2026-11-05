@@ -40,9 +40,9 @@ final class PresentationTests: XCTestCase {
         refresh.succeed(TaskListResources(tasks: [renamed], active: activeWorklog))
         try await harness.settled(fixture)
         XCTAssertEqual(names.values, ["Renamed task"])
-        fixture.session.setPauseOnScreenLock(true)
+        fixture.sync.setPauseOnScreenLock(true)
         XCTAssertEqual(names.values, ["Renamed task", "Renamed task"])
-        XCTAssertTrue(harness.presentation.pauseOnScreenLock)
+        XCTAssertTrue(harness.automation.enabled)
         harness.update()
         XCTAssertEqual(names.count, 2)
     }
@@ -88,10 +88,10 @@ final class PresentationTests: XCTestCase {
             fixture.scheduler.poll?.fire()
             let refresh = try await fixture.client.next()
             XCTAssertTrue(fixture.client.hasPendingRequests)
-            XCTAssertTrue(fixture.session.canStopTracking)
+            XCTAssertTrue(fixture.trackingActions.canStopTracking)
             refresh.succeed(resources)
             try await harness.settled(fixture)
-            XCTAssertTrue(fixture.session.canStopTracking)
+            XCTAssertTrue(fixture.trackingActions.canStopTracking)
         }
         XCTAssertEqual(content.count, 0)
         XCTAssertEqual(timer.count, 0)
@@ -150,7 +150,7 @@ final class PresentationTests: XCTestCase {
         XCTAssertGreaterThan(lists.count, 0)
 
         XCTAssertTrue(harness.presentation.canStartTracking(taskID: firstTask.id))
-        fixture.session.startTracking(taskID: firstTask.id)
+        fixture.trackingActions.startTracking(taskID: firstTask.id)
         XCTAssertFalse(harness.presentation.canStartTracking(taskID: firstTask.id))
         let start = try await fixture.client.next()
         start.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
@@ -217,7 +217,7 @@ final class PresentationTests: XCTestCase {
         try await fixture.start(running)
         let harness = PresentationHarness(session: fixture.session)
 
-        fixture.session.startTracking(taskID: secondTask.id)
+        fixture.trackingActions.startTracking(taskID: secondTask.id)
         let write = try await fixture.client.next()
         write.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let confirmation = try await fixture.client.next()
@@ -226,20 +226,20 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual(
             harness.tracking.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        fixture.session.dismissTrackingError()
+        fixture.trackingActions.dismissTrackingError()
         XCTAssertNil(harness.tracking.error)
 
-        fixture.session.screenLocked(at: fixture.clock.now)
+        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         pause.paused(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.autoPauseStatusText, "Paused while screen is locked")
+        XCTAssertEqual(harness.automation.statusText, "Paused while screen is locked")
         XCTAssertNil(harness.tracking.active)
 
-        fixture.session.screenUnlocked(at: fixture.clock.now)
-        XCTAssertNil(harness.presentation.autoPauseStatusText, "Unlocking must clear the status before the resume.")
+        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        XCTAssertNil(harness.automation.statusText, "Unlocking must clear the status before the resume.")
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(fixture.clock.now)))
         resume.succeed(running)

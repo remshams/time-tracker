@@ -1,10 +1,11 @@
 import Foundation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
-/// rollover and menu bar timers, window and menu visibility, and sleep and wake.
+/// rollover and menu bar timers, window and menu visibility, sleep and wake, and the screen-lock auto-pause.
 ///
-/// `TrackerSession` creates the stores and passes them in. Its flows call the package-internal methods below,
-/// for example to reload the task list or the history, record a connection failure and publish.
+/// `TrackerSession` creates the stores and passes them in. Its flows and `TrackingActions` call the
+/// package-internal methods below, for example to reload the task list or the history, record a failure and
+/// publish.
 public final class TrackerSync {
     public var onChange: (() -> Void)?
 
@@ -18,7 +19,8 @@ public final class TrackerSync {
     private let tracking: TrackingStore
     private let dailyTotals: DailyTotalsStore
     private let menuBar: MenuBarStore
-    private let automation: TrackingAutomationState
+    private let automation: TrackingAutomationStore
+    private let trackingPreferences: any TrackingPreferencesRepository
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
     private var rolloverTimer: (any TrackerCancellation)?
@@ -37,7 +39,8 @@ public final class TrackerSync {
         client: any TrackerClient, reports: (any ReportClient)?, clock: any TrackerClock,
         scheduler: any TrackerScheduler, catalog: TaskCatalogStore, history: WorklogHistoryStore,
         connection: ConnectionStore, tracking: TrackingStore, dailyTotals: DailyTotalsStore,
-        menuBar: MenuBarStore, automation: TrackingAutomationState
+        menuBar: MenuBarStore, automation: TrackingAutomationStore,
+        trackingPreferences: any TrackingPreferencesRepository
     ) {
         self.client = client
         self.reports = reports
@@ -50,6 +53,7 @@ public final class TrackerSync {
         self.dailyTotals = dailyTotals
         self.menuBar = menuBar
         self.automation = automation
+        self.trackingPreferences = trackingPreferences
     }
 
     isolated deinit {
@@ -138,6 +142,40 @@ public final class TrackerSync {
         publish()
     }
 
+    /// Turns the screen-lock auto-pause on or off and saves the preference. Turning it on while the screen is
+    /// locked pauses the running timer.
+    public func setPauseOnScreenLock(_ enabled: Bool) {
+        guard automation.setEnabled(enabled) else { return }
+        trackingPreferences.save(TrackingPreferences(pauseOnScreenLock: enabled))
+        if enabled && automation.locked { pauseTracking(at: clock.now) }
+        publish()
+    }
+
+    /// Pauses the running timer when the screen locks and resumes its task when the screen unlocks, if the
+    /// auto-pause is on. `date` is when the event happened, which the requests send as their time.
+    public func setScreenLocked(_ locked: Bool, at date: Date) {
+        if locked {
+            guard automation.lock() else { return }
+            if automation.enabled { pauseTracking(at: date) }
+        } else if let resume = automation.unlock(at: date) {
+            Task { [weak self] in
+                guard let self else { return }
+                await resumeTracking(resume)
+                await reloadTaskList()
+                publish()
+            }
+        }
+        publish()
+    }
+
+    /// Drops a pending automatic resume, because a manual tracking request wins over it.
+    func cancelAutoResume() { automation.cancel() }
+
+    /// Shows the failure of a tracking request at the next publish.
+    func recordTrackingFailure(_ error: Error) {
+        tracking.recordError(writeFailure(error).localizedDescription)
+    }
+
     /// Reloads the task list and, with a report client, today's totals.
     func reloadTaskList() async {
         dailyTotals.updateDay(at: clock.now)
@@ -223,6 +261,7 @@ public final class TrackerSync {
 
     func publish() {
         tracking.publish(clock: clock, confirmed: connection.confirmed)
+        automation.publish()
         dailyTotals.publish(tasks: catalog.tasks, active: tracking.active, clock: clock)
         onChange?()
     }
@@ -233,6 +272,35 @@ public final class TrackerSync {
             guard let self else { return }
             if let failure, requiresConnectionRecovery(failure) { recordConnectionFailure(failure) }
             publish()
+        }
+    }
+
+    private func pauseTracking(at date: Date) {
+        guard let worklog = tracking.active, automation.beginPause() else { return }
+        tracking.clearError()
+        let occurredAt = formatTimestamp(date)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await client.pauseTracking(worklogID: worklog.id, occurredAt: occurredAt)
+                if let resume = automation.paused(taskID: worklog.taskId, didStop: result.didStop) {
+                    await resumeTracking(resume)
+                }
+            } catch {
+                automation.pauseFailed()
+                recordTrackingFailure(error)
+            }
+            await reloadTaskList()
+            publish()
+        }
+    }
+
+    /// Only follows a successful pause, which already cleared the tracking error.
+    private func resumeTracking(_ resume: TrackingAutomationStore.Resume) async {
+        do {
+            _ = try await client.resumeTracking(taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
+        } catch {
+            recordTrackingFailure(error)
         }
     }
 

@@ -212,8 +212,8 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.taskValue(finished)
         try await menu.settled()
         let count = fixture.client.operations.count
-        fixture.session.stopTracking(worklogID: try XCTUnwrap(observer.content.activeWorklogID))
-        fixture.session.startTracking(taskID: target.id)
+        fixture.trackingActions.stopTracking(worklogID: try XCTUnwrap(observer.content.activeWorklogID))
+        fixture.trackingActions.startTracking(taskID: target.id)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.active?.id, changed.id)
         XCTAssertEqual(observer.content.activeWorklogID, activeWorklog.id)

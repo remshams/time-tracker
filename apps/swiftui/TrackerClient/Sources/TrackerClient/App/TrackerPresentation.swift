@@ -8,9 +8,6 @@ import Observation
 /// only the views that read the changed values.
 @Observable
 public final class TrackerPresentation: ChangeGuardedStore {
-    public private(set) var pauseOnScreenLock: Bool
-    public private(set) var autoPauseStatusText: String?
-
     public private(set) var runningTaskName: String
     public private(set) var canStopTracking: Bool
     public private(set) var startableTaskIDs: Set<String>
@@ -37,10 +34,8 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var canOpenWorklogDeletion: Bool
 
     public init(session: TrackerSession) {
-        pauseOnScreenLock = session.pauseOnScreenLock
-        autoPauseStatusText = session.autoPauseStatusText
         runningTaskName = session.runningTaskName
-        canStopTracking = session.canStopTracking
+        canStopTracking = session.trackingActions.canStopTracking
         startableTaskIDs = Self.startableTaskIDs(session)
         taskCreation = session.taskCreation
         canOpenTaskCreation = session.canOpenTaskCreation
@@ -65,10 +60,8 @@ public final class TrackerPresentation: ChangeGuardedStore {
     }
 
     public func update(from session: TrackerSession) {
-        set(\.pauseOnScreenLock, session.pauseOnScreenLock)
-        set(\.autoPauseStatusText, session.autoPauseStatusText)
         set(\.runningTaskName, session.runningTaskName)
-        set(\.canStopTracking, session.canStopTracking)
+        set(\.canStopTracking, session.trackingActions.canStopTracking)
         set(\.startableTaskIDs, Self.startableTaskIDs(session))
         set(\.taskCreation, session.taskCreation)
         set(\.canOpenTaskCreation, session.canOpenTaskCreation)
@@ -98,7 +91,7 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public func canUnarchiveTask(taskID: String) -> Bool { unarchivableTaskIDs.contains(taskID) }
 
     private static func startableTaskIDs(_ session: TrackerSession) -> Set<String> {
-        Set(session.tasks.map(\.id).filter { session.canStartTracking(taskID: $0) })
+        Set(session.tasks.map(\.id).filter { session.trackingActions.canStartTracking(taskID: $0) })
     }
 
     private static func archivableTaskIDs(_ session: TrackerSession) -> Set<String> {
