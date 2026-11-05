@@ -35,7 +35,7 @@ public struct TrackerMenuContent: Equatable {
         elapsedText = inputs.active == nil ? nil : inputs.timerText
         canStopTracking = inputs.canStopTracking
         dailyTotalsStatus = inputs.dailyTotalsStatus
-        totalText = inputs.dayTotal.map(formatClockDuration) ?? "Unavailable"
+        totalText = inputs.dayTotalText
         totalsExplanation = inputs.totalsExplanation
         // Tasks with time logged today, in task list order before the menu's own order applies.
         let today = inputs.tasks.filter { (inputs.taskDurations[$0.id] ?? 0) > 0 }
@@ -51,7 +51,7 @@ public struct TrackerMenuContent: Equatable {
 
     private static func entry(_ task: TaskItem, inputs: TrackerMenuInputs) -> TrackerMenuTask {
         TrackerMenuTask(
-            task: task, durationText: inputs.taskDurations[task.id].map(formatClockDuration) ?? "-",
+            task: task, durationText: inputs.durationText(taskID: task.id),
             isRunning: inputs.active?.taskId == task.id,
             canStart: inputs.startableTaskIDs.contains(task.id))
     }
