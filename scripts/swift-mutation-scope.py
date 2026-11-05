@@ -183,16 +183,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture exposes the session's TrackingActions and TrackingAutomationStore",
-     (("    var sync: TrackerSync { session.sync }\n",
-       "    var sync: TrackerSync { session.sync }\n"
-       "    var trackingActions: TrackingActions { session.trackingActions }\n"
-       "    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }\n"),),
-     None, None,
-     ("Features/Tracking/TrackingTests.swift", "Features/TrackingAutomation/TrackingAutomationTests.swift"),
-     ("Features/Tracking/TrackingTests.swift", "Features/TrackingAutomation/TrackingAutomationTests.swift")),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
