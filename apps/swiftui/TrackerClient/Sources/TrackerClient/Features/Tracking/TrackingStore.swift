@@ -44,7 +44,7 @@ public final class TrackingStore: ChangeGuardedStore {
         return elapsed(clock: clock).map(formatClockDuration) ?? "Idle"
     }
 
-    /// Shows the recorded error and the current timer text. The session calls this each time it publishes.
+    /// Shows the recorded error and the current timer text. `TrackerSync` calls this each time it publishes.
     func publish(clock: any TrackerClock, confirmed: Bool) {
         set(\.timerText, displayText(clock: clock, confirmed: confirmed))
         set(\.error, recordedError)

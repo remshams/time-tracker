@@ -191,7 +191,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         }
     }
 
-    /// Shows the current status, the day's total and each task's total. The session calls this each time it
+    /// Shows the current status, the day's total and each task's total. `TrackerSync` calls this each time it
     /// publishes.
     func publish(tasks: [TaskItem], active: WorklogItem?, clock: any TrackerClock) {
         set(\.status, shownStatus(clock: clock))
