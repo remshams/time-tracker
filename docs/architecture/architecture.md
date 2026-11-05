@@ -221,7 +221,12 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
   bar observer reads these stores, the last tracked task from `MenuBarStore`
   and the values that combine features from `TrackerPresentation` through one
-  `Observations` loop.
+  `Observations` loop. `TrackerSync` loads, refreshes and polls the stores,
+  runs the display, rollover and menu bar timers and handles visibility, sleep
+  and wake. The session creates the stores and passes them in; its tracking,
+  auto-pause, connection change and editor flows call `TrackerSync` to reload
+  and publish. `WorklogHistoryStore` sends its own page requests and reports
+  failures to `TrackerSync`, which records connection failures.
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
   serial
