@@ -22,8 +22,7 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
     public var taskDurations: [String: TimeInterval]
     public var lastTrackedTaskID: String?
 
-    // `formatClockDuration` is main-actor isolated by the target's default isolation.
-
+    // The text helpers are main-actor isolated because `formatClockDuration` is.
     /// The day's total as the menu shows it, or "Unavailable" while no total is known.
     @MainActor var dayTotalText: String {
         dayTotal.map(formatClockDuration) ?? "Unavailable"
