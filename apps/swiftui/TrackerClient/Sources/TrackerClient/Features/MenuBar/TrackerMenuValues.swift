@@ -13,7 +13,7 @@ public struct TrackerMenuValues: Equatable, Sendable {
         } else {
             elapsedText = nil
         }
-        let total = inputs.dayTotal.map(formatClockDuration) ?? "Unavailable"
+        let total = inputs.dayTotalText
         totalText =
             sameConnection
             ? (inputs.dailyTotalsStatus == .cached ? "~\(total)" : total) : "Unavailable"
@@ -28,6 +28,6 @@ public struct TrackerMenuValues: Equatable, Sendable {
     }
 
     private static func taskDurationText(_ inputs: TrackerMenuInputs, taskID: String, sameConnection: Bool) -> String {
-        sameConnection ? inputs.taskDurations[taskID].map(formatClockDuration) ?? "-" : "-"
+        sameConnection ? inputs.durationText(taskID: taskID) : "-"
     }
 }
