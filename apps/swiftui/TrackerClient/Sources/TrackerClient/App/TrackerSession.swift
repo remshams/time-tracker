@@ -3,17 +3,18 @@ import Foundation
 public final class TrackerSession {
     /// Loads, refreshes and polls the stores, runs the timers and publishes after each change.
     public let sync: TrackerSync
-    /// Views read the task list, tab and selection here; the session writes them.
+    /// Views read the task list, tab and selection here; the sync and the session write them.
     public let taskCatalog = TaskCatalogStore()
     /// Views read the selected task's worklog pages and the history panel's state here; the store loads them.
     public let worklogHistory: WorklogHistoryStore
-    /// Views read the connection settings and status here; the session writes them.
+    /// Views read the connection settings and status here; the sync and the session write them.
     public let connection: ConnectionStore
-    /// Views read the running worklog, the tracking error and the timer text here; the session writes them.
+    /// Views read the running worklog, the tracking error and the timer text here; the sync and the session write
+    /// them.
     public let tracking = TrackingStore()
-    /// Views read today's status and task totals here; the session writes them.
+    /// Views read today's status and task totals here; the sync and the session write them.
     public let dailyTotals: DailyTotalsStore
-    /// The menu bar reads the last tracked task here; the session writes it.
+    /// The menu bar reads the last tracked task here; the sync writes it.
     public let menuBar: MenuBarStore
 
     private let client: any TrackerClient
