@@ -314,7 +314,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskRename.isPresented)
         XCTAssertTrue(fixture.session.taskCreation.isPresented)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        let connect = Task { await fixture.session.connect(serverSettings) }
+        let connect = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connect)
@@ -369,7 +369,7 @@ final class TaskRenameTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Current server draft")
-        let connect = Task { await fixture.session.connect(serverSettings) }
+        let connect = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.fail(BridgeFailure(message: "Connection failed", kind: "unavailable"))
         let connected = try await fixture.taskValue(connect)

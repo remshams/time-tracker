@@ -455,12 +455,12 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isPresented)
         fixture.session.cancelTaskArchiving()
 
-        let testing = Task { try await fixture.session.testConnection(.local) }
+        let testing = Task { try await testConnectionSettings(.local, client: fixture.client) }
         let test = try await fixture.client.next()
         XCTAssertEqual(test.operation, .test(.local))
         test.tested()
         try await fixture.taskValue(testing)
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         XCTAssertEqual(connection.operation, .connect(serverSettings))
         connection.succeed(emptyTaskListResources)

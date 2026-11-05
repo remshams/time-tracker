@@ -190,7 +190,7 @@ final class PresentationTests: XCTestCase {
         XCTAssertNotNil(harness.history.error)
         XCTAssertTrue(harness.history.unavailable)
 
-        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         XCTAssertTrue(harness.connection.changing)
         request.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
@@ -199,7 +199,7 @@ final class PresentationTests: XCTestCase {
         XCTAssertFalse(harness.connection.changing)
         XCTAssertNotNil(harness.connection.message)
 
-        let connected = Task { await fixture.session.connect(serverSettings) }
+        let connected = Task { await fixture.sync.connect(serverSettings) }
         let accepted = try await fixture.client.next()
         accepted.succeed(TaskListResources(tasks: [firstTask], active: nil))
         try await fixture.client.next().succeed(emptyPage)

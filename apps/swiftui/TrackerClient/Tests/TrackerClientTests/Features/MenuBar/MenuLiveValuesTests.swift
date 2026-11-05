@@ -119,7 +119,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
         observer.menuOpened()
-        let connect = Task { await fixture.session.connect(serverSettings) }
+        let connect = Task { await fixture.sync.connect(serverSettings) }
         let request = try await fixture.client.next()
         request.succeed(resources)
         let report = try await fixture.client.next()
