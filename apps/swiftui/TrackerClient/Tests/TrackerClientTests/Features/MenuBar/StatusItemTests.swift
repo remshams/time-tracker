@@ -194,7 +194,7 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         refresh.fail(BridgeFailure(message: "Offline"))
         try await fixture.settled()

@@ -13,7 +13,7 @@ final class WorklogCorrectionTests: XCTestCase {
     private func openCompleted(_ fixture: Fixture, worklog: WorklogItem? = nil) async throws -> WorklogItem {
         let log = worklog ?? preciseLog
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [log], nextCursor: "older", reset: false))
         try await fixture.settled()
@@ -58,7 +58,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertNil(fixture.session.worklogCorrection.original)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         let running = WorklogItem(
             id: "running-log", taskId: secondTask.id,
@@ -430,7 +430,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [preciseLog], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -453,7 +453,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let log = try await openCompleted(fixture)
         let draft = try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z"))
         fixture.session.setWorklogCorrectionStart(draft)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let changed = WorklogItem(
             id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
         let history = try await fixture.client.next()

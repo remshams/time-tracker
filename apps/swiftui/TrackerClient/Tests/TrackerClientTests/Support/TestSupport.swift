@@ -411,6 +411,7 @@ final class Fixture {
     let scheduler = FakeScheduler()
     let settings: MemorySettings
     let session: TrackerSession
+    var sync: TrackerSync { session.sync }
     let preferences: MemoryTrackingPreferences
     private let reportsEnabled: Bool
 
@@ -431,13 +432,13 @@ final class Fixture {
     }
 
     func cleanup() {
-        session.onChange = nil
-        session.sleep()
+        sync.onChange = nil
+        sync.sleep()
         client.close()
     }
 
     func start(_ resources: TaskListResources = emptyTaskListResources, rows: [TaskReportTotal] = []) async throws {
-        session.start()
+        sync.start()
         let open = try await client.next()
         XCTAssertEqual(open.operation, .open(settings.saved ?? .local))
         open.succeed(resources)
@@ -494,15 +495,15 @@ final class Fixture {
         after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }
     ) async throws {
         let expectation = XCTestExpectation(description: description)
-        session.onChange = { [weak session] in
+        sync.onChange = { [weak sync = session.sync] in
             if condition() {
-                session?.onChange = nil
+                sync?.onChange = nil
                 expectation.fulfill()
             }
         }
         action()
         let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
-        session.onChange = nil
+        sync.onChange = nil
         guard result == .completed else {
             cleanup()
             throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")
@@ -516,14 +517,14 @@ final class Fixture {
     ) async throws {
         if condition() { return }
         let expectation = XCTestExpectation(description: description)
-        session.onChange = { [weak session] in
+        sync.onChange = { [weak sync = session.sync] in
             if condition() {
-                session?.onChange = nil
+                sync?.onChange = nil
                 expectation.fulfill()
             }
         }
         let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
-        session.onChange = nil
+        sync.onChange = nil
         guard result == .completed else {
             cleanup()
             throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")

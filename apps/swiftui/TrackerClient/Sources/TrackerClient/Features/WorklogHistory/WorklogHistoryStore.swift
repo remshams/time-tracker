@@ -3,9 +3,10 @@ import Observation
 
 /// Holds the selected task's worklog pages and the history panel's loading and error state.
 ///
-/// Views read the properties; `TrackerSession` writes them. Each property is assigned only when its value
-/// changes, so an unchanged poll redraws nothing and loading another page leaves the "Load older" button
-/// alone unless more pages appear or run out.
+/// Views read the properties. `TrackerSync` asks the store to reload the selected task or load more, and the
+/// store sends those page requests itself. Each property is assigned only when its value changes, so an
+/// unchanged poll redraws nothing and loading another page leaves the "Load older" button alone unless more
+/// pages appear or run out.
 @Observable
 public final class WorklogHistoryStore: ChangeGuardedStore {
     public private(set) var worklogs: [WorklogItem] = []
@@ -15,9 +16,28 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
     /// The history panel's message. It also shows connection failures, which tell the user why the list may be
     /// out of date.
     public private(set) var error: String?
-    // Only the session's load code reads the cursor and the requested task, so views don't observe them.
+    // Only the page requests read the cursor and the requested task, so views don't observe them.
     @ObservationIgnored private(set) var nextCursor: String?
     @ObservationIgnored private var taskID: String?
+    private let client: any TrackerClient
+
+    init(client: any TrackerClient) { self.client = client }
+
+    /// Starts over with the selected task's first page. Requests are never cancelled: `finished` receives nil
+    /// after a page arrives and the error after a failure, and isn't called for a page or failure whose task is
+    /// no longer selected.
+    func reload(selectedTaskID: String?, finished: @escaping @MainActor (Error?) -> Void) {
+        request(selectedTaskID: selectedTaskID)
+        guard let selectedTaskID else { return }
+        load(taskID: selectedTaskID, cursor: nil, finished: finished)
+    }
+
+    /// Requests the page after the loaded ones. Returns false when a page is loading or none is left.
+    func loadMore(finished: @escaping @MainActor (Error?) -> Void) -> Bool {
+        guard !isLoading, let taskID, let nextCursor else { return false }
+        load(taskID: taskID, cursor: nextCursor, finished: finished)
+        return true
+    }
 
     func request(selectedTaskID: String?) {
         if taskID != selectedTaskID {
@@ -54,6 +74,24 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
 
     func clearError() {
         set(\.error, nil)
+    }
+
+    private func load(taskID requested: String, cursor: String?, finished: @escaping @MainActor (Error?) -> Void) {
+        beginLoading()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let page = try await client.history(taskID: requested, cursor: cursor)
+                // Drop a page whose task is no longer selected.
+                guard requested == taskID else { return }
+                accept(page, cursor: cursor)
+                finished(nil)
+            } catch {
+                guard requested == taskID else { return }
+                fail(error)
+                finished(error)
+            }
+        }
     }
 
     private func setCursor(_ cursor: String?) {

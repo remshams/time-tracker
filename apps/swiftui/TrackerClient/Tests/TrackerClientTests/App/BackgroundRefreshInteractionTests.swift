@@ -9,7 +9,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         fixture.session.startTracking(taskID: secondTask.id)
         fixture.clock.now.addTimeInterval(120)
@@ -44,7 +44,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         fixture.session.stopTracking(worklogID: activeWorklog.id)
         fixture.clock.now.addTimeInterval(90)
@@ -78,9 +78,9 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         XCTAssertEqual(poll.operation, .refresh(.local))
         XCTAssertNil(fixture.scheduler.poll)
         let count = fixture.client.operations.count
-        fixture.session.refresh()
-        fixture.session.refresh()
-        fixture.session.setWindowVisible(true)
+        fixture.sync.refresh()
+        fixture.sync.refresh()
+        fixture.sync.setWindowVisible(true)
         XCTAssertNil(fixture.scheduler.poll)
         XCTAssertEqual(fixture.client.operations.count, count)
         poll.succeed(emptyTaskListResources)
@@ -101,7 +101,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         let testing = Task { try await fixture.session.testConnection(serverSettings) }
         let test = try await fixture.client.next()

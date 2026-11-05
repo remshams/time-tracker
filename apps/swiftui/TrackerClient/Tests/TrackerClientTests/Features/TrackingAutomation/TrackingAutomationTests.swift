@@ -141,7 +141,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(idle)
         fixture.session.screenLocked(at: fixture.clock.now)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let startedElsewhere = try await fixture.client.next()
         XCTAssertEqual(startedElsewhere.operation, .refresh(.local))
         startedElsewhere.succeed(running)
@@ -150,7 +150,7 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.session.active, activeWorklog)
 
         fixture.session.setPauseOnScreenLock(false)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let next = try await fixture.client.next()
         XCTAssertEqual(next.operation, .refresh(.local), "Disabling the preference must not pause tracking.")
         next.succeed(running)
@@ -209,7 +209,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(idle)
         let lock = fixture.clock.now
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let taskListRequest = try await fixture.client.next()
         fixture.session.screenLocked(at: lock)
         let later = WorklogItem(
@@ -301,13 +301,13 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.session.sleep()
+        fixture.sync.sleep()
         fixture.session.screenLocked(at: fixture.clock.now)
         let pause = try await fixture.client.next()
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
-        fixture.session.wake()
+        fixture.sync.wake()
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(.local))
         refresh.succeed(idle)
@@ -383,13 +383,13 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         try await acknowledgePause(fixture)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         refresh.succeed(running)
         try await finishHistory(fixture)
         try await fixture.settled()
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let idleRefresh = try await fixture.client.next()
         idleRefresh.succeed(idle)
         try await finishHistory(fixture)
@@ -447,7 +447,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         try await acknowledgePause(fixture)
-        fixture.session.sleep()
+        fixture.sync.sleep()
         fixture.clock.now.addTimeInterval(30)
         let unlock = fixture.clock.now
         fixture.session.screenUnlocked(at: unlock)

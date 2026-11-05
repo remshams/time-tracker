@@ -17,7 +17,7 @@ public final class TaskDailyTotal {
 /// Holds today's task totals for the whole app.
 ///
 /// Views read `status` and each task's `TaskDailyTotal`; the menu bar also reads the day's total, the explanation
-/// and each task's duration. `TrackerSession` writes the report and calls `publish` each time it publishes a
+/// and each task's duration. `TrackerSync` writes the report and calls `publish` each time it publishes a
 /// change, including the one-second display tick and the menu bar's minute tick. `publish` assigns each value
 /// only when it changes, so a tick redraws only the running task's label.
 @Observable

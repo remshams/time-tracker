@@ -9,7 +9,7 @@ final class LifecycleTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start()
         XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         let shown = try await fixture.client.next()
         shown.succeed(emptyTaskListResources)
         try await fixture.settled()
@@ -23,19 +23,19 @@ final class LifecycleTests: XCTestCase {
             try await fixture.settled()
             XCTAssertEqual(fixture.scheduler.poll?.delay, delay)
         }
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let incompatible = try await fixture.client.next()
         incompatible.fail(BridgeFailure(message: "Unsupported version", kind: "protocol"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
         XCTAssertNil(fixture.scheduler.poll)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let explicit = try await fixture.client.next()
         explicit.succeed(emptyTaskListResources)
         try await fixture.settled()
         XCTAssertFalse(fixture.session.isStale)
         XCTAssertEqual(fixture.scheduler.poll?.delay, 5)
-        fixture.session.setWindowVisible(false)
+        fixture.sync.setWindowVisible(false)
         XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
     }
 
@@ -47,7 +47,7 @@ final class LifecycleTests: XCTestCase {
         try await fixture.start(resources)
         XCTAssertNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
-        fixture.session.menuOpened()
+        fixture.sync.setMenuVisible(true)
         let refresh = try await fixture.client.next()
         refresh.succeed(resources)
         try await fixture.settled()
@@ -60,7 +60,7 @@ final class LifecycleTests: XCTestCase {
         timer?.fire()
         XCTAssertEqual(fixture.session.tracking.timerText, "00:00:39")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
-        fixture.session.menuClosed()
+        fixture.sync.setMenuVisible(false)
         XCTAssertTrue(timer?.cancelled == true)
         XCTAssertNil(fixture.scheduler.display)
     }
@@ -69,7 +69,7 @@ final class LifecycleTests: XCTestCase {
     func testMenuBarClockRunsWhileTrackingWithTheSettingOnAndRepublishesEachMinute() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        fixture.session.setMenuBarClock(true)
+        fixture.sync.setMenuBarClockEnabled(true)
         XCTAssertNil(fixture.scheduler.menuBarClock, "The clock waits for the session to start.")
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 0)])
@@ -78,7 +78,7 @@ final class LifecycleTests: XCTestCase {
         XCTAssertNil(fixture.scheduler.display, "The clock runs while no window or menu is open.")
         XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 0)
         var publishes = 0
-        fixture.session.onChange = { publishes += 1 }
+        fixture.sync.onChange = { publishes += 1 }
         let operationCount = fixture.client.operations.count
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
@@ -86,14 +86,14 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(publishes, 1)
         XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 60)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
-        fixture.session.setMenuBarClock(false)
+        fixture.sync.setMenuBarClockEnabled(false)
         XCTAssertTrue(clock.cancelled)
         XCTAssertNil(fixture.scheduler.menuBarClock)
-        fixture.session.setMenuBarClock(true)
+        fixture.sync.setMenuBarClockEnabled(true)
         XCTAssertNotNil(fixture.scheduler.menuBarClock)
-        fixture.session.setMenuBarClock(true)
+        fixture.sync.setMenuBarClockEnabled(true)
         XCTAssertEqual(fixture.scheduler.active.filter { $0.delay == 60 && $0.repeating }.count, 1)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let stopped = try await fixture.client.next()
         stopped.succeed(TaskListTotalsRefresh(taskList: TaskListResources(tasks: [firstTask], active: nil), rows: []))
         let history = try await fixture.client.next()
@@ -107,12 +107,12 @@ final class LifecycleTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.setMenuBarClock(true)
+        fixture.sync.setMenuBarClockEnabled(true)
         let clock = try XCTUnwrap(fixture.scheduler.menuBarClock)
-        fixture.session.sleep()
+        fixture.sync.sleep()
         XCTAssertTrue(clock.cancelled)
         XCTAssertNil(fixture.scheduler.menuBarClock)
-        fixture.session.wake()
+        fixture.sync.wake()
         XCTAssertNotNil(fixture.scheduler.menuBarClock)
         let refresh = try await fixture.client.next()
         refresh.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
@@ -125,7 +125,7 @@ final class LifecycleTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         let refresh = try await fixture.client.next()
         refresh.succeed(emptyTaskListResources)
         try await fixture.settled()
@@ -139,20 +139,20 @@ final class LifecycleTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         let refresh = try await fixture.client.next()
         refresh.succeed(resources)
         try await fixture.settled()
         fixture.clock.uptime += 7
         fixture.clock.now.addTimeInterval(3_600)
         XCTAssertEqual(fixture.session.elapsed, 37)
-        fixture.session.sleep()
+        fixture.sync.sleep()
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         let count = fixture.client.operations.count
-        fixture.session.refresh()
+        fixture.sync.refresh()
         XCTAssertEqual(fixture.client.operations.count, count)
         fixture.clock.now.addTimeInterval(300)
-        fixture.session.wake()
+        fixture.sync.wake()
         let wake = try await fixture.client.next()
         XCTAssertEqual(wake.operation, .refresh(.local))
         XCTAssertEqual(fixture.session.elapsed, 3_930)

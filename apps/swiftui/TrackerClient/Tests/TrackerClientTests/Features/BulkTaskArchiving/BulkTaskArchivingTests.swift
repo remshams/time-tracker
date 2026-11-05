@@ -573,7 +573,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         try await openPreview(fixture)
         fixture.session.submitBulkTaskArchiving()
         let command = try await fixture.client.next()
-        fixture.session.sleep()
+        fixture.sync.sleep()
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isSubmitting)
         try await archivedInactive(fixture, command, count: 1, resources: emptyTaskListResources)
         XCTAssertEqual(fixture.session.bulkTaskArchiving.archivedCount, 1)

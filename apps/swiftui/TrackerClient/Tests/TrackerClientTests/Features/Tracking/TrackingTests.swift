@@ -52,7 +52,7 @@ final class TrackingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
         let operationCount = fixture.client.operations.count
@@ -249,7 +249,7 @@ final class TrackingTests: XCTestCase {
     func testDisplayTickNotifiesOnlyTimerReadersWhenTheShownSecondChanges() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
         let probes = TrackingProbes(fixture.session.tracking)

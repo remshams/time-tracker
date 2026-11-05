@@ -24,19 +24,19 @@ final class MenuHarness {
 
     /// Restores the session change handler after a fixture helper replaced it.
     func attach() {
-        fixture.session.onChange = { [weak self] in self?.update() }
+        fixture.sync.onChange = { [weak self] in self?.update() }
     }
 
     func update() { presentation.update(from: fixture.session) }
 
-    /// Opens the menu as the app does: the session publishes first, then the menu captures its content.
+    /// Opens the menu as the app does: the sync publishes first, then the menu captures its content.
     func menuOpened() {
-        fixture.session.menuOpened()
+        fixture.sync.setMenuVisible(true)
         observer.menuOpened()
     }
 
     func menuClosed() {
-        fixture.session.menuClosed()
+        fixture.sync.setMenuVisible(false)
         observer.menuClosed()
     }
 

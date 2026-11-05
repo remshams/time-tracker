@@ -12,7 +12,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let menu = MenuHarness(fixture, showDailyTotal: false)
         let observer = menu.observer
         observer.menuOpened()
-        fixture.session.menuOpened()
+        fixture.sync.setMenuVisible(true)
         try await menu.settled()
         let original = observer.content
         let requestCount = fixture.client.operations.count
@@ -50,7 +50,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let observer = menu.observer
         observer.menuOpened()
         let original = observer.content
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         poll.succeed(
             TaskListTotalsRefresh(
@@ -86,7 +86,7 @@ final class MenuLiveValuesTests: XCTestCase {
             let menu = MenuHarness(fixture, showDailyTotal: true)
             let observer = menu.observer
             observer.menuOpened()
-            fixture.session.refresh()
+            fixture.sync.refresh()
             let poll = try await fixture.client.next()
             poll.succeed(TaskListResources(tasks: [firstTask], active: active))
             let history = try await fixture.client.next()
@@ -160,7 +160,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
         observer.menuOpened()
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         let completed = Task { @MainActor in

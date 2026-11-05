@@ -11,7 +11,7 @@ final class ObserverTests: XCTestCase {
         try await fixture.start(resources)
         let previousPoll = try XCTUnwrap(fixture.scheduler.poll)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         XCTAssertTrue(previousPoll.cancelled)
         XCTAssertNil(fixture.scheduler.poll)
@@ -24,12 +24,12 @@ final class ObserverTests: XCTestCase {
     func testVisibleStartupStartsDisplayTimerAndTickNotifiesWithoutFetchingData() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
         var observedTimerText: String?
-        fixture.session.onChange = { observedTimerText = fixture.session.tracking.timerText }
+        fixture.sync.onChange = { observedTimerText = fixture.session.tracking.timerText }
 
         fixture.clock.now.addTimeInterval(4)
         fixture.clock.uptime += 4
@@ -44,7 +44,7 @@ final class ObserverTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let request = try await fixture.client.next()
         let operationCount = fixture.client.operations.count
         fixture.clock.now.addTimeInterval(4)
@@ -52,13 +52,13 @@ final class ObserverTests: XCTestCase {
         var observedTimerText: String?
         var observedBusy: Bool?
         var observedDisplayScheduled: Bool?
-        fixture.session.onChange = {
+        fixture.sync.onChange = {
             observedTimerText = fixture.session.tracking.timerText
             observedBusy = fixture.client.hasPendingRequests
             observedDisplayScheduled = fixture.scheduler.display != nil
         }
 
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         XCTAssertEqual(observedTimerText, "00:00:34")
         XCTAssertEqual(observedBusy, true)
         XCTAssertEqual(observedDisplayScheduled, true)
@@ -72,12 +72,12 @@ final class ObserverTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         var choseTask = false
-        fixture.session.onChange = {
+        fixture.sync.onChange = {
             guard !choseTask, fixture.session.tasks.contains(secondTask) else { return }
             choseTask = true
             fixture.session.select(secondTask.id)
         }
-        fixture.session.start()
+        fixture.sync.start()
         let open = try await fixture.client.next()
         open.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()

@@ -51,7 +51,7 @@ final class PresentationTests: XCTestCase {
     func testClockTicksUpdateOnlyElapsedTextWithoutInvalidatingLists() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
+        fixture.sync.setWindowVisible(true)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let harness = PresentationHarness(session: fixture.session)
         let content = harness.counter(PresentationReads.content)
@@ -167,7 +167,7 @@ final class PresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         let harness = PresentationHarness(session: fixture.session)
 
-        fixture.session.start()
+        fixture.sync.start()
         let open = try await fixture.client.next()
         open.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await harness.settled(fixture)
@@ -260,7 +260,7 @@ final class PresentationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        fixture.session.retryHistory()
+        fixture.sync.retryHistory()
         try await fixture.client.next().succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
         let harness = PresentationHarness(session: fixture.session)

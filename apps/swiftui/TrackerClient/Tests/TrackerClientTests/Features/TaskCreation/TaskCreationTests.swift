@@ -160,7 +160,7 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.refresh()
+        fixture.sync.refresh()
         let poll = try await fixture.client.next()
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         fixture.session.openTaskCreation()
