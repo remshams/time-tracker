@@ -170,12 +170,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture starts, waits on and cleans up through the session's TrackerSync",
-     None, ("c8e117fd729aba883ae9dbf51071f98115bee318", "0c0525da57535afbc35375dfa7d9309c04d498e5"), None,
-     ("App/LifecycleTests.swift", "Features/WorklogHistory/WorklogHistoryStoreTests.swift"),
-     ("Support/FixtureCleanupTests.swift",)),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION, SYNC, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS],
