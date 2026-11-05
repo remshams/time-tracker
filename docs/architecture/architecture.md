@@ -136,7 +136,7 @@ title: Applications
 ---
 flowchart TD
     mac["TimeTrackerSwiftUI<br>apps/swiftui/Sources/TimeTrackerSwiftUI<br>Scenes, views, AppKit integration, TrackerWorker"]:::module
-    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state and TrackerSession"]:::module
+    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerSession and TrackerSync"]:::module
     bridge["tracker-swift-bridge<br>apps/swiftui/bridge<br>C ABI, JSON results, Tokio runtime"]:::module
     tui["tracker-tui<br>apps/tui<br>The tt event loop, screens, rendering"]:::module
     cli["tracker-cli<br>apps/cli<br>The tt-cli commands, JSON, exit codes"]:::module
@@ -208,8 +208,8 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   (`tt_bridge_unarchive_task_at`) and bulk archive
   (`tt_bridge_archive_inactive_tasks_at`) carry none.
 - [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift):
-  feature state and `TrackerSession` behind injected client, clock, scheduler and
-  settings interfaces. Each action sends its request right away; each feature
+  feature state, `TrackerSession` and `TrackerSync` behind injected client,
+  report, clock, scheduler and settings interfaces. Each action sends its request right away; each feature
   disables only its own controls while a request runs
   ([ADR 0026](adr/0026-use-swift-observation-for-native-presentation.md),
   [ADR 0029](adr/0029-send-native-requests-directly.md)). Views read the task
@@ -226,7 +226,7 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   and wake. The session creates the stores and passes them in; its tracking,
   auto-pause, connection change and editor flows call `TrackerSync` to reload
   and publish. `WorklogHistoryStore` sends its own page requests and reports
-  failures to `TrackerSync`, which records connection failures.
+  each page or failure to `TrackerSync`, which records connection failures.
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
   serial
