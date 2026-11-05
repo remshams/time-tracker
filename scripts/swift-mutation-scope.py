@@ -35,6 +35,7 @@ MENU_ORDER = "Features/MenuBar/MenuTaskOrder.swift"
 MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
 MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
 CONNECTION = "Features/Connection/ConnectionStore.swift"
+CONNECTION_TESTING = "Features/Connection/ConnectionTesting.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationStore.swift"
 CREATION = "Features/TaskCreation/TaskCreationState.swift"
 RENAME = "Features/TaskRename/TaskRenameState.swift"
@@ -53,7 +54,8 @@ WRITE_FAILURE = "Shared/WriteFailure.swift"
 # Update this map when a suite gains assertions about another production component.
 TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, CREATION,
+        SESSION, SYNC, TRACKING_ACTIONS, CONNECTION, CONNECTION_TESTING, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION,
+        CREATION,
     ],
     "App/HistoryPresentationTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
@@ -62,28 +64,29 @@ TEST_PRODUCTION = {
     "App/ObserverTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
     "App/PresentationTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TRACKING, CATALOG, HISTORY, TOTALS, CREATION, AUTOMATION,
-        CONNECTION,
+        CONNECTION, CONNECTION_TESTING,
     ],
     "App/RefreshPresentationTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION,
     ],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TIME_FORMATTING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME,
-        ARCHIVING, CORRECTION, MOVE,
+        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION,
+        CONNECTION_TESTING, CREATION, RENAME, ARCHIVING, CORRECTION, MOVE,
     ],
     "Features/Connection/ConnectionTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, CONNECTION, CATALOG, TRACKING, HISTORY, ARCHIVING,
+        SESSION, SYNC, TRACKING_ACTIONS, CONNECTION, CONNECTION_TESTING, CATALOG, TRACKING, HISTORY, ARCHIVING,
     ],
     "Features/DailyTotals/DailyTotalsTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY,
+        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING,
+        CATALOG, HISTORY,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, PRESENTATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
-        TOTALS, TRACKING, CONNECTION, CATALOG, MENU_BAR_STORE, INDICATOR,
+        TOTALS, TRACKING, CONNECTION, CONNECTION_TESTING, CATALOG, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, PRESENTATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER,
@@ -104,7 +107,7 @@ TEST_PRODUCTION = {
     ],
     "Features/MenuBar/StatusItemTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, MENU_BAR_STORE, INDICATOR, MENU_OBSERVER, MENU_SOURCES, MENU,
-        MENU_VALUES, TRACKING, CATALOG, CONNECTION, AUTOMATION, TOTALS,
+        MENU_VALUES, TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, AUTOMATION, TOTALS,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
@@ -116,14 +119,14 @@ TEST_PRODUCTION = {
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION,
-        AUTOMATION, RENAME, NAME_POLICY,
+        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         SESSION, SYNC, NAME_POLICY, CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION,
-        CONNECTION, NAME_POLICY,
+        CONNECTION, CONNECTION_TESTING, NAME_POLICY,
     ],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
@@ -131,7 +134,8 @@ TEST_PRODUCTION = {
     ],
     "Features/TrackingAutomation/TrackingAutomationStoreTests.swift": [AUTOMATION],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY, CREATION,
+        SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, HISTORY,
+        CREATION,
     ],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION,
