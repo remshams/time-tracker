@@ -5,7 +5,8 @@ public final class TrackerSession {
     public let sync: TrackerSync
     /// Views read the task list, tab and selection here; the sync and the session write them.
     public let taskCatalog = TaskCatalogStore()
-    /// Views read the selected task's worklog pages and the history panel's state here; the store loads them.
+    /// Views read the selected task's worklog pages and the history panel's state here; the store loads the pages
+    /// when the sync or the session asks it to.
     public let worklogHistory: WorklogHistoryStore
     /// Views read the connection settings and status here; the sync and the session write them.
     public let connection: ConnectionStore

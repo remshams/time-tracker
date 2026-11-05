@@ -3,8 +3,8 @@ import Foundation
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
 /// rollover and menu bar timers, window and menu visibility, and sleep and wake.
 ///
-/// `TrackerSession` creates the stores and passes them in. Its flows call the package-internal methods to
-/// reload the task list or the history, record a connection failure and publish.
+/// `TrackerSession` creates the stores and passes them in. Its flows call the package-internal methods below,
+/// for example to reload the task list or the history, record a connection failure and publish.
 public final class TrackerSync {
     public var onChange: (() -> Void)?
 
