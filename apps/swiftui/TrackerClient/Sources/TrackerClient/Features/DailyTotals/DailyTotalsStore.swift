@@ -198,18 +198,16 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         set(\.dayTotal, totalDuration(active: active, clock: clock))
         let explanation = explanation(clock: clock)
         set(\.totalsExplanation, explanation)
-        set(
-            \.taskDurations,
-            tasks.reduce(into: [:]) { durations, task in
-                durations[task.id] = duration(taskID: task.id, active: active, clock: clock)
-            })
+        let durations: [String: TimeInterval] = tasks.reduce(into: [:]) { totals, task in
+            totals[task.id] = duration(taskID: task.id, active: active, clock: clock)
+        }
+        set(\.taskDurations, durations)
         taskTotals = Dictionary(
             uniqueKeysWithValues: tasks.map {
                 (
                     $0.id,
                     TaskDailyTotalPresentation(
-                        text: duration(taskID: $0.id, active: active, clock: clock).map(formatClockDuration) ?? "-",
-                        explanation: explanation)
+                        text: durations[$0.id].map(formatClockDuration) ?? "-", explanation: explanation)
                 )
             })
         for (taskID, model) in taskTotalModels {
