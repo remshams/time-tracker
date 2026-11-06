@@ -170,36 +170,20 @@ fn command_receipts_require_the_matching_request() {
         ..receipt.clone()
     };
     let mut client = RemoteSession::new("http://127.0.0.1:1").unwrap();
-    let result = client.decode_receipt(
-        Ok(invalid),
-        &guard,
-        MutationContext {
-            worklog_id: None,
-            task_id: None,
-        },
-        |result| match result {
-            MutationResultDto::ArchivedInactive { count } => Ok(count),
-            _ => panic!("fixture must return the archived count"),
-        },
-    );
+    let result = client.decode_receipt(Ok(invalid), &guard, None, |result| match result {
+        MutationResultDto::ArchivedInactive { count } => Ok(count),
+        _ => panic!("fixture must return the archived count"),
+    });
     assert_eq!(
         result.unwrap_err().failure().source(),
         ApplicationFailureSource::RemoteProtocol
     );
     let mut client = RemoteSession::new("http://127.0.0.1:1").unwrap();
     let count = client
-        .decode_receipt(
-            Ok(receipt),
-            &guard,
-            MutationContext {
-                worklog_id: None,
-                task_id: None,
-            },
-            |result| match result {
-                MutationResultDto::ArchivedInactive { count } => Ok(count),
-                _ => panic!("fixture must return the archived count"),
-            },
-        )
+        .decode_receipt(Ok(receipt), &guard, None, |result| match result {
+            MutationResultDto::ArchivedInactive { count } => Ok(count),
+            _ => panic!("fixture must return the archived count"),
+        })
         .unwrap();
     assert_eq!(count, 2);
 }

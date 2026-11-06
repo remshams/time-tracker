@@ -1,10 +1,9 @@
 use super::{
     ApplicationError, ArchiveInactiveTasksRequest, CreateTaskRequest, DateTime, HashMap,
     InactiveTaskPreview, InactiveTaskPreviewDto, InactivityPeriod, Method, MoveCandidate,
-    MutationContext, MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession, Task,
-    TaskChangeRequest, TaskId, TaskListItem, TaskOrdering, TaskResourceDto, TasksDto, Utc,
-    canonical, decode_task_item, decode_tasks, map_application_error, protocol_failure,
-    task_result,
+    MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession, Task, TaskChangeRequest,
+    TaskId, TaskListItem, TaskOrdering, TaskResourceDto, TasksDto, Utc, canonical,
+    decode_task_item, decode_tasks, map_application_error, protocol_failure, task_result,
 };
 
 /// Task protocol operations and confirmed task observations.
@@ -82,7 +81,7 @@ impl TasksClient {
         let (_, item) = self
             .fetch_task(session, id)
             .await
-            .map_err(|error| map_application_error(&error, None, Some(id)))?;
+            .map_err(|error| map_application_error(&error, None))?;
         self.adopt_task(item.clone());
         session.confirmed();
         Ok(item)
@@ -119,16 +118,6 @@ impl TasksClient {
         self.task_cache.insert(item.task.id(), item);
     }
 
-    /// Captures candidates in the default inactivity window.
-    pub(super) async fn preview_inactive_tasks(
-        &mut self,
-        session: &mut RemoteSession,
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreview, ApplicationError> {
-        self.preview_inactive_tasks_with_period(session, as_of, InactivityPeriod::default())
-            .await
-    }
-
     /// Captures candidate identities for the chosen cutoff and threshold.
     pub(super) async fn preview_inactive_tasks_with_period(
         &mut self,
@@ -139,7 +128,7 @@ impl TasksClient {
         session
             .ensure_version()
             .await
-            .map_err(|error| map_application_error(&error, None, None))?;
+            .map_err(|error| map_application_error(&error, None))?;
         let as_of = canonical(as_of);
         let mut url = session.url("v1/tasks/inactive-preview");
         url.query_pairs_mut()
@@ -148,7 +137,7 @@ impl TasksClient {
         let preview: InactiveTaskPreviewDto = session
             .get(url)
             .await
-            .map_err(|error| map_application_error(&error, None, None))?;
+            .map_err(|error| map_application_error(&error, None))?;
         let preview = InactiveTaskPreview::validated(preview)
             .inspect_err(|_| session.set_failure(RemoteFailureKind::Protocol))?;
         if preview.as_of() != as_of || preview.inactive_days() != period.days() {
@@ -184,10 +173,7 @@ impl TasksClient {
                 "v1/tasks",
                 body,
                 &body.guard,
-                MutationContext {
-                    worklog_id: None,
-                    task_id: Some(id),
-                },
+                None,
                 |result| {
                     let task = task_result(result, id)?;
                     if task.name().as_str() != body.name
@@ -215,10 +201,7 @@ impl TasksClient {
                 &format!("v1/tasks/{id}"),
                 body,
                 body.guard(),
-                MutationContext {
-                    worklog_id: None,
-                    task_id: Some(id),
-                },
+                None,
                 |result| {
                     let task = task_result(result, id)?;
                     let valid = match body {
@@ -247,10 +230,7 @@ impl TasksClient {
                 "v1/tasks/archive-inactive",
                 body,
                 &body.guard,
-                MutationContext {
-                    worklog_id: None,
-                    task_id: None,
-                },
+                None,
                 |result| match result {
                     MutationResultDto::ArchivedInactive { count } => Ok(count),
                     _ => Err(protocol_failure("invalid inactive task archive result")),

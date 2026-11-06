@@ -107,12 +107,6 @@ enum Recovery {
     Tracking,
 }
 
-#[derive(Clone, Copy)]
-struct MutationContext {
-    worklog_id: Option<WorklogId>,
-    task_id: Option<TaskId>,
-}
-
 struct HistoryRead {
     worklogs: Vec<Worklog>,
     next_cursor: Option<GlobalWorklogCursor>,

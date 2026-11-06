@@ -1,6 +1,6 @@
 use super::{
-    ApplicationError, HealthDto, Instant, Method, MutationContext, MutationDto, MutationResultDto,
-    RemoteError, RemoteFailureKind, Transport, WriteGuard, classify_error, map_application_error,
+    ApplicationError, HealthDto, Instant, Method, MutationDto, MutationResultDto, RemoteError,
+    RemoteFailureKind, Transport, WorklogId, WriteGuard, classify_error, map_application_error,
     protocol_failure,
 };
 
@@ -95,7 +95,7 @@ impl RemoteSession {
         &mut self,
         response: Result<MutationDto, RemoteError>,
         guard: &WriteGuard,
-        scope: MutationContext,
+        worklog_id: Option<WorklogId>,
         decode: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
     ) -> Result<T, ApplicationError> {
         match response {
@@ -103,11 +103,7 @@ impl RemoteSession {
             Ok(_) => Err(protocol_failure("invalid command receipt")),
             Err(error) => {
                 self.record_error(error.clone());
-                Err(map_application_error(
-                    &error,
-                    scope.worklog_id,
-                    scope.task_id,
-                ))
+                Err(map_application_error(&error, worklog_id))
             }
         }
     }
@@ -118,12 +114,12 @@ impl RemoteSession {
         path: &str,
         body: &B,
         guard: &WriteGuard,
-        scope: MutationContext,
+        worklog_id: Option<WorklogId>,
         decode: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
     ) -> Result<T, ApplicationError> {
         self.ensure_version()
             .await
-            .map_err(|error| map_application_error(&error, scope.worklog_id, scope.task_id))?;
+            .map_err(|error| map_application_error(&error, worklog_id))?;
         // Stays set if the caller drops the command while the request is in flight.
         self.last_write_attempted = true;
         let delivery = self
@@ -132,6 +128,6 @@ impl RemoteSession {
             .await;
         // A refused connection proves the server never received the command.
         self.last_write_attempted = delivery.may_have_reached_server;
-        self.decode_receipt(delivery.result, guard, scope, decode)
+        self.decode_receipt(delivery.result, guard, worklog_id, decode)
     }
 }

@@ -1,5 +1,5 @@
 use super::{
-    ApplicationError, ClearActiveTaskOutcome, Method, MutationContext, RemoteError, RemoteSession,
+    ApplicationError, ClearActiveTaskOutcome, Method, RemoteError, RemoteSession,
     SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto, TrackingState, WorklogId,
     clear_tracking_result, decode_active, protocol_failure, set_tracking_result,
 };
@@ -52,10 +52,7 @@ impl TrackingClient {
                 "v1/tracking",
                 body,
                 &body.guard,
-                MutationContext {
-                    worklog_id: None,
-                    task_id: Some(task_id),
-                },
+                None,
                 |result| {
                     let outcome = set_tracking_result(result, task_id, new_id, expected_active)?;
                     let valid = match &outcome {
@@ -91,10 +88,7 @@ impl TrackingClient {
                 "v1/tracking",
                 body,
                 &body.guard,
-                MutationContext {
-                    worklog_id: Some(expected_active),
-                    task_id: None,
-                },
+                Some(expected_active),
                 |result| {
                     let outcome = clear_tracking_result(result, expected_active)?;
                     let valid = match &outcome {

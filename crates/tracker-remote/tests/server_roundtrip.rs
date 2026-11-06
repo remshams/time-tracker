@@ -197,6 +197,11 @@ impl Drop for TestServer {
     }
 }
 
+/// Reads the task catalog, treating a catalog that has not loaded as empty.
+fn task_items(client: &RemoteApplication) -> &[tracker_application::TaskListItem] {
+    client.task_observation().unwrap_or(&[])
+}
+
 struct StubServer {
     address: SocketAddr,
     shutdown: Option<oneshot::Sender<()>>,
@@ -305,10 +310,7 @@ async fn serialized_preview_confirms_the_chosen_period_and_returns_the_persisted
     assert!(token.get("revision").is_none());
     let serialized = serde_json::to_string(&preview).unwrap();
     let restored = serde_json::from_str(&serialized).unwrap();
-    let count = client
-        .archive_inactive_tasks_with_period(&restored)
-        .await
-        .unwrap();
+    let count = client.archive_inactive_tasks(&restored).await.unwrap();
     assert_eq!(count, 2);
     client.refresh_task_list().await.unwrap();
     assert!(client.task(first.id()).unwrap().is_archived());
@@ -328,7 +330,10 @@ async fn remote_inactive_archive_applies_the_preview_period_when_the_command_run
         .await
         .unwrap();
 
-    let preview = client.preview_inactive_tasks(as_of).await.unwrap();
+    let preview = client
+        .preview_inactive_tasks_with_period(as_of, tracker_domain::InactivityPeriod::default())
+        .await
+        .unwrap();
     assert_eq!(preview.count(), 1);
     assert_eq!(
         client.resolve_preview_tasks(&preview).await.unwrap()[0]
@@ -375,7 +380,7 @@ async fn remote_client_rejects_each_invalid_health_field_before_adopting_resourc
             Err(tracker_remote::RemoteError::Protocol(_))
         ));
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
-        assert!(client.task_items().is_empty());
+        assert!(task_items(&client).is_empty());
     }
 }
 
@@ -1166,7 +1171,7 @@ async fn connection_checks_health_without_initializing_resources() {
     let client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
-    assert!(client.task_items().is_empty());
+    assert!(task_items(&client).is_empty());
     assert!(client.task_observation().is_none());
     assert!(client.tracking_observation().is_none());
     assert_eq!(client.last_failure(), None);
@@ -1389,7 +1394,7 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
             Err(tracker_remote::RemoteError::Protocol(_))
         ));
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
-        assert!(client.task_items().is_empty());
+        assert!(task_items(&client).is_empty());
         assert!(active_worklog(&client).is_none());
         assert!(client.task_observation().is_none());
         assert!(client.tracking_observation().is_none());
@@ -1407,7 +1412,10 @@ async fn preview_candidates_resolve_after_another_client_writes() {
         .create_task(name("Old task"), as_of - Duration::days(20))
         .await
         .unwrap();
-    let preview = client.preview_inactive_tasks(as_of).await.unwrap();
+    let preview = client
+        .preview_inactive_tasks_with_period(as_of, tracker_domain::InactivityPeriod::default())
+        .await
+        .unwrap();
     let mut other = connected(&server.endpoint()).await.unwrap();
     other
         .create_task(name("Intervening write"), as_of)
@@ -1605,7 +1613,7 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
     ));
     assert!(client.last_write_attempted());
     assert!(error.failure().recovery_failed());
-    assert!(client.task_items().is_empty());
+    assert!(task_items(&client).is_empty());
     let original = current.lock().unwrap()[0].clone();
     let recovered = client
         .create_task(name("Uncertain create"), clicked_at + Duration::seconds(20))
@@ -3293,7 +3301,7 @@ async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write
         "Original creation"
     );
     assert_eq!(writes.load(Ordering::SeqCst), 1);
-    assert_eq!(client.task_items().len(), 1);
+    assert_eq!(task_items(&client).len(), 1);
 }
 
 #[tokio::test]
@@ -3441,8 +3449,7 @@ async fn coherent_stop_of_a_replaced_timer_is_rejected_and_adopts_the_new_pair()
         new_task.id()
     );
     assert!(
-        second
-            .task_items()
+        task_items(&second)
             .iter()
             .any(|item| item.task.id() == new_task.id())
     );
@@ -3492,8 +3499,7 @@ async fn coherent_rejected_tracking_command_initializes_a_pair_during_recovery()
         assert_eq!(active_worklog(&client).as_ref().unwrap().id(), running.id());
         let active_task_id = active_worklog(&client).as_ref().unwrap().task_id();
         assert!(
-            client
-                .task_items()
+            task_items(&client)
                 .iter()
                 .any(|item| item.task.id() == active_task_id)
         );
@@ -3597,7 +3603,7 @@ async fn task_list_totals_refreshes_publish_together_and_keep_confirmed_resource
         .refresh_task_list_with_totals(at, end, at)
         .await
         .unwrap();
-    assert_eq!(client.task_items()[0].task.id(), task_id);
+    assert_eq!(task_items(&client)[0].task.id(), task_id);
     assert_eq!(reads.load(Ordering::SeqCst), 1);
     assert_eq!(client.tracking_observation(), Some(&TrackingState::Idle));
     assert_eq!(client.report_observation().unwrap().total_us, 0);
@@ -3628,7 +3634,7 @@ async fn task_list_totals_refreshes_publish_together_and_keep_confirmed_resource
         .await
         .unwrap();
     assert_eq!(active_worklog(&client).unwrap().task_id(), task_id);
-    assert_eq!(client.task_items()[0].task.id(), task_id);
+    assert_eq!(task_items(&client)[0].task.id(), task_id);
     assert!(client.report_observation().is_some());
     assert_eq!(client.last_failure(), None);
 }
@@ -3669,7 +3675,7 @@ async fn coherent_tracking_command_adopts_the_task_pair_after_a_tracking_only_re
         .await
         .unwrap();
     assert!(matches!(started, SetActiveTaskOutcome::Started { .. }));
-    assert_eq!(client.task_items()[0].task.id(), task.id());
+    assert_eq!(task_items(&client)[0].task.id(), task.id());
     assert!(client.tracking_observation().is_some());
 }
 
@@ -3878,7 +3884,7 @@ async fn measure_aggregate_reads_and_intervening_writes() {
             .await
             .unwrap();
     }
-    let task = writer.task_items()[0].task.clone();
+    let task = task_items(&writer)[0].task.clone();
     writer.set_active_task(task.id(), at).await.unwrap();
     let http = reqwest::Client::new();
     let mut interval = reqwest::Url::parse(&server.endpoint()).unwrap();

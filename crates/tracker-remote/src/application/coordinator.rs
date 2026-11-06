@@ -136,7 +136,7 @@ impl RemoteApplication {
             (Ok(value), Err(_)) => Ok(value),
             (Err(error), Ok(())) => Err(error),
             (Err(error), Err(recovery_error)) => {
-                Err(error.with_recovery_failure(map_application_error(&recovery_error, None, None)))
+                Err(error.with_recovery_failure(map_application_error(&recovery_error, None)))
             }
         }
     }
@@ -176,20 +176,10 @@ impl RemoteApplication {
     ) -> Result<Vec<Task>, ApplicationError> {
         self.refresh_task_command_view()
             .await
-            .map_err(|error| map_application_error(&error, None, None))?;
+            .map_err(|error| map_application_error(&error, None))?;
         self.tasks
             .preview_tasks(preview)
             .inspect_err(|_| self.session.set_failure(RemoteFailureKind::Protocol))
-    }
-
-    /// Captures candidates in the default inactivity window.
-    pub async fn preview_inactive_tasks(
-        &mut self,
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreview, ApplicationError> {
-        self.tasks
-            .preview_inactive_tasks(&mut self.session, as_of)
-            .await
     }
 
     /// Captures candidate identities for the chosen cutoff and threshold.
@@ -206,10 +196,6 @@ impl RemoteApplication {
     /// Returns the confirmed task catalog, or `None` before the first catalog read.
     pub fn task_observation(&self) -> Option<&[TaskListItem]> {
         self.tasks.task_observation()
-    }
-
-    pub fn task_items(&self) -> &[TaskListItem] {
-        self.tasks.task_items()
     }
 
     pub async fn refresh_tracking(&mut self) -> Result<(), RemoteError> {
@@ -268,7 +254,7 @@ impl RemoteApplication {
         if let Some(pending) = &pending_create {
             self.refresh_task_command_view()
                 .await
-                .map_err(|error| map_application_error(&error, None, None))?;
+                .map_err(|error| map_application_error(&error, None))?;
             if pending.name != name.as_str() {
                 return Err(ApplicationError::semantic_failure(
                     ApplicationFailureCategory::General,
@@ -300,7 +286,7 @@ impl RemoteApplication {
         self.session
             .ensure_version()
             .await
-            .map_err(|error| map_application_error(&error, None, Some(id)))?;
+            .map_err(|error| map_application_error(&error, None))?;
         self.pending_create = Some(body.clone());
         let result = self.tasks.create_task(&mut self.session, id, &body).await;
         let receipt_confirmed = result.is_ok();
@@ -407,15 +393,6 @@ impl RemoteApplication {
         self.finish_mutation(result, Recovery::Tasks).await
     }
 
-    /// Confirms the period already retained by the preview and returns the archived count.
-    pub async fn archive_inactive_tasks_with_period(
-        &mut self,
-        preview: &InactiveTaskPreview,
-    ) -> Result<usize, ApplicationError> {
-        self.session.begin_command();
-        self.archive_inactive_tasks(preview).await
-    }
-
     /// Keeps the name the user reviewed even when background reads update the cache.
     pub async fn rename_task_with_expected_name(
         &mut self,
@@ -451,7 +428,7 @@ impl RemoteApplication {
         } else {
             self.refresh_tracking().await
         };
-        refreshed.map_err(|error| map_application_error(&error, None, None))
+        refreshed.map_err(|error| map_application_error(&error, None))
     }
 
     pub async fn set_active_task(
