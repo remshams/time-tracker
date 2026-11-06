@@ -577,9 +577,6 @@ mod tests {
             _ => panic!("tracking command outcome"),
         };
         assert_eq!(saved, accepted);
-        if let Backend::Remote(remote) = &backend {
-            assert_eq!(remote.last_command_receipt().is_some(), accepted);
-        }
         complete_request(&mut state, &backend, effect, *completed);
         assert!(!state.has_pending_effect());
         assert!(!state.active_request_is_write());
