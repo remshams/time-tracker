@@ -17,8 +17,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / ".build/swift-style"
-FORMAT_VERSION = "601.0.0"
-FORMAT_SHA256 = "ab5e3323fc1bfd55d158ae074774d7f5eecd3b2d93f7eb731397b53b5f06b4ec"
+FORMAT_VERSION = "604.0.0"
+FORMAT_SHA256 = "43f7f4d039dd85733fdb6119dcd29271d08936592ee9904840f0fd743b061894"
 LINT_VERSION = "0.65.1"
 LINT_ASSETS = {
     ("Linux", "x86_64"): ("swiftlint_linux_amd64.zip", "swiftlint-static",
