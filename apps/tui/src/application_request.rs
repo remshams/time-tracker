@@ -663,11 +663,7 @@ async fn execute_backend_task(
         ),
         ApplicationRequest::PreviewInactiveTasks { as_of } => {
             let result = application
-                .preview_inactive_tasks(
-                    *as_of,
-                    tracker_domain::InactivityPeriod::new(14)
-                        .expect("default inactivity period is valid"),
-                )
+                .preview_inactive_tasks(*as_of, tracker_domain::InactivityPeriod::default())
                 .await
                 .map(|preview| match preview {
                     tracker_client::InactivePreview::Local { as_of, tasks, .. } => {

@@ -3,7 +3,7 @@ use ratatui::layout::{Margin, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
-use tracker_domain::{Task, TaskId};
+use tracker_domain::{InactivityPeriod, Task, TaskId};
 
 use crate::components::tabs::{self, TopTab};
 use crate::components::{dialogs, text};
@@ -78,7 +78,8 @@ fn render_inactive_archive_confirmation(
 ) {
     let count = preview.count();
     let noun = if count == 1 { "task" } else { "tasks" };
-    let count_line = format!("{count} active {noun} inactive for 14 days");
+    let days = InactivityPeriod::default().days();
+    let count_line = format!("{count} active {noun} inactive for {days} days");
     let sample_names = preview.sample_names().join(", ");
     let sample_line = if sample_names.is_empty() {
         "Sample: none".to_owned()
