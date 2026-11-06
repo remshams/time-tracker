@@ -154,7 +154,7 @@ fn persisted_preview_tokens_preserve_period_and_candidates() {
     assert_eq!(serde_json::to_string(&preview).unwrap(), saved_text);
 }
 
-/// Checks receipt identity before retaining a successful command result.
+/// Checks receipt identity before decoding a successful command result.
 #[test]
 fn command_receipts_require_the_matching_request() {
     let guard = WriteGuard {
@@ -186,11 +186,10 @@ fn command_receipts_require_the_matching_request() {
         result.unwrap_err().failure().source(),
         ApplicationFailureSource::RemoteProtocol
     );
-    assert!(client.last_command_receipt().is_none());
     let mut client = RemoteSession::new("http://127.0.0.1:1").unwrap();
     let count = client
         .decode_receipt(
-            Ok(receipt.clone()),
+            Ok(receipt),
             &guard,
             MutationContext {
                 worklog_id: None,
@@ -203,7 +202,6 @@ fn command_receipts_require_the_matching_request() {
         )
         .unwrap();
     assert_eq!(count, 2);
-    assert_eq!(client.last_command_receipt(), Some(&receipt));
 }
 
 /// Rejects preview metadata that cannot identify an exact, valid candidate set for confirmation.
