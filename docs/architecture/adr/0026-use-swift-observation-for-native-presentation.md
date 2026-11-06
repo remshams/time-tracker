@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Partially superseded by [ADR 0030](0030-replace-the-session-with-feature-stores.md) for `TrackerPresentation` as the view state, the session and its `onChange`, the action facades, and the macOS 14 package platform; all other decisions remain accepted.
 
 ## Date
 

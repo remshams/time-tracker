@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Once accepted, it partially supersedes the clauses of ADR 0026 listed under [Superseded clauses](#superseded-clauses). The other ADR 0026 decisions remain accepted.
+Accepted. It partially supersedes the clauses of ADR 0026 listed under [Superseded clauses](#superseded-clauses). The other ADR 0026 decisions remain accepted.
 
 ## Date
 
@@ -97,7 +97,7 @@ Dialog controllers, sheets, `TrackerTaskPresentationCoordinator`'s routing, the 
 
 ### Superseded clauses
 
-Once accepted, this record replaces these ADR 0026 clauses. The change filter, the per-task total objects, the kept sheet content, the observable `ConnectionDraftStore` and `@Bindable` drafts stay.
+This record replaces these ADR 0026 clauses. The change filter, the per-task total objects, the kept sheet content, the observable `ConnectionDraftStore` and `@Bindable` drafts stay.
 
 - "Add `TrackerPresentation` to the portable package … `TrackerStore` calls `update(from:)` after each session change." Views read feature stores instead.
 - "Keep `TrackerSession` a plain class with its `onChange` callback." The session shrinks to the dialog flows and then goes away; stores replace `onChange`.

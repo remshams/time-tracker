@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Once accepted, it partially supersedes the Swift session clauses listed under [Superseded clauses](#superseded-clauses) in ADR 0016, ADR 0018 and ADR 0023. Their Rust, bridge and server decisions remain accepted.
+Accepted. It partially supersedes the Swift session clauses listed under [Superseded clauses](#superseded-clauses) in ADR 0016, ADR 0018 and ADR 0023. Their Rust, bridge and server decisions remain accepted.
 
 Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the Rust adapter's preflights, which ADR 0031 removes; all other decisions remain proposed.
 
@@ -47,7 +47,7 @@ Accepted behavior changes:
 
 ### Superseded clauses
 
-Once accepted, this record replaces these clauses. Everything else in those records stays.
+This record replaces these clauses. Everything else in those records stays.
 
 - [ADR 0018](0018-compose-resource-state-in-client-workflows.md), Decision: "Commands retain their own safe preflight dependencies" no longer applies to the Swift session, which sends commands without a preflight read. The Rust adapter's preflights, the bridge's connection write block, receipts and identical-request retry stay.
 - ADR 0018, Lifecycle and failure invariants: "Operations move from queued to executing to completed; cancellation or replacement invalidates publication through the existing connection and selection generations." The session has no operation states or generations. It drops a history page whose task is no longer selected, and the serial worker orders reads.
