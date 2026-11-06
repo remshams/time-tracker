@@ -431,7 +431,6 @@ async fn prewrite_compatibility_failure_does_not_retry_or_recover_resources() {
         assert_eq!(health_reads.load(Ordering::SeqCst), 1);
         assert_eq!(resource_reads.load(Ordering::SeqCst), 0);
         assert!(!client.last_write_attempted());
-        assert!(client.last_command_receipt().is_none());
         assert!(client.task_observation().is_none());
         assert!(client.tracking_observation().is_none());
         assert!(!error.failure().recovery_failed());
@@ -446,15 +445,14 @@ async fn prewrite_compatibility_failure_does_not_retry_or_recover_resources() {
     }
 }
 
-/// The server rejects an outdated reviewed name after the previous command's receipt is cleared.
+/// The server rejects an outdated reviewed name and the client reports the attempt.
 #[tokio::test]
-async fn rejected_rename_reports_the_attempt_and_clears_the_previous_receipt() {
+async fn rejected_rename_reports_the_attempt() {
     let server = TestServer::start();
     let mut client = connected(&server.endpoint()).await.unwrap();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let task = client.create_task(name("Project work"), at).await.unwrap();
     assert!(client.last_write_attempted());
-    assert!(client.last_command_receipt().is_some());
 
     let error = client
         .rename_task_with_expected_name(
@@ -472,7 +470,6 @@ async fn rejected_rename_reports_the_attempt_and_clears_the_previous_receipt() {
     assert_eq!(error.failure().message(), "Task changed in another client");
     assert!(!error.failure().recovery_failed());
     assert!(client.last_write_attempted());
-    assert!(client.last_command_receipt().is_none());
     assert_eq!(
         client.task(task.id()).unwrap().name().as_str(),
         "Project work"
@@ -1526,20 +1523,6 @@ async fn replayed_receipt_returns_original_result_without_overwriting_a_newer_re
         client.task(task.id()).unwrap().name().as_str(),
         "Renamed after original command"
     );
-    let receipt = client.last_command_receipt().unwrap();
-    assert_eq!(
-        receipt.result,
-        MutationResultDto::Task(TaskDto {
-            id: task.id().to_string(),
-            name: "Original command result".into(),
-            archived: false,
-            created_at: task.created_at(),
-            updated_at: task.updated_at(),
-            latest_work_start: None,
-        })
-    );
-    assert!(receipt.replayed);
-    assert!(!receipt.request_id.is_empty());
 }
 
 #[tokio::test]
@@ -2593,7 +2576,6 @@ async fn writes_refused_by_a_stopped_server_are_not_attempted() {
         tracker_application::ApplicationFailureSource::RemoteUnavailable
     );
     assert!(!client.last_write_attempted());
-    assert!(client.last_command_receipt().is_none());
     let started = client
         .set_active_task(task.id(), at + Duration::seconds(2))
         .await
@@ -3054,7 +3036,6 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
     assert!(client.last_write_attempted());
     assert_eq!(corrected.start(), at + Duration::seconds(1));
     assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
-    assert!(client.last_command_receipt().is_some());
     assert_eq!(
         client.task(task_id).unwrap().name().as_str(),
         "Confirmed task name"
@@ -3294,7 +3275,6 @@ async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write
         .await
         .unwrap();
     assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
-    assert!(client.last_command_receipt().is_some());
     assert!(client.last_write_attempted());
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     assert_eq!(client.task_observation(), Some(&[][..]));

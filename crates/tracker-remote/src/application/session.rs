@@ -4,13 +4,12 @@ use super::{
     protocol_failure,
 };
 
-/// Shared connection state, HTTP transport and validated command receipts.
+/// Shared connection state and HTTP transport. Validates command receipts.
 pub(super) struct RemoteSession {
     transport: Transport,
     last_failure: Option<RemoteFailureKind>,
     last_unavailable_at: Option<Instant>,
     version_checked: bool,
-    last_command_receipt: Option<MutationDto>,
     last_write_attempted: bool,
 }
 
@@ -21,7 +20,6 @@ impl RemoteSession {
             last_failure: Some(RemoteFailureKind::Unavailable),
             last_unavailable_at: None,
             version_checked: false,
-            last_command_receipt: None,
             last_write_attempted: false,
         })
     }
@@ -37,12 +35,8 @@ impl RemoteSession {
     pub(super) fn last_write_attempted(&self) -> bool {
         self.last_write_attempted
     }
-    pub(super) fn last_command_receipt(&self) -> Option<&MutationDto> {
-        self.last_command_receipt.as_ref()
-    }
     pub(super) fn begin_command(&mut self) {
         self.last_write_attempted = false;
-        self.last_command_receipt = None;
     }
     pub(super) fn set_failure(&mut self, failure: RemoteFailureKind) {
         self.last_failure = Some(failure);
@@ -105,11 +99,7 @@ impl RemoteSession {
         decode: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
     ) -> Result<T, ApplicationError> {
         match response {
-            Ok(dto) if dto.request_id == guard.request_id => {
-                let result = decode(dto.result.clone())?;
-                self.last_command_receipt = Some(dto);
-                Ok(result)
-            }
+            Ok(dto) if dto.request_id == guard.request_id => decode(dto.result),
             Ok(_) => Err(protocol_failure("invalid command receipt")),
             Err(error) => {
                 self.record_error(error.clone());

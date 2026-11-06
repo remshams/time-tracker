@@ -1,8 +1,8 @@
 use super::{
     ApplicationError, ApplicationFailureCategory, ArchiveInactiveTasksRequest,
     ClearActiveTaskOutcome, CreateTaskRequest, DateTime, DeleteWorklogRequest, GlobalWorklogCursor,
-    GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, MutationDto, Recovery,
-    RemoteError, RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, SetActiveTaskOutcome,
+    GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, Recovery, RemoteError,
+    RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, SetActiveTaskOutcome,
     SetTrackingRequest, Task, TaskChangeRequest, TaskId, TaskListItem, TaskListStateDto, TaskName,
     TaskOrdering, TaskResourceDto, TasksClient, TrackingClient, TrackingState, Utc, Worklog,
     WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage, WorklogTimes, WorklogsClient,
@@ -95,10 +95,6 @@ impl RemoteApplication {
 
     pub fn last_failure(&self) -> Option<RemoteFailureKind> {
         self.session.last_failure()
-    }
-
-    pub fn last_command_receipt(&self) -> Option<&MutationDto> {
-        self.session.last_command_receipt()
     }
 
     fn guard() -> WriteGuard {
