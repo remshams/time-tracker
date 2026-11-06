@@ -184,29 +184,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture drops the DailyTotalsStore overloads now that the store takes the refresh itself",
-     (("        self.init(taskList: taskList, report: TrackerReport(rows: rows, now: now))\n"
-       "    }\n"
-       "}\n"
-       "\n"
-       "@MainActor\n"
-       "extension DailyTotalsStore {\n"
-       "    func accept(_ refresh: TaskListTotalsRefresh, requested: Request, clock: any TrackerClock) {\n"
-       "        accept(refresh.report, tracking: refresh.taskList.tracking, requested: requested, clock: clock)\n"
-       "    }\n"
-       "\n"
-       "    func validate(_ refresh: TaskListTotalsRefresh) throws {\n"
-       "        try validate(refresh.report, tracking: refresh.taskList.tracking)\n"
-       "    }\n"
-       "}\n",
-       "        self.init(taskList: taskList, report: TrackerReport(rows: rows, now: now))\n"
-       "    }\n"
-       "}\n"),),
-     None, None,
-     (),
-     ("Features/DailyTotals/DailyTotalsTests.swift",)),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
