@@ -85,7 +85,7 @@ final class HistoryTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        XCTAssertTrue(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertTrue(fixture.canStartSelectedTask)
         XCTAssertNotNil(fixture.scheduler.poll)
         fixture.sync.retryHistory()
         let history = try await fixture.client.next()
@@ -93,9 +93,9 @@ final class HistoryTests: XCTestCase {
         try await fixture.settled()
 
         XCTAssertTrue(fixture.session.worklogHistory.unavailable)
-        XCTAssertTrue(fixture.session.isStale)
-        XCTAssertFalse(fixture.trackingActions.canStartSelectedTask)
-        XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
+        XCTAssertTrue(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.canStartSelectedTask)
+        XCTAssertEqual(fixture.session.connection.statusText, "Incompatible server")
         XCTAssertEqual(fixture.session.connection.message, "Unsupported history version")
         XCTAssertNil(fixture.scheduler.poll)
     }
@@ -106,28 +106,28 @@ final class HistoryTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources)
-        XCTAssertTrue(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertTrue(fixture.canStartSelectedTask)
         fixture.sync.retryHistory()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "Tracker state must be refreshed", requiresRefresh: true))
         try await fixture.settled()
 
         XCTAssertTrue(fixture.session.worklogHistory.unavailable)
-        XCTAssertTrue(fixture.session.isStale)
-        XCTAssertFalse(fixture.trackingActions.canStartSelectedTask)
-        XCTAssertEqual(fixture.session.connectionStatusText, "Unavailable")
+        XCTAssertTrue(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.canStartSelectedTask)
+        XCTAssertEqual(fixture.session.connection.statusText, "Unavailable")
         XCTAssertEqual(fixture.session.connection.message, "Tracker state must be refreshed")
 
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
-        XCTAssertFalse(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertFalse(fixture.canStartSelectedTask)
         refresh.succeed(resources)
         let retry = try await fixture.client.next()
         retry.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         XCTAssertFalse(fixture.session.worklogHistory.unavailable)
-        XCTAssertTrue(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertTrue(fixture.canStartSelectedTask)
     }
 
     @MainActor
@@ -147,7 +147,7 @@ final class HistoryTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskCatalog.visibleTasks, [archivedTask])
         fixture.session.select(firstTask.id)
-        XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, archivedTask.id)
         fixture.session.changeTab(.active)
         let restored = try await fixture.client.next()
         XCTAssertEqual(restored.operation, .history(task: secondTask.id, cursor: nil))
@@ -160,7 +160,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(fallback.operation, .history(task: firstTask.id, cursor: nil))
         fallback.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
     }
 
     @MainActor
@@ -179,10 +179,10 @@ final class HistoryTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogHistory.unavailable)
         XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         XCTAssertNil(fixture.session.worklogHistory.error)
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         newRequest.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertFalse(fixture.session.worklogHistory.unavailable)
         XCTAssertNil(fixture.session.worklogHistory.error)
     }
@@ -224,7 +224,7 @@ final class HistoryTests: XCTestCase {
         other.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 3)
     }
 
@@ -268,7 +268,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertTrue(fixture.session.worklogHistory.unavailable)
         XCTAssertFalse(fixture.session.worklogHistory.isLoading)
         XCTAssertEqual(fixture.session.worklogHistory.error, "History read failed")
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         fixture.sync.retryHistory()
         let retry = try await fixture.client.next()
         XCTAssertTrue(fixture.session.worklogHistory.isLoading)
@@ -314,8 +314,8 @@ final class HistoryTests: XCTestCase {
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
-        XCTAssertTrue(fixture.session.isStale)
-        XCTAssertFalse(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertTrue(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.canStartSelectedTask)
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         refresh.succeed(resources)
@@ -324,9 +324,9 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(retry.operation, .history(task: firstTask.id, cursor: nil))
         retry.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         XCTAssertFalse(fixture.session.worklogHistory.unavailable)
-        XCTAssertTrue(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertTrue(fixture.canStartSelectedTask)
     }
 
     @MainActor
@@ -399,13 +399,13 @@ final class HistoryTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(probes.changed(), ["error"])
         XCTAssertEqual(fixture.session.worklogHistory.error, "Server offline")
-        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertTrue(fixture.session.connection.stale)
         fixture.scheduler.poll?.fire()
         try await fixture.client.next().succeed(resources)
         try await fixture.settled()
         XCTAssertEqual(probes.changed(), ["error"])
         XCTAssertNil(fixture.session.worklogHistory.error)
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
     }
 }
 

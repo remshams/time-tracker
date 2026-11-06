@@ -31,11 +31,6 @@ public final class TrackingActions {
         self.automation = automation
     }
 
-    public var canStartSelectedTask: Bool {
-        guard let selectedTaskID = catalog.selectedTaskID else { return false }
-        return canStartTracking(taskID: selectedTaskID)
-    }
-
     public func canStartTracking(taskID: String) -> Bool {
         guard canSendTracking, let task = catalog.tasks.first(where: { $0.id == taskID }) else { return false }
         return !task.archived && tracking.active?.taskId != task.id

@@ -60,15 +60,9 @@ public final class TrackerSession {
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
     }
 
+    // The session's flows read these three; `TrackerPresentation` also reads `tasks`.
     public var tasks: [TaskItem] { taskCatalog.tasks }
-    // The availability checks and the tests read these.
     public var active: WorklogItem? { tracking.active }
-    public var trackingError: String? { tracking.recordedError }
-    public var selectedTaskID: String? { taskCatalog.selectedTaskID }
-    // Tests read these three.
-    public var connectionSettings: ConnectionSettings { connection.settings }
-    public var connectionStatusText: String { connection.statusText }
-    public var isStale: Bool { connection.stale }
     public var selectedTask: TaskItem? { taskCatalog.selectedTask }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool { connection.confirmed }
@@ -86,7 +80,6 @@ public final class TrackerSession {
         guard let active else { return "No timer running" }
         return taskName(active.taskId)
     }
-    public var elapsed: TimeInterval? { tracking.elapsed(clock: clock) }
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)

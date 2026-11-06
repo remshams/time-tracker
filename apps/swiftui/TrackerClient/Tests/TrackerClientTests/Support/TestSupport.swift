@@ -414,6 +414,10 @@ final class Fixture {
     var sync: TrackerSync { session.sync }
     var trackingActions: TrackingActions { session.trackingActions }
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
+    var canStartSelectedTask: Bool {
+        guard let taskID = session.taskCatalog.selectedTaskID else { return false }
+        return trackingActions.canStartTracking(taskID: taskID)
+    }
     let preferences: MemoryTrackingPreferences
     private let reportsEnabled: Bool
 
@@ -449,7 +453,7 @@ final class Fixture {
             let request = try await client.next()
             switch request.operation {
             case .history(let taskID, nil):
-                XCTAssertEqual(taskID, session.selectedTaskID)
+                XCTAssertEqual(taskID, session.taskCatalog.selectedTaskID)
                 request.succeed(emptyPage)
             case .report where reportsEnabled:
                 request.succeed(TaskListTotalsRefresh(taskList: resources, rows: rows))
