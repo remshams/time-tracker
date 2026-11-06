@@ -154,7 +154,7 @@ Install the repository's pinned tools with Swift 6.4 or newer and Python 3.12 or
 python3 scripts/install-swift-style-tools.py
 ```
 
-The installer builds swift-format 601.0.0 with locked dependencies and downloads SwiftLint 0.65.1.
+The installer builds swift-format 604.0.0 with locked dependencies and downloads SwiftLint 0.65.1.
 It verifies archive checksums and executable versions, and installs both under `.build/swift-style`.
 Use `--swift` to select a toolchain and `--jobs` to limit build parallelism. Linux and macOS use
 the same formatter release and configurations, regardless of the compiler used for the app.
