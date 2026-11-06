@@ -279,7 +279,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: ${{ matrix.group == 'mac' && 'native-tests' || 'native' }}
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - name: Cache native build output
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -306,18 +306,20 @@ jobs:
       - name: Test SwiftUI workflows through the native macOS UI
         timeout-minutes: 32
         run: apps/swiftui/check-native-ui.sh --group "${{ matrix.group }}"
-      - name: Build the universal Release app and Rust bridge
+      - name: Build the arm64 Release app and Rust bridge
         if: matrix.group == 'mac'
         run: |
           xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
             -configuration Release -destination 'generic/platform=macOS' \
             -derivedDataPath .build/native-release -resultBundlePath .build/native-release.xcresult \
-            'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build \
+            CODE_SIGNING_ALLOWED=NO build \
             | tee .build/native-release.log
           native_binary=.build/native-release/Build/Products/Release/TimeTracker.app/Contents/MacOS/TimeTracker
-          for architecture in arm64 x86_64; do
-            xcrun lipo "$native_binary" -verify_arch "$architecture"
-          done
+          xcrun lipo "$native_binary" -verify_arch arm64
+          if xcrun lipo "$native_binary" -verify_arch x86_64; then
+            echo 'The Release app must not contain an x86_64 slice.' >&2
+            exit 1
+          fi
       - name: Check native scene layout
         if: matrix.group == 'mac'
         run: apps/swiftui/check-native-layout.sh
@@ -375,7 +377,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: native
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - name: Compare baseline and candidate sequentially
         timeout-minutes: 25
         run: python3 scripts/benchmark-native-ui.py
