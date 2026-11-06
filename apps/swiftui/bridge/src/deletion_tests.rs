@@ -54,7 +54,6 @@ fn completed_deletion_returns_the_worklog_and_updates_history_and_totals() {
         result["data"]["worklog"],
         serde_json::to_value(worklog_json(&deleted)).unwrap()
     );
-    assert!(result["data"]["receipt"].is_null());
     assert_eq!(history(&mut bridge, task), vec![kept]);
     let rows = bridge
         .application
@@ -182,7 +181,6 @@ fn remote_deletion_removes_the_worklog_and_rejects_stale_clients() {
         deleted["data"]["worklog"],
         serde_json::to_value(worklog_json(&original)).unwrap()
     );
-    assert!(deleted["data"]["receipt"]["requestId"].is_string());
     assert!(history(&mut first, task).is_empty());
     let failure = delete_expected(&mut second, &original);
     assert_eq!(failure["kind"], "worklog_not_found", "{failure}");

@@ -573,8 +573,6 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             if action != "rename" {
                 assert_eq!(value["data"]["task"]["archived"], action == "archive");
             }
-            assert!(value["data"]["receipt"].get("appliedRevision").is_none());
-            assert_eq!(value["data"]["receipt"]["replayed"], replayed);
             assert_eq!(
                 test_task_values(&bridge.application)[0]["name"],
                 "Later writer name"
@@ -717,8 +715,6 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
 
     assert!(result.get("error").is_none(), "{result}");
     assert_eq!(result["data"]["task"]["name"], "Committed name");
-    assert_eq!(result["data"]["receipt"]["replayed"], false);
-    assert!(result["data"]["receipt"].get("appliedRevision").is_none());
     assert_eq!(test_resource_values(&bridge.application), confirmed_before);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     let blocked = bridge

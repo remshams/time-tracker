@@ -70,7 +70,7 @@ pub unsafe extern "C" fn tt_bridge_correct_worklog_at(
                 WorklogTimes::new(replacement_start, replacement_end),
                 occurred_at,
             )?;
-            Ok(worklog_result(bridge, &worklog))
+            Ok(worklog_result(&worklog))
         })
     }
 }
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn tt_bridge_move_worklog(
                 WorklogTimes::new(start, end),
                 destination,
             )?;
-            Ok(worklog_result(bridge, &worklog))
+            Ok(worklog_result(&worklog))
         })
     }
 }
@@ -166,13 +166,13 @@ pub unsafe extern "C" fn tt_bridge_delete_worklog(
                 task,
                 WorklogTimes::new(start, Some(end)),
             )?;
-            Ok(worklog_result(bridge, &worklog))
+            Ok(worklog_result(&worklog))
         })
     }
 }
 
-fn worklog_result(bridge: &Bridge, worklog: &tracker_domain::Worklog) -> Value {
-    json!({ "worklog": worklog_json(worklog), "receipt": bridge.application.command_receipt() })
+fn worklog_result(worklog: &tracker_domain::Worklog) -> Value {
+    json!({ "worklog": worklog_json(worklog) })
 }
 
 pub(super) fn parse_cursor(text: &str) -> Result<WorklogCursor, String> {

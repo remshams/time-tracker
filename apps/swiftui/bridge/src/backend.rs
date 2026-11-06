@@ -78,11 +78,6 @@ impl Backend {
     pub fn tracking_observation(&self) -> Option<TrackingState> {
         self.application.tracking_observation()
     }
-    pub fn command_receipt(&self) -> Option<serde_json::Value> {
-        self.application.command_receipt().map(|receipt| {
-            serde_json::json!({ "requestId": receipt.request_id, "replayed": receipt.replayed })
-        })
-    }
 
     /// Refreshes the task catalog and tracking state together.
     pub fn refresh_resources(&mut self) -> Result<(), BridgeError> {

@@ -88,9 +88,7 @@ pub unsafe extern "C" fn tt_bridge_archive_inactive_tasks_at(
                 );
             }
             let archived_count = bridge.application.archive_inactive_tasks(preview)?;
-            Ok(
-                json!({ "archivedCount": archived_count, "receipt": bridge.application.command_receipt() }),
-            )
+            Ok(json!({ "archivedCount": archived_count }))
         })
     }
 }
