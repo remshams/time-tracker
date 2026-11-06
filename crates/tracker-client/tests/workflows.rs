@@ -97,7 +97,6 @@ async fn selected_backends_preserve_task_tracking_history_and_report_workflows()
             .create_task(name("Second project"), at(1))
             .await
             .unwrap();
-        assert_eq!(backend.command_receipt().is_some(), remote);
         let renamed = backend
             .rename_task(first.id(), name("Renamed project"), at(2))
             .await

@@ -5,7 +5,6 @@ use tracker_application::{
     ApplicationError, MoveCandidate, TaskListItem, TaskOrdering, TrackerApplication,
 };
 use tracker_domain::{Task, TaskId, TrackingState};
-use tracker_protocol::MutationDto;
 use tracker_remote::{InactiveTaskPreview, RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
@@ -126,13 +125,6 @@ impl TrackerBackend {
         match self {
             Self::Local(application) => application.move_candidates(source, query),
             Self::Remote(application) => application.move_candidates(source, query),
-        }
-    }
-
-    pub fn command_receipt(&self) -> Option<&MutationDto> {
-        match self {
-            Self::Local(_) => None,
-            Self::Remote(application) => application.last_command_receipt(),
         }
     }
 
