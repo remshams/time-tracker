@@ -764,8 +764,6 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
             result["data"]["worklog"],
             serde_json::to_value(worklog_json(&moved)).unwrap()
         );
-        assert!(result["data"]["receipt"].get("appliedRevision").is_none());
-        assert_eq!(result["data"]["receipt"]["replayed"], true);
         assert_eq!(
             test_active_value(&bridge.application)["id"],
             expected_active.id().to_string()

@@ -39,8 +39,8 @@ pub(super) fn tasks_json(application: &Backend) -> Option<ResourceJson<Vec<TaskJ
     })
 }
 
-fn task_result(application: &Backend, task: &tracker_domain::Task) -> Value {
-    json!({ "task": task_json(task, None), "receipt": application.command_receipt() })
+fn task_result(task: &tracker_domain::Task) -> Value {
+    json!({ "task": task_json(task, None) })
 }
 
 /// Returns the last confirmed task resource, or null before its first read.
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn tt_bridge_create_task_at(
             let name = read_task_name(name, "Invalid task name")?;
             let occurred_at = read_text(occurred_at, "Invalid creation timestamp")?;
             let task = bridge.application.create_task(name, occurred_at)?;
-            Ok(task_result(&bridge.application, &task))
+            Ok(task_result(&task))
         })
     }
 }
@@ -104,7 +104,7 @@ pub unsafe extern "C" fn tt_bridge_rename_task_with_expected_name_at(
                 name,
                 occurred_at,
             )?;
-            Ok(task_result(&bridge.application, &task))
+            Ok(task_result(&task))
         })
     }
 }
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn tt_bridge_archive_task_with_expected_name_at(
                 expected_name,
                 occurred_at,
             )?;
-            Ok(task_result(&bridge.application, &task))
+            Ok(task_result(&task))
         })
     }
 }
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn tt_bridge_unarchive_task_at(
             let task_id = read_text(task_id, "Invalid task ID")?;
             let occurred_at = read_text(occurred_at, "Invalid restore timestamp")?;
             let task = bridge.application.unarchive_task(task_id, occurred_at)?;
-            Ok(task_result(&bridge.application, &task))
+            Ok(task_result(&task))
         })
     }
 }

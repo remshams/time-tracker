@@ -28,10 +28,7 @@ fn active_worklog_json(worklog: &ActiveWorklog) -> WorklogJson {
     }
 }
 
-fn start_result(
-    application: &Backend,
-    outcome: tracker_application::SetActiveTaskOutcome,
-) -> Value {
+fn start_result(outcome: tracker_application::SetActiveTaskOutcome) -> Value {
     use tracker_application::SetActiveTaskOutcome;
     let (active, stopped) = match outcome {
         SetActiveTaskOutcome::Started { worklog } => (worklog_json(&worklog), None),
@@ -40,21 +37,16 @@ fn start_result(
             (worklog_json(&started), Some(worklog_json(&stopped)))
         }
     };
-    json!({ "active": active, "stopped": stopped, "didStop": false,
-        "receipt": application.command_receipt() })
+    json!({ "active": active, "stopped": stopped, "didStop": false })
 }
 
-fn stop_result(
-    application: &Backend,
-    outcome: tracker_application::ClearActiveTaskOutcome,
-) -> Value {
+fn stop_result(outcome: tracker_application::ClearActiveTaskOutcome) -> Value {
     use tracker_application::ClearActiveTaskOutcome;
     let (stopped, did_stop) = match outcome {
         ClearActiveTaskOutcome::Stopped { worklog } => (Some(worklog_json(&worklog)), true),
         ClearActiveTaskOutcome::AlreadyIdle => (None, false),
     };
-    json!({ "active": null, "stopped": stopped, "didStop": did_stop,
-        "receipt": application.command_receipt() })
+    json!({ "active": null, "stopped": stopped, "didStop": did_stop })
 }
 
 /// Returns confirmed tracking, or null before its first read.
@@ -88,7 +80,7 @@ pub unsafe extern "C" fn tt_bridge_stop_tracking_at(
             let outcome = bridge
                 .application
                 .clear_active_task(worklog_id, occurred_at)?;
-            Ok(stop_result(&bridge.application, outcome))
+            Ok(stop_result(outcome))
         })
     }
 }
@@ -118,7 +110,7 @@ pub unsafe extern "C" fn tt_bridge_start_tracking_if_active_at(
                 expected_active,
                 occurred_at,
             )?;
-            Ok(start_result(&bridge.application, outcome))
+            Ok(start_result(outcome))
         })
     }
 }
@@ -143,7 +135,7 @@ pub unsafe extern "C" fn tt_bridge_pause_tracking_at(
             let outcome = bridge
                 .application
                 .clear_active_task(worklog_id, occurred_at)?;
-            Ok(stop_result(&bridge.application, outcome))
+            Ok(stop_result(outcome))
         })
     }
 }
@@ -166,7 +158,7 @@ pub unsafe extern "C" fn tt_bridge_resume_tracking_at(
             let task_id = read_text(task_id, "Invalid task ID")?;
             let occurred_at = read_text(occurred_at, "Invalid tracking timestamp")?;
             let outcome = bridge.application.resume_tracking(task_id, occurred_at)?;
-            Ok(start_result(&bridge.application, outcome))
+            Ok(start_result(outcome))
         })
     }
 }
