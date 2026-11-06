@@ -184,7 +184,26 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    ("Shared fixture reads the selected task from the catalog store and checks it with TrackingActions",
+     (("    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }\n",
+       "    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }\n"
+       "    var canStartSelectedTask: Bool {\n"
+       "        guard let taskID = session.taskCatalog.selectedTaskID else { return false }\n"
+       "        return trackingActions.canStartTracking(taskID: taskID)\n"
+       "    }\n"),
+      ("                XCTAssertEqual(taskID, session.selectedTaskID)\n",
+       "                XCTAssertEqual(taskID, session.taskCatalog.selectedTaskID)\n"),),
+     None, None,
+     ("App/BackgroundRefreshInteractionTests.swift", "App/ObserverTests.swift",
+      "Features/Connection/ConnectionTests.swift", "Features/DailyTotals/DailyTotalsTests.swift",
+      "Features/TaskCreation/TaskCreationTests.swift", "Features/Tracking/TrackingTests.swift",
+      "Features/WorklogHistory/HistoryTests.swift"),
+     ("App/BackgroundRefreshInteractionTests.swift", "App/ObserverTests.swift",
+      "Features/Connection/ConnectionTests.swift", "Features/DailyTotals/DailyTotalsTests.swift",
+      "Features/TaskCreation/TaskCreationTests.swift", "Features/Tracking/TrackingTests.swift",
+      "Features/WorklogHistory/HistoryTests.swift")),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
