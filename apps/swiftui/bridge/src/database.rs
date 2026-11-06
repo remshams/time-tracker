@@ -2,7 +2,7 @@ use std::ffi::c_char;
 use std::path::Path;
 
 use crate::Bridge;
-use crate::ffi::read_identifier;
+use crate::ffi::read_text;
 use crate::lifecycle::{open_at, open_bridge};
 
 #[cfg(test)]
@@ -22,12 +22,14 @@ pub unsafe extern "C" fn tt_bridge_open_path(
 ) -> *mut Bridge {
     let opener = || {
         // SAFETY: The caller supplies a live C string or null.
-        unsafe { read_identifier::<String>(path, "Invalid database path") }.and_then(|path| {
-            if path.is_empty() {
-                return Err("Invalid database path".to_owned());
-            }
-            open_at(Path::new(&path))
-        })
+        unsafe { read_text::<String>(path, "Invalid database path") }
+            .map_err(|error| error.message)
+            .and_then(|path| {
+                if path.is_empty() {
+                    return Err("Invalid database path".to_owned());
+                }
+                open_at(Path::new(&path))
+            })
     };
     // SAFETY: The caller supplies writable error storage under this function's contract.
     unsafe { open_bridge(error, opener, c"Could not open database") }

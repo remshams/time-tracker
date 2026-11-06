@@ -17,7 +17,7 @@ pub(super) fn timestamp(value: DateTime<Utc>) -> String {
     value.to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
-pub(super) fn encode(result: Result<Value, BridgeError>) -> *mut c_char {
+fn encode(result: Result<Value, BridgeError>) -> *mut c_char {
     let value = match result {
         Ok(data) => json!({ "data": data }),
         Err(error) => {
@@ -95,16 +95,4 @@ pub(super) unsafe fn read_optional_text<T: FromStr>(
         .and_then(|text| text.parse().ok())
         .map(Some)
         .ok_or_else(|| message.to_owned().into())
-}
-
-/// Same as `read_text` with a plain message error, for modules not yet moved to `read_text`.
-///
-/// # Safety
-/// A non-null `identifier` must point to a live, NUL-terminated C string.
-pub(super) unsafe fn read_identifier<T: FromStr>(
-    identifier: *const c_char,
-    message: &str,
-) -> Result<T, String> {
-    // SAFETY: The caller supplies a valid C string or null.
-    unsafe { read_text(identifier, message) }.map_err(|error| error.message)
 }
