@@ -88,9 +88,10 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         return Request(day: day, cutoff: cutoff, uptime: clock.uptime, anchorGeneration: anchorGeneration)
     }
 
-    func accept(_ report: TrackerReport, tracking: TrackingObservation, requested: Request, clock: any TrackerClock) {
+    func accept(_ refresh: TaskListTotalsRefresh, requested: Request, clock: any TrackerClock) {
         updateDay(at: clock.now)
         guard day == requested.day else { return }
+        let report = refresh.report
         rows = report.rows.reduce(into: [:]) { totals, row in
             totals[row.taskId] = max(0, row.durationMicroseconds)
         }
@@ -98,7 +99,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         request = Request(
             day: requested.day, cutoff: cutoff,
             uptime: requested.uptime, anchorGeneration: requested.anchorGeneration)
-        reportedActive = tracking.value
+        reportedActive = refresh.taskList.tracking.value
         if requested.anchorGeneration == anchorGeneration {
             anchorDate = cutoff
             anchorUptime = requested.uptime
@@ -110,7 +111,8 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         error = nil
     }
 
-    func validate(_ report: TrackerReport, tracking: TrackingObservation) throws {
+    func validate(_ refresh: TaskListTotalsRefresh) throws {
+        let report = refresh.report
         if let now = report.now, parseTimestamp(now) == nil {
             throw BridgeFailure(
                 message: "The report contains an invalid cutoff.", kind: "protocol", requiresRefresh: true)
@@ -123,7 +125,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
                     message: "The report contains invalid task totals.", kind: "protocol", requiresRefresh: true)
             }
         }
-        if let active = tracking.value {
+        if let active = refresh.taskList.tracking.value {
             guard validRunningWorklog(active) else {
                 throw BridgeFailure(
                     message: "The report contains invalid running worklog data.", kind: "protocol",
