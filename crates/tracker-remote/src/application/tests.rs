@@ -200,15 +200,13 @@ fn not_found_category_depends_on_whether_a_worklog_was_requested() {
         .unwrap(),
     };
     assert_eq!(
-        map_application_error(&error, Some(WorklogId::generate()), None)
+        map_application_error(&error, Some(WorklogId::generate()))
             .failure()
             .category(),
         ApplicationFailureCategory::WorklogNotFound
     );
     assert_eq!(
-        map_application_error(&error, None, Some(TaskId::generate()))
-            .failure()
-            .category(),
+        map_application_error(&error, None).failure().category(),
         ApplicationFailureCategory::TaskNotFound
     );
     let invalid_body = RemoteError::Http {
@@ -216,7 +214,7 @@ fn not_found_category_depends_on_whether_a_worklog_was_requested() {
         body: Vec::new(),
     };
     assert_eq!(
-        map_application_error(&invalid_body, None, None)
+        map_application_error(&invalid_body, None)
             .failure()
             .message(),
         "Tracker state changed. Refresh and retry."
@@ -261,7 +259,7 @@ fn remote_conflicts_keep_editor_and_archive_reasons_with_safe_messages() {
             status: StatusCode::CONFLICT,
             body: serde_json::to_vec(&ErrorDto { code, message }).unwrap(),
         };
-        let failure = map_application_error(&error, Some(WorklogId::generate()), None).failure();
+        let failure = map_application_error(&error, Some(WorklogId::generate())).failure();
         assert_eq!(failure.category(), category);
         assert_eq!(failure.message(), expected_message);
         assert_eq!(
@@ -326,7 +324,7 @@ fn application_failures_preserve_transport_origin_and_redact_internal_responses(
         ),
     ];
     for (error, source) in cases {
-        let failure = map_application_error(&error, None, None).failure();
+        let failure = map_application_error(&error, None).failure();
         assert_eq!(failure.source(), source);
         assert_eq!(failure.category(), ApplicationFailureCategory::General);
         assert!(!failure.recovery_failed());
@@ -340,7 +338,7 @@ fn application_failures_preserve_transport_origin_and_redact_internal_responses(
         })
         .unwrap(),
     };
-    let failure = map_application_error(&error, None, None).failure();
+    let failure = map_application_error(&error, None).failure();
     assert_eq!(
         failure.category(),
         ApplicationFailureCategory::WorklogChanged

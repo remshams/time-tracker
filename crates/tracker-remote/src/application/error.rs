@@ -1,6 +1,6 @@
 use super::{
     ApplicationError, ApplicationFailureCategory, ErrorCode, ErrorDto, RemoteError,
-    RemoteFailureKind, StatusCode, TaskId, WorklogId,
+    RemoteFailureKind, StatusCode, WorklogId,
 };
 
 pub(super) fn protocol_failure(message: &str) -> ApplicationError {
@@ -22,7 +22,6 @@ pub(super) fn classify_error(error: &RemoteError) -> RemoteFailureKind {
 pub(super) fn map_application_error(
     error: &RemoteError,
     worklog_id: Option<WorklogId>,
-    _task_id: Option<TaskId>,
 ) -> ApplicationError {
     if error.is_unavailable() {
         return ApplicationError::RemoteUnavailable(error.to_string());

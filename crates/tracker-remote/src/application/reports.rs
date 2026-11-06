@@ -92,7 +92,7 @@ impl ReportsClient {
         let dto = request
             .fetch(session, "v1/reports/task-totals", |dto: &ReportDto| dto)
             .await
-            .map_err(|error| map_application_error(&error, None, None))?;
+            .map_err(|error| map_application_error(&error, None))?;
         self.report_cache = Some(dto.clone());
         session.confirmed();
         Ok(dto)

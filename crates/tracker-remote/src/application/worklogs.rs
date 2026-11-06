@@ -1,7 +1,7 @@
 use super::{
     ApplicationError, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage, HistoryRead,
-    Method, MutationContext, RemoteSession, TaskId, Worklog, WorklogChangeRequest, WorklogCursor,
-    WorklogId, WorklogPage, WorklogPageDto, WorklogTimes, decode_history, map_application_error,
+    Method, RemoteSession, TaskId, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId,
+    WorklogPage, WorklogPageDto, WorklogTimes, decode_history, map_application_error,
     original_worklog_matches, protocol_failure, worklog_result,
 };
 
@@ -18,7 +18,7 @@ impl WorklogsClient {
         session
             .ensure_version()
             .await
-            .map_err(|error| map_application_error(&error, None, task_id))?;
+            .map_err(|error| map_application_error(&error, None))?;
         let mut url = session.url("v1/worklogs");
         if let Some(id) = task_id {
             url.query_pairs_mut()
@@ -32,10 +32,10 @@ impl WorklogsClient {
         let dto: WorklogPageDto = session
             .get(url)
             .await
-            .map_err(|error| map_application_error(&error, None, task_id))?;
+            .map_err(|error| map_application_error(&error, None))?;
         let decoded = decode_history(&dto, task_id).map_err(|error| {
             session.record_error(error.clone());
-            map_application_error(&error, None, task_id)
+            map_application_error(&error, None)
         })?;
         session.confirmed();
         Ok(decoded)
@@ -98,10 +98,7 @@ impl WorklogsClient {
                 &format!("v1/worklogs/{id}"),
                 body,
                 body.guard(),
-                MutationContext {
-                    worklog_id: Some(id),
-                    task_id: None,
-                },
+                Some(id),
                 |result| {
                     let worklog = worklog_result(result, id)?;
                     if !original_worklog_matches(&worklog, Some(destination_task_id), expected) {
@@ -126,10 +123,7 @@ impl WorklogsClient {
                 &format!("v1/worklogs/{id}"),
                 body,
                 body.guard(),
-                MutationContext {
-                    worklog_id: Some(id),
-                    task_id: None,
-                },
+                Some(id),
                 |result| {
                     let worklog = worklog_result(result, id)?;
                     // The request names no task, so only the identity and new times are checked.
@@ -156,10 +150,7 @@ impl WorklogsClient {
                 &format!("v1/worklogs/{id}"),
                 body,
                 &body.guard,
-                MutationContext {
-                    worklog_id: Some(id),
-                    task_id: None,
-                },
+                Some(id),
                 |result| {
                     let worklog = worklog_result(result, id)?;
                     if !original_worklog_matches(&worklog, Some(expected_task_id), expected) {
