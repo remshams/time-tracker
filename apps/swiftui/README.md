@@ -6,11 +6,7 @@ This SwiftUI app shows active and archived tasks, the running timer, and paged w
 
 Use macOS 27 or newer, Xcode 27 or newer, and Rust 1.88 or newer. Open `apps/swiftui/TimeTracker.xcodeproj` in Xcode, select the `TimeTracker` scheme and `My Mac`, then press Run. Xcode builds the Rust library automatically. The build phase finds Rust installed with rustup or mise in their usual locations.
 
-Debug builds use the Mac's active architecture. For a universal Release build, install both Rust targets first:
-
-```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-```
+The app builds for Apple Silicon only, in Debug and Release. Rust's default target on an Apple Silicon Mac is enough.
 
 Xcode keeps build output in DerivedData. The project signs local builds ad hoc and does not require an Apple Developer account for the current app capabilities.
 
