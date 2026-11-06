@@ -197,6 +197,19 @@ impl Drop for TestServer {
     }
 }
 
+/// A stub router whose `/v1/health` reports the current protocol.
+fn healthy_router() -> Router {
+    Router::new().route(
+        "/v1/health",
+        get(|| async {
+            Json(HealthDto {
+                status: "ok".into(),
+                protocol_version: VERSION,
+            })
+        }),
+    )
+}
+
 /// Reads the task catalog, treating a catalog that has not loaded as empty.
 fn task_items(client: &RemoteApplication) -> &[tracker_application::TaskListItem] {
     client.task_observation().unwrap_or(&[])
@@ -491,25 +504,13 @@ async fn unavailable_totals_reads_keep_the_cooldown_without_another_request() {
 
     let reads = Arc::new(AtomicUsize::new(0));
     let counter = reads.clone();
-    let server = StubServer::from_router(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
-            .route(
-                "/v1/state/daily-overview",
-                get(move || {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    async { StatusCode::SERVICE_UNAVAILABLE }
-                }),
-            ),
-    );
+    let server = StubServer::from_router(healthy_router().route(
+        "/v1/state/daily-overview",
+        get(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async { StatusCode::SERVICE_UNAVAILABLE }
+        }),
+    ));
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
@@ -815,7 +816,8 @@ async fn remote_client_round_trips_every_application_operation() {
 }
 
 #[tokio::test]
-async fn stale_client_refreshes_after_conflicting_write() {
+async fn rename_with_an_outdated_reviewed_name_fails_and_the_retry_with_the_current_name_succeeds()
+{
     let server = TestServer::start();
     let mut first = connected(&server.endpoint()).await.unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
@@ -846,8 +848,9 @@ async fn stale_client_refreshes_after_conflicting_write() {
         "Updated by first"
     );
     second
-        .rename_task(
+        .rename_task_with_expected_name(
             task.id(),
+            &name("Updated by first"),
             name("Updated by second"),
             at + Duration::seconds(3),
         )
@@ -858,38 +861,6 @@ async fn stale_client_refreshes_after_conflicting_write() {
         first.task(task.id()).unwrap().name().as_str(),
         "Updated by second"
     );
-}
-
-#[tokio::test]
-async fn a_history_page_does_not_authorize_writes_from_a_stale_task_catalog() {
-    let server = TestServer::start();
-    let mut first = connected(&server.endpoint()).await.unwrap();
-    let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let task = first.create_task(name("Shared task"), at).await.unwrap();
-    let mut second = connected(&server.endpoint()).await.unwrap();
-
-    first
-        .rename_task(task.id(), name("New name"), at + Duration::seconds(1))
-        .await
-        .unwrap();
-    second.worklogs_for_task(task.id(), None).await.unwrap();
-    assert_eq!(
-        second.task(task.id()).unwrap().name().as_str(),
-        "Shared task"
-    );
-    let cached_name = second.task(task.id()).unwrap().name().clone();
-    assert!(
-        second
-            .rename_task_with_expected_name(
-                task.id(),
-                &cached_name,
-                name("Stale name"),
-                at + Duration::seconds(2)
-            )
-            .await
-            .is_err()
-    );
-    assert_eq!(second.task(task.id()).unwrap().name().as_str(), "New name");
 }
 
 /// Unguarded commands send no reviewed name, so they apply after another client's rename and
@@ -1164,10 +1135,7 @@ async fn global_history_keeps_task_cache_and_reports_exclude_the_end_instant() {
 
 #[tokio::test]
 async fn connection_checks_health_without_initializing_resources() {
-    let server = StubServer::with_health(HealthDto {
-        status: "ok".into(),
-        protocol_version: VERSION,
-    });
+    let server = StubServer::from_router(healthy_router());
     let client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
@@ -1179,7 +1147,7 @@ async fn connection_checks_health_without_initializing_resources() {
 }
 
 #[tokio::test]
-async fn report_and_history_reads_never_authorize_stale_task_or_tracking_intent() {
+async fn report_and_history_reads_leave_caches_unchanged_and_never_authorize_a_stale_start() {
     let server = TestServer::start();
     let mut first = connected(&server.endpoint()).await.unwrap();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
@@ -1200,24 +1168,23 @@ async fn report_and_history_reads_never_authorize_stale_task_or_tracking_intent(
         .await
         .unwrap();
     assert!(second.all_worklogs(None).await.unwrap().worklogs.is_empty());
+    second.worklogs_for_task(task.id(), None).await.unwrap();
     assert_eq!(second.task_observation(), Some(reviewed_tasks.as_slice()));
-    assert_eq!(second.tracking_observation().cloned(), reviewed_tracking);
-    assert!(second.report_observation().is_some());
-    assert!(
-        second
-            .rename_task_with_expected_name(
-                task.id(),
-                task.name(),
-                name("Reviewed draft"),
-                at + Duration::seconds(2)
-            )
-            .await
-            .is_err()
-    );
     assert_eq!(
         second.task(task.id()).unwrap().name().as_str(),
-        "Changed by other client"
+        "Reviewed task"
     );
+    assert_eq!(second.tracking_observation().cloned(), reviewed_tracking);
+    assert!(second.report_observation().is_some());
+    second
+        .rename_task_with_expected_name(
+            task.id(),
+            &name("Changed by other client"),
+            name("Reviewed draft"),
+            at + Duration::seconds(2),
+        )
+        .await
+        .unwrap();
     second.refresh_task_list().await.unwrap();
     first
         .set_active_task(task.id(), at + Duration::seconds(3))
@@ -1278,37 +1245,25 @@ async fn aggregate_refresh_uses_one_read_and_preserves_confirmed_state_on_missin
     };
     let reads = Arc::new(AtomicUsize::new(0));
     let count = reads.clone();
-    let server = StubServer::from_router(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
-            .route(
-                "/v1/state/task-list",
-                get(move || {
-                    let i = count.fetch_add(1, Ordering::SeqCst);
-                    async move {
-                        (
-                            if i == 0 {
-                                StatusCode::OK
-                            } else {
-                                StatusCode::NOT_FOUND
-                            },
-                            Json(TaskListStateDto {
-                                tasks: vec![],
-                                active_worklog: None,
-                            }),
-                        )
-                    }
-                }),
-            ),
-    );
+    let server = StubServer::from_router(healthy_router().route(
+        "/v1/state/task-list",
+        get(move || {
+            let i = count.fetch_add(1, Ordering::SeqCst);
+            async move {
+                (
+                    if i == 0 {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::NOT_FOUND
+                    },
+                    Json(TaskListStateDto {
+                        tasks: vec![],
+                        active_worklog: None,
+                    }),
+                )
+            }
+        }),
+    ));
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
@@ -1365,26 +1320,16 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
                 end: None,
             }),
         };
-        let router = Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
-            .route(
-                "/v1/state/task-list",
-                get(move || {
-                    let state = TaskListStateDto {
-                        tasks: catalog.tasks.clone(),
-                        active_worklog: tracking.active_worklog.clone(),
-                    };
-                    async move { Json(state) }
-                }),
-            );
+        let router = healthy_router().route(
+            "/v1/state/task-list",
+            get(move || {
+                let state = TaskListStateDto {
+                    tasks: catalog.tasks.clone(),
+                    active_worklog: tracking.active_worklog.clone(),
+                };
+                async move { Json(state) }
+            }),
+        );
         let server = StubServer::from_router(router);
         let mut client = RemoteApplication::connect(&server.endpoint())
             .await
@@ -1474,50 +1419,40 @@ async fn replayed_receipt_returns_original_result_without_overwriting_a_newer_re
     let current = Arc::new(Mutex::new(Vec::<TaskDto>::new()));
     let for_get = current.clone();
     let for_post = current.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
+    let router = healthy_router().route(
+        "/v1/tasks",
+        get(move || {
+            let current = for_get.clone();
+            async move {
+                Json(TasksDto {
+                    tasks: current.lock().unwrap().clone(),
                 })
-            }),
-        )
-        .route(
-            "/v1/tasks",
-            get(move || {
-                let current = for_get.clone();
-                async move {
-                    Json(TasksDto {
-                        tasks: current.lock().unwrap().clone(),
-                    })
-                }
-            })
-            .post(move |Json(body): Json<CreateTaskRequest>| {
-                let current = for_post.clone();
-                async move {
-                    let task = TaskDto {
-                        id: body.task_id,
-                        name: body.name,
-                        archived: false,
-                        created_at: body.occurred_at,
-                        updated_at: body.occurred_at,
-                        latest_work_start: None,
-                    };
-                    *current.lock().unwrap() = vec![TaskDto {
-                        name: "Renamed after original command".into(),
-                        updated_at: task.updated_at + Duration::seconds(1),
-                        ..task.clone()
-                    }];
-                    Json(MutationDto {
-                        request_id: body.guard.request_id,
-                        replayed: true,
-                        result: MutationResultDto::Task(task),
-                    })
-                }
-            }),
-        );
+            }
+        })
+        .post(move |Json(body): Json<CreateTaskRequest>| {
+            let current = for_post.clone();
+            async move {
+                let task = TaskDto {
+                    id: body.task_id,
+                    name: body.name,
+                    archived: false,
+                    created_at: body.occurred_at,
+                    updated_at: body.occurred_at,
+                    latest_work_start: None,
+                };
+                *current.lock().unwrap() = vec![TaskDto {
+                    name: "Renamed after original command".into(),
+                    updated_at: task.updated_at + Duration::seconds(1),
+                    ..task.clone()
+                }];
+                Json(MutationDto {
+                    request_id: body.guard.request_id,
+                    replayed: true,
+                    result: MutationResultDto::Task(task),
+                })
+            }
+        }),
+    );
     let server = StubServer::from_router(router);
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
@@ -1548,50 +1483,40 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
     let count = writes.clone();
     let fail_recovery = Arc::new(AtomicBool::new(false));
     let fail_get = fail_recovery.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
+    let router = healthy_router().route(
+        "/v1/tasks",
+        get(move || {
+            let current = for_get.clone();
+            let fail_get = fail_get.clone();
+            async move {
+                if fail_get.swap(false, Ordering::SeqCst) {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
+                Json(TasksDto {
+                    tasks: current.lock().unwrap().clone(),
                 })
-            }),
-        )
-        .route(
-            "/v1/tasks",
-            get(move || {
-                let current = for_get.clone();
-                let fail_get = fail_get.clone();
-                async move {
-                    if fail_get.swap(false, Ordering::SeqCst) {
-                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-                    }
-                    Json(TasksDto {
-                        tasks: current.lock().unwrap().clone(),
-                    })
-                    .into_response()
-                }
-            })
-            .post(move |Json(body): Json<CreateTaskRequest>| {
-                let current = for_post.clone();
-                let count = count.clone();
-                let fail_recovery = fail_recovery.clone();
-                async move {
-                    count.fetch_add(1, Ordering::SeqCst);
-                    *current.lock().unwrap() = vec![TaskDto {
-                        id: body.task_id,
-                        name: body.name,
-                        archived: false,
-                        created_at: body.occurred_at,
-                        updated_at: body.occurred_at,
-                        latest_work_start: None,
-                    }];
-                    fail_recovery.store(true, Ordering::SeqCst);
-                    "invalid receipt after commit"
-                }
-            }),
-        );
+                .into_response()
+            }
+        })
+        .post(move |Json(body): Json<CreateTaskRequest>| {
+            let current = for_post.clone();
+            let count = count.clone();
+            let fail_recovery = fail_recovery.clone();
+            async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                *current.lock().unwrap() = vec![TaskDto {
+                    id: body.task_id,
+                    name: body.name,
+                    archived: false,
+                    created_at: body.occurred_at,
+                    updated_at: body.occurred_at,
+                    latest_work_start: None,
+                }];
+                fail_recovery.store(true, Ordering::SeqCst);
+                "invalid receipt after commit"
+            }
+        }),
+    );
     let server = StubServer::from_router(router);
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
@@ -1626,57 +1551,6 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
 }
 
 #[tokio::test]
-async fn rename_preserves_the_original_reviewed_name_after_background_refresh() {
-    let server = TestServer::start();
-    let mut first = connected(&server.endpoint()).await.unwrap();
-    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
-    let task = first
-        .create_task(name("Original reviewed name"), at)
-        .await
-        .unwrap();
-    let mut second = connected(&server.endpoint()).await.unwrap();
-    first
-        .rename_task(
-            task.id(),
-            name("Renamed during editing"),
-            at + Duration::seconds(1),
-        )
-        .await
-        .unwrap();
-    second.refresh_tasks().await.unwrap();
-    assert!(
-        second
-            .rename_task_with_expected_name(
-                task.id(),
-                task.name(),
-                name("Draft name"),
-                at + Duration::seconds(2)
-            )
-            .await
-            .is_err()
-    );
-    first.refresh_tasks().await.unwrap();
-    assert_eq!(
-        first.task(task.id()).unwrap().name().as_str(),
-        "Renamed during editing"
-    );
-    second
-        .rename_task_with_expected_name(
-            task.id(),
-            &name("Renamed during editing"),
-            name("Reviewed again"),
-            at + Duration::seconds(3),
-        )
-        .await
-        .unwrap();
-    first.refresh_tasks().await.unwrap();
-    assert_eq!(
-        first.task(task.id()).unwrap().name().as_str(),
-        "Reviewed again"
-    );
-}
-
-#[tokio::test]
 async fn independent_task_totals_keep_valid_rows_without_metadata_or_tracking_reads() {
     use tracker_protocol::{ReportDto, ReportRowDto};
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
@@ -1692,23 +1566,13 @@ async fn independent_task_totals_keep_valid_rows_without_metadata_or_tracking_re
         total_us: 5,
     };
     let returned = expected.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
-                })
-            }),
-        )
-        .route(
-            "/v1/reports/task-totals",
-            get(move || {
-                let response = returned.clone();
-                async move { Json(response) }
-            }),
-        );
+    let router = healthy_router().route(
+        "/v1/reports/task-totals",
+        get(move || {
+            let response = returned.clone();
+            async move { Json(response) }
+        }),
+    );
     let server = StubServer::from_router(router);
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
@@ -1750,25 +1614,13 @@ async fn task_worklog(
 }
 
 fn with_json_resource(path: &str, response: serde_json::Value) -> StubServer {
-    StubServer::from_router(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
-            .route(
-                path,
-                get(move || {
-                    let response = response.clone();
-                    async move { Json(response) }
-                }),
-            ),
-    )
+    StubServer::from_router(healthy_router().route(
+        path,
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    ))
 }
 
 #[tokio::test]
@@ -1909,61 +1761,51 @@ async fn uncertain_uncommitted_creation_resends_the_same_request() {
     let hold_read = hold_reconciliation.clone();
     let read_started = reconciliation_started.clone();
     let release_read = release_reconciliation.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
+    let router = healthy_router().route(
+        "/v1/tasks",
+        get(move || {
+            let current = for_get.clone();
+            let hold_read = hold_read.clone();
+            let read_started = read_started.clone();
+            let release_read = release_read.clone();
+            async move {
+                if hold_read.swap(false, Ordering::SeqCst) {
+                    read_started.notify_one();
+                    release_read.notified().await;
+                }
+                Json(TasksDto {
+                    tasks: current.lock().unwrap().clone(),
                 })
-            }),
-        )
-        .route(
-            "/v1/tasks",
-            get(move || {
-                let current = for_get.clone();
-                let hold_read = hold_read.clone();
-                let read_started = read_started.clone();
-                let release_read = release_read.clone();
-                async move {
-                    if hold_read.swap(false, Ordering::SeqCst) {
-                        read_started.notify_one();
-                        release_read.notified().await;
-                    }
-                    Json(TasksDto {
-                        tasks: current.lock().unwrap().clone(),
-                    })
+            }
+        })
+        .post(move |Json(body): Json<CreateTaskRequest>| {
+            let current = for_post.clone();
+            let phase = post_phase.clone();
+            let bodies = received.clone();
+            async move {
+                use axum::response::IntoResponse;
+                bodies.lock().unwrap().push(body.clone());
+                if phase.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return "lost uncommitted receipt".into_response();
                 }
-            })
-            .post(move |Json(body): Json<CreateTaskRequest>| {
-                let current = for_post.clone();
-                let phase = post_phase.clone();
-                let bodies = received.clone();
-                async move {
-                    use axum::response::IntoResponse;
-                    bodies.lock().unwrap().push(body.clone());
-                    if phase.fetch_add(1, Ordering::SeqCst) == 0 {
-                        return "lost uncommitted receipt".into_response();
-                    }
-                    let task = TaskDto {
-                        id: body.task_id,
-                        name: body.name,
-                        archived: false,
-                        created_at: body.occurred_at,
-                        updated_at: body.occurred_at,
-                        latest_work_start: None,
-                    };
-                    *current.lock().unwrap() = vec![task.clone()];
-                    Json(MutationDto {
-                        request_id: body.guard.request_id,
-                        replayed: false,
-                        result: MutationResultDto::Task(task),
-                    })
-                    .into_response()
-                }
-            }),
-        );
+                let task = TaskDto {
+                    id: body.task_id,
+                    name: body.name,
+                    archived: false,
+                    created_at: body.occurred_at,
+                    updated_at: body.occurred_at,
+                    latest_work_start: None,
+                };
+                *current.lock().unwrap() = vec![task.clone()];
+                Json(MutationDto {
+                    request_id: body.guard.request_id,
+                    replayed: false,
+                    result: MutationResultDto::Task(task),
+                })
+                .into_response()
+            }
+        }),
+    );
     let server = StubServer::from_router(router);
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
@@ -2630,7 +2472,7 @@ fn command_receipt_server(
     let individual_tasks = tasks.clone();
     let aggregate_tasks = tasks.clone();
     let aggregate_active = active.clone();
-    let router = Router::new()
+    let router = healthy_router()
         .route(
             "/v1/state/task-list",
             get(move || {
@@ -2639,15 +2481,6 @@ fn command_receipt_server(
                     active_worklog: aggregate_active.clone(),
                 };
                 async move { Json(dto) }
-            }),
-        )
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
-                })
             }),
         )
         .route(
@@ -2953,16 +2786,7 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         end: Some(at + Duration::seconds(10)),
     };
     let for_patch = original.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
-                })
-            }),
-        )
+    let router = healthy_router()
         .route(
             "/v1/state/task-list",
             get(move || {
@@ -3135,33 +2959,21 @@ async fn history_rejects_malformed_pages_after_a_valid_read() {
     ] {
         let reads = Arc::new(AtomicUsize::new(0));
         let valid_for_get = valid.clone();
-        let server = StubServer::from_router(
-            Router::new()
-                .route(
-                    "/v1/health",
-                    get(|| async {
-                        Json(HealthDto {
-                            status: "ok".into(),
-                            protocol_version: VERSION,
-                        })
-                    }),
-                )
-                .route(
-                    "/v1/worklogs",
-                    get(move || {
-                        let reads = reads.clone();
-                        let valid = valid_for_get.clone();
-                        let invalid = invalid.clone();
-                        async move {
-                            Json(if reads.fetch_add(1, Ordering::SeqCst) == 0 {
-                                valid
-                            } else {
-                                invalid
-                            })
-                        }
-                    }),
-                ),
-        );
+        let server = StubServer::from_router(healthy_router().route(
+            "/v1/worklogs",
+            get(move || {
+                let reads = reads.clone();
+                let valid = valid_for_get.clone();
+                let invalid = invalid.clone();
+                async move {
+                    Json(if reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                        valid
+                    } else {
+                        invalid
+                    })
+                }
+            }),
+        ));
         let mut client = RemoteApplication::connect(&server.endpoint())
             .await
             .unwrap();
@@ -3195,16 +3007,7 @@ async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write
     let command_coherent = coherent.clone();
     let command_writes = writes.clone();
     let server = StubServer::from_router(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
+        healthy_router()
             .route(
                 "/v1/state/task-list",
                 get({
@@ -3317,63 +3120,53 @@ async fn definitively_rejected_creation_allows_a_new_task_identity() {
     let for_post = current.clone();
     let captured = commands.clone();
     let server = StubServer::from_router(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
+        healthy_router().route(
+            "/v1/tasks",
+            get(move || {
+                let current = for_get.clone();
+                async move {
+                    Json(TasksDto {
+                        tasks: current.lock().unwrap().clone(),
                     })
-                }),
-            )
-            .route(
-                "/v1/tasks",
-                get(move || {
-                    let current = for_get.clone();
-                    async move {
-                        Json(TasksDto {
-                            tasks: current.lock().unwrap().clone(),
-                        })
+                }
+            })
+            .post(move |Json(body): Json<CreateTaskRequest>| {
+                let current = for_post.clone();
+                let captured = captured.clone();
+                async move {
+                    let first = {
+                        let mut commands = captured.lock().unwrap();
+                        commands.push(body.clone());
+                        commands.len() == 1
+                    };
+                    if first {
+                        return (
+                            StatusCode::CONFLICT,
+                            Json(ErrorDto {
+                                code: ErrorCode::Conflict,
+                                message: "Task changed in another client".into(),
+                            }),
+                        )
+                            .into_response();
                     }
-                })
-                .post(move |Json(body): Json<CreateTaskRequest>| {
-                    let current = for_post.clone();
-                    let captured = captured.clone();
-                    async move {
-                        let first = {
-                            let mut commands = captured.lock().unwrap();
-                            commands.push(body.clone());
-                            commands.len() == 1
-                        };
-                        if first {
-                            return (
-                                StatusCode::CONFLICT,
-                                Json(ErrorDto {
-                                    code: ErrorCode::Conflict,
-                                    message: "Task changed in another client".into(),
-                                }),
-                            )
-                                .into_response();
-                        }
-                        let task = TaskDto {
-                            id: body.task_id,
-                            name: body.name,
-                            archived: false,
-                            created_at: body.occurred_at,
-                            updated_at: body.occurred_at,
-                            latest_work_start: None,
-                        };
-                        *current.lock().unwrap() = vec![task.clone()];
-                        Json(MutationDto {
-                            request_id: body.guard.request_id,
-                            replayed: false,
-                            result: MutationResultDto::Task(task),
-                        })
-                        .into_response()
-                    }
-                }),
-            ),
+                    let task = TaskDto {
+                        id: body.task_id,
+                        name: body.name,
+                        archived: false,
+                        created_at: body.occurred_at,
+                        updated_at: body.occurred_at,
+                        latest_work_start: None,
+                    };
+                    *current.lock().unwrap() = vec![task.clone()];
+                    Json(MutationDto {
+                        request_id: body.guard.request_id,
+                        replayed: false,
+                        result: MutationResultDto::Task(task),
+                    })
+                    .into_response()
+                }
+            }),
+        ),
     );
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
@@ -3537,66 +3330,54 @@ async fn task_list_totals_refreshes_publish_together_and_keep_confirmed_resource
     let response_reads = reads.clone();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let task_id = TaskId::generate();
-    let server = StubServer::from_router(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
-            .route(
-                "/v1/state/daily-overview",
-                get(move || {
-                    let mode = response_mode.load(Ordering::SeqCst);
-                    response_reads.fetch_add(1, Ordering::SeqCst);
-                    async move {
-                        Json(DailyOverviewDto {
-                            tasks: if mode == 2 {
-                                vec![]
-                            } else {
-                                vec![TaskDto {
-                                    id: task_id.to_string(),
-                                    name: "Timer task".into(),
-                                    archived: mode == 3,
-                                    created_at: at,
-                                    updated_at: at,
-                                    latest_work_start: Some(at),
-                                }]
-                            },
-                            active_worklog: (mode >= 2).then(|| WorklogDto {
-                                id: WorklogId::generate().to_string(),
-                                task_id: task_id.to_string(),
-                                start: at,
-                                end: None,
-                            }),
-                            totals: ReportDto {
-                                start: if mode == 6 {
-                                    at - Duration::seconds(1)
-                                } else {
-                                    at
-                                },
-                                end: if mode == 7 {
-                                    at + Duration::hours(2)
-                                } else {
-                                    at + Duration::hours(1)
-                                },
-                                now: if mode == 1 {
-                                    at + Duration::seconds(1)
-                                } else {
-                                    at
-                                },
-                                rows: vec![],
-                                total_us: if mode == 5 { 1 } else { 0 },
-                            },
-                        })
-                    }
-                }),
-            ),
-    );
+    let server = StubServer::from_router(healthy_router().route(
+        "/v1/state/daily-overview",
+        get(move || {
+            let mode = response_mode.load(Ordering::SeqCst);
+            response_reads.fetch_add(1, Ordering::SeqCst);
+            async move {
+                Json(DailyOverviewDto {
+                    tasks: if mode == 2 {
+                        vec![]
+                    } else {
+                        vec![TaskDto {
+                            id: task_id.to_string(),
+                            name: "Timer task".into(),
+                            archived: mode == 3,
+                            created_at: at,
+                            updated_at: at,
+                            latest_work_start: Some(at),
+                        }]
+                    },
+                    active_worklog: (mode >= 2).then(|| WorklogDto {
+                        id: WorklogId::generate().to_string(),
+                        task_id: task_id.to_string(),
+                        start: at,
+                        end: None,
+                    }),
+                    totals: ReportDto {
+                        start: if mode == 6 {
+                            at - Duration::seconds(1)
+                        } else {
+                            at
+                        },
+                        end: if mode == 7 {
+                            at + Duration::hours(2)
+                        } else {
+                            at + Duration::hours(1)
+                        },
+                        now: if mode == 1 {
+                            at + Duration::seconds(1)
+                        } else {
+                            at
+                        },
+                        rows: vec![],
+                        total_us: if mode == 5 { 1 } else { 0 },
+                    },
+                })
+            }
+        }),
+    ));
     let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
     let end = at + Duration::hours(1);
     client
@@ -3706,16 +3487,7 @@ async fn coherent_start_without_a_reviewed_timer_rejects_an_unavailable_pair_bef
         };
         let target = task.id.parse().unwrap();
         let catalog_task = task.clone();
-        let router = Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: VERSION,
-                    })
-                }),
-            )
+        let router = healthy_router()
             .route(
                 "/v1/state/task-list",
                 get({
