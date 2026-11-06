@@ -253,10 +253,7 @@ fn list(
 /// Captures the eligible candidate set and backend identity for later confirmation.
 async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, CliError> {
     let (count, tasks, token) = match backend
-        .preview_inactive_tasks(
-            as_of,
-            tracker_domain::InactivityPeriod::new(14).expect("default inactivity period is valid"),
-        )
+        .preview_inactive_tasks(as_of, tracker_domain::InactivityPeriod::default())
         .await?
     {
         tracker_client::InactivePreview::Local { tasks, .. } => {
