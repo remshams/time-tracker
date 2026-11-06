@@ -60,7 +60,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         reloadedHistory.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertNil(fixture.session.active)
-        XCTAssertTrue(fixture.trackingActions.canStartSelectedTask)
+        XCTAssertTrue(fixture.canStartSelectedTask)
         XCTAssertEqual(
             fixture.client.operations.filter {
                 if case .stop = $0 { return true }; return false

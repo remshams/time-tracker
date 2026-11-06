@@ -140,7 +140,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertNil(fixture.session.worklogHistory.nextCursor)
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(3)),
-            [command.operation, .refresh(fixture.session.connectionSettings), .history(task: log.taskId, cursor: nil)])
+            [command.operation, .refresh(fixture.session.connection.settings), .history(task: log.taskId, cursor: nil)])
     }
 
     @MainActor
@@ -183,7 +183,7 @@ final class WorklogCorrectionTests: XCTestCase {
             start: "2024-12-31T23:58:00.000000Z", end: nil)
         command.corrected(worklog: corrected, resources: TaskListResources(tasks: [firstTask], active: corrected))
         try await fixture.waitUntil("the corrected timer") { fixture.session.active == corrected }
-        XCTAssertEqual(fixture.session.elapsed, 120)
+        XCTAssertEqual(fixture.session.tracking.elapsed(clock: fixture.session.clock), 120)
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
     }
 
@@ -323,7 +323,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "The worklog changed on another client.", kind: "worklog_changed"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
         XCTAssertFalse(fixture.session.worklogCorrection.isSubmitting)
         XCTAssertEqual(fixture.session.worklogCorrection.error, "The worklog changed on another client.")
         reload.succeed(resources)
@@ -339,7 +339,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(fixture.session.worklogCorrection.error, "The worklog changed on another client.")
         XCTAssertTrue(fixture.session.worklogCorrection.canEdit)
         XCTAssertTrue(fixture.session.worklogCorrection.canSubmit)
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
 
         fixture.clock.now.addTimeInterval(90)
         fixture.session.submitWorklogCorrection()
@@ -365,7 +365,7 @@ final class WorklogCorrectionTests: XCTestCase {
             let command = try await fixture.client.next()
             command.fail(BridgeFailure(message: "Correction response unavailable", kind: kind))
             let reload = try await fixture.client.next()
-            XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings), kind)
+            XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings), kind)
             reload.succeed(resources)
             try await finishHistory(fixture, rows: [log])
 
@@ -386,7 +386,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
         reload.succeed(resources)
         let corrected = WorklogItem(id: log.id, taskId: log.taskId, start: "2024-12-30T08:00:00.000000Z", end: log.end)
         try await finishHistory(fixture, rows: [corrected])
@@ -397,7 +397,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(
             fixture.session.worklogCorrection.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         XCTAssertEqual(corrections(fixture), 1)
     }
 
@@ -418,7 +418,7 @@ final class WorklogCorrectionTests: XCTestCase {
         history.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
 
-        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertTrue(fixture.session.connection.stale)
         XCTAssertEqual(fixture.session.connection.message, "Server offline")
         XCTAssertEqual(fixture.session.worklogCorrection.error, "Overlap")
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
@@ -561,7 +561,7 @@ final class WorklogCorrectionTests: XCTestCase {
         command.corrected(worklog: corrected, resources: resources)
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .history(task: secondTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertEqual(fixture.session.worklogHistory.worklogs, [other])
         XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "other-older")
         reload.succeed(HistoryPage(worklogs: [other], nextCursor: nil, reset: false))
@@ -571,7 +571,7 @@ final class WorklogCorrectionTests: XCTestCase {
             Array(fixture.client.operations.suffix(4)),
             [
                 .history(task: secondTask.id, cursor: nil), command.operation,
-                .refresh(fixture.session.connectionSettings),
+                .refresh(fixture.session.connection.settings),
                 .history(task: secondTask.id, cursor: nil),
             ])
     }

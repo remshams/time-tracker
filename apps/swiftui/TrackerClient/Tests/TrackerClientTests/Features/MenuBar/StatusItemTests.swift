@@ -229,7 +229,7 @@ final class StatusItemTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertNil(fixture.session.active)
-        XCTAssertNil(fixture.session.trackingError)
+        XCTAssertNil(fixture.session.tracking.recordedError)
     }
 
     @MainActor
@@ -245,7 +245,7 @@ final class StatusItemTests: XCTestCase {
         let failed = try await fixture.taskValue(failedSwitch)
         XCTAssertFalse(failed)
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
-        XCTAssertEqual(fixture.session.connectionSettings, .local)
+        XCTAssertEqual(fixture.session.connection.settings, .local)
         let switchServer = Task { await fixture.sync.connect(serverSettings) }
         let connect = try await fixture.client.next()
         connect.succeed(TaskListResources(tasks: [secondTask], active: nil))
@@ -271,7 +271,7 @@ final class StatusItemTests: XCTestCase {
         let start = try await fixture.client.next()
         start.fail(BridgeFailure(message: "Rejected start"))
         let reconciliation = try await fixture.client.next()
-        XCTAssertEqual(reconciliation.operation, .refresh(fixture.session.connectionSettings))
+        XCTAssertEqual(reconciliation.operation, .refresh(fixture.session.connection.settings))
         XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         reconciliation.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))

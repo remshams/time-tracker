@@ -18,7 +18,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         XCTAssertEqual(
             fixture.session.menuCopyValue(.copyExact, taskID: secondTask.id, connection: .local), "1h 23m 45s")
         XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: secondTask.id, connection: .local), "1h 30m")
-        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
     }
 

@@ -70,12 +70,12 @@ final class BulkTaskArchivingTests: XCTestCase {
             fixture, command, count: 1, resources: TaskListResources(tasks: [firstTask, archived], active: nil))
 
         XCTAssertEqual(fixture.session.tasks, [firstTask, archived])
-        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.bulkTaskArchiving.archivedCount, 1)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isPresented)
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(2)),
-            [.archiveInactive(preview), .refresh(fixture.session.connectionSettings)])
+            [.archiveInactive(preview), .refresh(fixture.session.connection.settings)])
     }
 
     @MainActor
@@ -93,7 +93,7 @@ final class BulkTaskArchivingTests: XCTestCase {
             let request = try await fixture.client.next()
             try await failPreview(fixture, request, failure)
 
-            XCTAssertTrue(fixture.session.isStale, failure.message)
+            XCTAssertTrue(fixture.session.connection.stale, failure.message)
             XCTAssertEqual(fixture.session.connection.message, failure.message)
             XCTAssertEqual(fixture.session.bulkTaskArchiving.error, failure.message)
             XCTAssertFalse(fixture.session.bulkTaskArchiving.isLoading)
@@ -106,7 +106,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         XCTAssertFalse(fixture.session.canOpenBulkTaskArchiving)
         try await fixture.start()
-        XCTAssertNil(fixture.session.selectedTaskID)
+        XCTAssertNil(fixture.session.taskCatalog.selectedTaskID)
         fixture.session.openBulkTaskArchiving()
         XCTAssertEqual(fixture.session.bulkTaskArchiving.daysText, "14")
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isLoading)
@@ -164,7 +164,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertNil(fixture.session.bulkTaskArchiving.error)
         XCTAssertEqual(fixture.session.bulkTaskArchiving.tasks, [secondTask])
         XCTAssertTrue(fixture.session.bulkTaskArchiving.canSubmit)
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
     }
 
     @MainActor
@@ -310,7 +310,7 @@ final class BulkTaskArchivingTests: XCTestCase {
             try await archivedInactive(fixture, command, count: actualCount, resources: resources)
             XCTAssertEqual(fixture.session.bulkTaskArchiving.archivedCount, actualCount)
             XCTAssertEqual(fixture.session.active, activeWorklog)
-            XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+            XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
             XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
             XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
             XCTAssertEqual(
@@ -391,7 +391,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Preview is outdated", kind: "conflict"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isSubmitting)
         try await fixture.update("the reloaded task list") {
             reload.succeed(resources)
@@ -402,7 +402,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertNil(fixture.session.bulkTaskArchiving.archivedCount)
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.tasks.isEmpty)
-        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.connection.stale)
         let count = fixture.client.operations.count
         fixture.session.submitBulkTaskArchiving()
         XCTAssertEqual(fixture.client.operations.count, count)
@@ -424,7 +424,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
         try await fixture.update("the reloaded task list") {
             reload.succeed(emptyTaskListResources)
         }
@@ -466,7 +466,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         connection.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
-        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
+        XCTAssertEqual(fixture.session.connection.settings, serverSettings)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isPresented)
     }
 
@@ -536,7 +536,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
         XCTAssertEqual(fixture.session.bulkTaskArchiving.error, "The tracker returned an invalid archive preview.")
-        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertTrue(fixture.session.connection.stale)
         fixture.session.refreshBulkArchivePreview()
         let duplicate = try await fixture.client.next()
         XCTAssertEqual(duplicate.operation, .inactivePreview(days: 14, at: "2025-01-01T00:00:00.000Z"))
@@ -597,7 +597,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         try await fixture.update("the failed reload") {
             reload.fail(BridgeFailure(message: "Offline", kind: "unavailable"))
         } until: {
-            fixture.session.isStale
+            fixture.session.connection.stale
         }
         XCTAssertEqual(fixture.session.connection.message, "Offline")
         XCTAssertEqual(
