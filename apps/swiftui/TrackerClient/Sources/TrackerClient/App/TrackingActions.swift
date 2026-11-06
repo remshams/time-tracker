@@ -50,7 +50,7 @@ public final class TrackingActions {
         if let active = tracking.active { return .stop(worklogID: active.id) }
         let lastTrackedTask = menuBar.lastTrackedTaskID.flatMap { id in catalog.tasks.first { $0.id == id } }
         guard let task = lastTrackedTask, !task.archived else { return .openMenu }
-        return canStartTracking(taskID: task.id) ? .start(taskID: task.id) : .disabled
+        return .start(taskID: task.id)
     }
 
     @discardableResult
