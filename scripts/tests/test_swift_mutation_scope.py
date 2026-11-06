@@ -189,6 +189,27 @@ class SwiftMutationScopeTests(unittest.TestCase):
         for source in [scope.CATALOG, scope.HISTORY, scope.PRESENTATION]:
             self.assertIn(scope.SOURCES + source, result["files"])
 
+    def test_connection_suite_selects_the_presentation_its_availability_test_asserts(self):
+        test = scope.TESTS + "Features/Connection/ConnectionTests.swift"
+        self.write(scope.PACKAGE + test, "func testConnectionFailurePublishes() {}\n")
+        self.commit("Change connection presentation assertions")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused")
+        self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
+
+    def test_presentation_suite_selects_the_sheets_its_interaction_test_opens(self):
+        test = scope.TESTS + "App/PresentationTests.swift"
+        self.write(scope.PACKAGE + test, "func testSheetInteractions() {}\n")
+        self.commit("Change sheet interaction assertions")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused")
+        for source in [scope.BULK_ARCHIVING, scope.RENAME, scope.MOVE, scope.CORRECTION]:
+            self.assertIn(scope.SOURCES + source, result["files"])
+
     def test_rename_suite_selects_the_creation_and_automation_interactions_it_asserts(self):
         test = scope.TESTS + "Features/TaskRename/TaskRenameTests.swift"
         self.write(scope.PACKAGE + test, "func testPauseBeforeRenameAndCreationExclusivity() {}\n")
