@@ -576,14 +576,3 @@ extension TaskListTotalsRefresh {
         self.init(taskList: taskList, report: TrackerReport(rows: rows, now: now))
     }
 }
-
-@MainActor
-extension DailyTotalsStore {
-    func accept(_ refresh: TaskListTotalsRefresh, requested: Request, clock: any TrackerClock) {
-        accept(refresh.report, tracking: refresh.taskList.tracking, requested: requested, clock: clock)
-    }
-
-    func validate(_ refresh: TaskListTotalsRefresh) throws {
-        try validate(refresh.report, tracking: refresh.taskList.tracking)
-    }
-}

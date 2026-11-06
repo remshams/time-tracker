@@ -244,10 +244,8 @@ public final class TrackerSync {
             let refreshed = try await reports.refreshTaskListWithTotals(
                 settings: connection.settings, start: requested.start,
                 end: requested.end, now: requested.now)
-            try dailyTotals.validate(refreshed.report, tracking: refreshed.taskList.tracking)
-            dailyTotals.accept(
-                refreshed.report, tracking: refreshed.taskList.tracking,
-                requested: requested, clock: clock)
+            try dailyTotals.validate(refreshed)
+            dailyTotals.accept(refreshed, requested: requested, clock: clock)
             acceptTaskList(refreshed.taskList, requestReport: false)
         } catch {
             dailyTotals.fail(error, clock: clock)
