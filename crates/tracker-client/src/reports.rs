@@ -14,18 +14,7 @@ impl TrackerBackend {
         match self {
             Self::Local(application) => {
                 let totals = application.report_totals(start, end, now)?;
-                Ok(ClientReport {
-                    rows: totals
-                        .rows
-                        .into_iter()
-                        .map(|row| ClientReportRow {
-                            task_id: row.task.id(),
-                            duration: row.duration,
-                        })
-                        .collect(),
-                    total: totals.total,
-                    now,
-                })
+                Ok(local_report(totals, now))
             }
             Self::Remote(application) => {
                 let report = application.task_totals(start, end, now).await?;
@@ -73,18 +62,7 @@ impl TrackerBackend {
         match self {
             Self::Local(application) => {
                 let totals = application.task_list_report_totals(start, end, now)?;
-                Ok(ClientReport {
-                    rows: totals
-                        .rows
-                        .into_iter()
-                        .map(|row| ClientReportRow {
-                            task_id: row.task.id(),
-                            duration: row.duration,
-                        })
-                        .collect(),
-                    total: totals.total,
-                    now,
-                })
+                Ok(local_report(totals, now))
             }
             Self::Remote(application) => {
                 application
@@ -96,6 +74,21 @@ impl TrackerBackend {
                 remote_report(report).map_err(RefreshError::Local)
             }
         }
+    }
+}
+
+fn local_report(totals: ReportTotals, now: DateTime<Utc>) -> ClientReport {
+    ClientReport {
+        rows: totals
+            .rows
+            .into_iter()
+            .map(|row| ClientReportRow {
+                task_id: row.task.id(),
+                duration: row.duration,
+            })
+            .collect(),
+        total: totals.total,
+        now,
     }
 }
 

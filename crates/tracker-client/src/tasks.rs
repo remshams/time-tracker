@@ -46,9 +46,7 @@ impl TrackerBackend {
                     .map(|tasks| tasks.len())
             }
             (Self::Remote(application), InactivePreview::Remote { preview, .. }) => {
-                application
-                    .archive_inactive_tasks_with_period(&preview)
-                    .await
+                application.archive_inactive_tasks(&preview).await
             }
             _ => Err(ApplicationError::semantic_failure(
                 ApplicationFailureCategory::General,
