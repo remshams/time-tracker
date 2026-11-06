@@ -8,7 +8,7 @@ use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_d
 
 use crate::Bridge;
 use crate::backend::Backend;
-use crate::ffi::{encode, read_identifier};
+use crate::ffi::{read_text, with_bridge};
 
 #[cfg(test)]
 use chrono::DateTime;
@@ -88,7 +88,8 @@ pub unsafe extern "C" fn tt_bridge_open_remote(
 ) -> *mut Bridge {
     let opener = || {
         // SAFETY: The caller supplies a valid C string or null.
-        unsafe { read_identifier::<String>(endpoint, "Invalid server URL") }
+        unsafe { read_text::<String>(endpoint, "Invalid server URL") }
+            .map_err(|error| error.message)
             .and_then(|endpoint| Backend::remote(&endpoint))
             .map(Bridge::new)
     };
@@ -115,15 +116,14 @@ pub unsafe extern "C" fn tt_bridge_close(bridge: *mut Bridge) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tt_bridge_check_connection(bridge: *mut Bridge) -> *mut c_char {
     // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    encode(
-        bridge
-            .application
-            .check_connection()
-            .map(|_| json!({ "compatible": true })),
-    )
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            bridge
+                .application
+                .check_connection()
+                .map(|_| json!({ "compatible": true }))
+        })
+    }
 }
 
 /// Refreshes the task catalog and tracking state as one coherent task list.
@@ -133,13 +133,12 @@ pub unsafe extern "C" fn tt_bridge_check_connection(bridge: *mut Bridge) -> *mut
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tt_bridge_refresh_resources(bridge: *mut Bridge) -> *mut c_char {
     // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    encode(
-        bridge
-            .application
-            .refresh_resources()
-            .map(|_| json!({ "refreshed": true })),
-    )
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            bridge
+                .application
+                .refresh_resources()
+                .map(|_| json!({ "refreshed": true }))
+        })
+    }
 }
