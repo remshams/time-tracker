@@ -146,8 +146,11 @@ fn validate_local_candidates(task_ids: &[String]) -> Result<(), CliError> {
 ///
 /// `tracker-remote` validates the rest of the token while deserializing it.
 fn validate_remote_period(preview: &InactiveTaskPreview) -> Result<(), CliError> {
-    if preview.inactive_days() != 14 {
-        return Err(CliError::input("remote preview must use the 14-day period"));
+    let days = tracker_domain::InactivityPeriod::default().days();
+    if preview.inactive_days() != days {
+        return Err(CliError::input(format!(
+            "remote preview must use the {days}-day period"
+        )));
     }
     Ok(())
 }
