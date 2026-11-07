@@ -31,16 +31,16 @@ public final class TrackingActions {
         self.automation = automation
     }
 
-    public func canStartTracking(taskID: String) -> Bool {
+    func canStartTracking(taskID: String) -> Bool {
         guard canSendTracking, let task = catalog.tasks.first(where: { $0.id == taskID }) else { return false }
         return !task.archived && tracking.active?.taskId != task.id
     }
 
-    public var canStopTracking: Bool { canSendTracking && tracking.active != nil }
+    var canStopTracking: Bool { canSendTracking && tracking.active != nil }
 
     private var canSendTracking: Bool { connection.confirmed && !connection.stale && !tracking.isSubmitting }
 
-    public var menuPrimaryAction: MenuPrimaryAction {
+    var menuPrimaryAction: MenuPrimaryAction {
         guard !automation.locked, canSendTracking else { return .disabled }
         if let active = tracking.active { return .stop(worklogID: active.id) }
         let lastTrackedTask = menuBar.lastTrackedTaskID.flatMap { id in catalog.tasks.first { $0.id == id } }
