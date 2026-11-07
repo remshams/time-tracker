@@ -207,7 +207,9 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        for source in [scope.BULK_ARCHIVING, scope.RENAME, scope.MOVE, scope.CORRECTION]:
+        for source in [
+            scope.BULK_ARCHIVING, scope.RENAME, scope.MOVE, scope.CORRECTION, scope.ARCHIVING, scope.DELETION,
+        ]:
             self.assertIn(scope.SOURCES + source, result["files"])
 
     def test_rename_suite_selects_the_creation_and_automation_interactions_it_asserts(self):
