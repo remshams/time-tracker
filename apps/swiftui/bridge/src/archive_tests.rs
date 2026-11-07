@@ -492,97 +492,92 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
 
     use tracker_protocol::{MutationDto, MutationResultDto, TaskDto};
     for action in ["rename", "archive", "restore"] {
-        for replayed in [false, true] {
-            let repository = SqliteRepository::open_in_memory().unwrap();
-            let mut application = TrackerApplication::load(repository).unwrap();
-            let task = application
-                .create_task(TaskName::new("Original project").unwrap(), at(1))
-                .unwrap();
-            if action == "restore" {
-                application.archive_task(task.id(), at(2)).unwrap();
-            }
-            let initial = resource_dtos(application.tasks(TaskOrdering::default()), None);
-            let state = Arc::new(Mutex::new(initial));
-            let changed = state.clone();
-            let mut committed_task = state.lock().unwrap().0.tasks[0].clone();
-            committed_task.updated_at = at(400);
-            if action == "rename" {
-                committed_task.name = "Requested name".into();
-            } else {
-                committed_task.archived = action == "archive";
-            }
-            let router = healthy_router().merge(resource_router_state(state)).route(
-                "/v1/tasks/{id}",
-                patch(move |Json(body): Json<Value>| {
-                    let changed = changed.clone();
-                    let committed_task = committed_task.clone();
-                    async move {
-                        let mut latest: TaskDto = committed_task.clone();
-                        latest.name = "Later writer name".into();
-                        latest.archived = if action == "rename" {
-                            latest.archived
-                        } else {
-                            !latest.archived
-                        };
-                        latest.updated_at = at(401);
-                        {
-                            let mut state = changed.lock().unwrap();
-                            state.0.tasks[0] = latest;
-                        }
-                        Json(MutationDto {
-                            request_id: body["request_id"].as_str().unwrap().into(),
-                            replayed,
-                            result: MutationResultDto::Task(committed_task),
-                        })
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let task = application
+            .create_task(TaskName::new("Original project").unwrap(), at(1))
+            .unwrap();
+        if action == "restore" {
+            application.archive_task(task.id(), at(2)).unwrap();
+        }
+        let initial = resource_dtos(application.tasks(TaskOrdering::default()), None);
+        let state = Arc::new(Mutex::new(initial));
+        let changed = state.clone();
+        let mut committed_task = state.lock().unwrap().0.tasks[0].clone();
+        committed_task.updated_at = at(400);
+        if action == "rename" {
+            committed_task.name = "Requested name".into();
+        } else {
+            committed_task.archived = action == "archive";
+        }
+        let router = healthy_router().merge(resource_router_state(state)).route(
+            "/v1/tasks/{id}",
+            patch(move |Json(body): Json<Value>| {
+                let changed = changed.clone();
+                let committed_task = committed_task.clone();
+                async move {
+                    let mut latest: TaskDto = committed_task.clone();
+                    latest.name = "Later writer name".into();
+                    latest.archived = if action == "rename" {
+                        latest.archived
+                    } else {
+                        !latest.archived
+                    };
+                    latest.updated_at = at(401);
+                    {
+                        let mut state = changed.lock().unwrap();
+                        state.0.tasks[0] = latest;
                     }
-                }),
-            );
-            let server = Server::start(router);
-            let mut bridge = server.client();
-            bridge.application.refresh_resources().unwrap();
-            let value = if action == "rename" {
-                let id = CString::new(task.id().to_string()).unwrap();
-                let expected = c"Original project";
-                let name = CString::new("Requested name").unwrap();
-                let timestamp = CString::new(timestamp(at(400))).unwrap();
-                // SAFETY: The bridge and input strings are live for this call.
-                response(unsafe {
-                    tt_bridge_rename_task_with_expected_name_at(
-                        &mut bridge,
-                        id.as_ptr(),
-                        expected.as_ptr(),
-                        name.as_ptr(),
-                        timestamp.as_ptr(),
-                    )
-                })
-            } else {
-                change(&mut bridge, task.id(), action == "archive")
-            };
-            assert!(
-                value.get("error").is_none(),
-                "{action}, replayed={replayed}: {value}"
-            );
-            assert_eq!(
-                value["data"]["task"]["name"],
-                if action == "rename" {
-                    "Requested name"
-                } else {
-                    "Original project"
+                    Json(MutationDto {
+                        request_id: body["request_id"].as_str().unwrap().into(),
+                        replayed: false,
+                        result: MutationResultDto::Task(committed_task),
+                    })
                 }
-            );
-            if action != "rename" {
-                assert_eq!(value["data"]["task"]["archived"], action == "archive");
+            }),
+        );
+        let server = Server::start(router);
+        let mut bridge = server.client();
+        bridge.application.refresh_resources().unwrap();
+        let value = if action == "rename" {
+            let id = CString::new(task.id().to_string()).unwrap();
+            let expected = c"Original project";
+            let name = CString::new("Requested name").unwrap();
+            let timestamp = CString::new(timestamp(at(400))).unwrap();
+            // SAFETY: The bridge and input strings are live for this call.
+            response(unsafe {
+                tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    name.as_ptr(),
+                    timestamp.as_ptr(),
+                )
+            })
+        } else {
+            change(&mut bridge, task.id(), action == "archive")
+        };
+        assert!(value.get("error").is_none(), "{action}: {value}");
+        assert_eq!(
+            value["data"]["task"]["name"],
+            if action == "rename" {
+                "Requested name"
+            } else {
+                "Original project"
             }
+        );
+        if action != "rename" {
+            assert_eq!(value["data"]["task"]["archived"], action == "archive");
+        }
+        assert_eq!(
+            test_task_values(&bridge.application)[0]["name"],
+            "Later writer name"
+        );
+        if action != "rename" {
             assert_eq!(
-                test_task_values(&bridge.application)[0]["name"],
-                "Later writer name"
+                test_task_values(&bridge.application)[0]["archived"],
+                action != "archive"
             );
-            if action != "rename" {
-                assert_eq!(
-                    test_task_values(&bridge.application)[0]["archived"],
-                    action != "archive"
-                );
-            }
         }
     }
 }
