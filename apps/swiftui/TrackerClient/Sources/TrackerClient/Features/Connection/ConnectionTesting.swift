@@ -1,6 +1,6 @@
 import Foundation
 
-public extension ConnectionSettings {
+extension ConnectionSettings {
     /// Returns these settings with the server URL trimmed, or throws when server mode has no URL.
     func normalized() throws -> ConnectionSettings {
         let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
