@@ -47,7 +47,7 @@ public struct TrackerMenuSources: Sendable {
     let automation: TrackingAutomationStore
     let presentation: TrackerPresentation
 
-    public init(
+    init(
         catalog: TaskCatalogStore, connection: ConnectionStore, tracking: TrackingStore,
         dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
         presentation: TrackerPresentation
