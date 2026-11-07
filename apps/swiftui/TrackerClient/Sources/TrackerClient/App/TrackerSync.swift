@@ -187,7 +187,6 @@ public final class TrackerSync {
                 guard let self else { return }
                 await resumeTracking(resume)
                 await reloadTaskList()
-                publish()
             }
         }
         publish()
@@ -325,7 +324,6 @@ public final class TrackerSync {
                 recordTrackingFailure(error)
             }
             await reloadTaskList()
-            publish()
         }
     }
 
