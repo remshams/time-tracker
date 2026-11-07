@@ -370,7 +370,7 @@ final class TrackerStatusItemController: NSObject {
 
     @objc private func selected(_ item: NSMenuItem) {
         guard item.isEnabled, let command = item.representedObject as? MenuCommand else { return }
-        // The session also validates the captured task and worklog against its current state.
+        // `TrackingActions` also validates the captured task and worklog against the current state.
         switch command.action {
         case .start(let id):
             guard command.connection == store.connection.settings else { return }
