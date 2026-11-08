@@ -225,11 +225,13 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   `Observations` loop. `TrackerSync` loads, refreshes and polls the stores,
   runs the display, rollover and menu bar timers, handles visibility, sleep
   and wake, pauses and resumes tracking when the screen locks and unlocks,
-  and switches the connection.
+  switches the connection, changes the tab and task selection, and reloads
+  after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
   `TrackingActions` starts and stops tracking and decides which of those
   requests are possible; it calls `TrackerSync` to reload and publish, and the
   sync never calls it. The session creates the stores, `TrackerSync` and
-  `TrackingActions`; its editor flows call `TrackerSync` to reload and publish.
+  `TrackingActions`; its editor flows call `reloadAfterTaskWrite(then:)` or
+  `reloadAfterWorklogWrite()` on `TrackerSync` and publish.
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
   `WorklogHistoryStore` sends its own page requests and reports each page or
