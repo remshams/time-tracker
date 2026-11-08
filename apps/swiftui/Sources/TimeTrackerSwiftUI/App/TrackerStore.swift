@@ -81,7 +81,6 @@ final class TrackerStore {
     /// Views read the auto-pause preference and status from this store the same way.
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
 
-    // Views read these through the observable presentation, so each view redraws only for values it reads.
     var canStopTracking: Bool { session.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }
 
