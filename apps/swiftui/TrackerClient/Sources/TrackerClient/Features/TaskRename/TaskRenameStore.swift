@@ -3,8 +3,8 @@ import Observation
 
 /// Holds the task rename dialog and sends its request.
 ///
-/// The sheet, the context menus and the toolbar read this store from the SwiftUI environment. Closing leaves the content in
-/// place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
+/// The sheet, the context menus and the toolbar read this store from the SwiftUI environment. Closing leaves the
+/// content in place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class TaskRenameStore {
     public private(set) var isPresented = false
