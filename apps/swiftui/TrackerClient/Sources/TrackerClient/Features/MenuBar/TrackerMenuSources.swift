@@ -36,8 +36,8 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
 
 /// The stores the menu bar reads.
 ///
-/// Values that combine features, such as whether a task can start, come from `TrackerPresentation` until a
-/// later step moves them out of the session.
+/// `TrackingAvailability` decides whether tracking can start or stop. The running task's name comes from
+/// `TrackerPresentation` until a later step moves it out of the session.
 public struct TrackerMenuSources: Sendable {
     let catalog: TaskCatalogStore
     let connection: ConnectionStore
@@ -45,12 +45,13 @@ public struct TrackerMenuSources: Sendable {
     let dailyTotals: DailyTotalsStore
     let menuBar: MenuBarStore
     let automation: TrackingAutomationStore
+    let availability: TrackingAvailability
     let presentation: TrackerPresentation
 
     init(
         catalog: TaskCatalogStore, connection: ConnectionStore, tracking: TrackingStore,
         dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
-        presentation: TrackerPresentation
+        availability: TrackingAvailability, presentation: TrackerPresentation
     ) {
         self.catalog = catalog
         self.connection = connection
@@ -58,6 +59,7 @@ public struct TrackerMenuSources: Sendable {
         self.dailyTotals = dailyTotals
         self.menuBar = menuBar
         self.automation = automation
+        self.availability = availability
         self.presentation = presentation
     }
 
@@ -73,8 +75,8 @@ public struct TrackerMenuSources: Sendable {
             trackingError: tracking.error,
             runningTaskName: presentation.runningTaskName,
             autoPauseStatusText: automation.statusText,
-            canStopTracking: presentation.canStopTracking,
-            startableTaskIDs: presentation.startableTaskIDs,
+            canStopTracking: availability.canStop,
+            startableTaskIDs: Set(catalog.tasks.map(\.id).filter { availability.canStart(taskID: $0) }),
             dailyTotalsStatus: dailyTotals.status,
             dayTotal: dailyTotals.dayTotal,
             totalsExplanation: dailyTotals.totalsExplanation,
