@@ -44,7 +44,7 @@ NAME_POLICY = "Features/TaskEditing/TaskNameEditingPolicy.swift"
 ARCHIVING = "Features/TaskArchiving/TaskArchivingStore.swift"
 BULK_ARCHIVING = "Features/BulkTaskArchiving/BulkTaskArchivingState.swift"
 CORRECTION = "Features/WorklogCorrection/WorklogCorrectionState.swift"
-MOVE = "Features/WorklogMove/WorklogMoveState.swift"
+MOVE = "Features/WorklogMove/WorklogMoveStore.swift"
 DELETION = "Features/WorklogDeletion/WorklogDeletionStore.swift"
 INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
 TIME_FORMATTING = "Shared/TimeFormatting.swift"
@@ -123,14 +123,14 @@ TEST_PRODUCTION = {
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION,
-        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION,
+        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         SESSION, SYNC, NAME_POLICY, CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION,
-        CONNECTION, CONNECTION_TESTING, NAME_POLICY, MENU_SOURCES, DELETION,
+        CONNECTION, CONNECTION_TESTING, NAME_POLICY, MENU_SOURCES, DELETION, MOVE,
     ],
     "Features/Tracking/TrackingAvailabilityTests.swift": [TRACKING_AVAILABILITY, CONNECTION, CATALOG, TRACKING],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
@@ -145,7 +145,7 @@ TEST_PRODUCTION = {
     ],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION,
-        CREATION, RENAME, DELETION,
+        CREATION, RENAME, DELETION, MOVE,
     ],
     "Features/WorklogHistory/HistoryTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, HISTORY, TRACKING, CATALOG, CONNECTION,
@@ -157,7 +157,7 @@ TEST_PRODUCTION = {
     ],
     "Features/WorklogDeletion/WorklogDeletionTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION,
-        RENAME, CORRECTION, ARCHIVING,
+        RENAME, CORRECTION, ARCHIVING, MOVE,
     ],
     "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
     "Support/FixtureCleanupTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, CONNECTION],
@@ -174,7 +174,7 @@ TEST_PRODUCTION_COMPANIONS = {
     # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
-    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME, ARCHIVING, CREATION, DELETION)},
+    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE)},
 }
 
 
@@ -193,23 +193,23 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # entry once its PR has merged, since its base snapshot no longer matches main.
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
     (
-        "#330 exposes the worklog deletion store on the fixture",
+        "#332 exposes the move store on the fixture",
         ((
-            "    var taskCreation: TaskCreationStore { session.taskCreation }\n",
-            "    var taskCreation: TaskCreationStore { session.taskCreation }\n"
             "    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }\n",
+            "    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }\n"
+            "    var worklogMove: WorklogMoveStore { session.worklogMove }\n",
         ),),
         None,
         None,
-        ("Features/WorklogDeletion/WorklogDeletionTests.swift",),
-        ("Features/WorklogDeletion/WorklogDeletionTests.swift",),
+        ("Features/WorklogMove/WorklogMoveTests.swift",),
+        ("Features/WorklogMove/WorklogMoveTests.swift",),
     ),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
         PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING,
-        TOTALS, AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION,
+        TOTALS, AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE,
     ],
     "Support/MenuHarness.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION, TRACKING,
@@ -221,7 +221,7 @@ SUPPORT_PRODUCTION = {
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
 REVIEWED_REPLACEMENTS: dict[str, str] = {
-    SOURCES + "Features/WorklogDeletion/WorklogDeletionState.swift": SOURCES + DELETION,
+    SOURCES + "Features/WorklogMove/WorklogMoveState.swift": SOURCES + MOVE,
 }
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
