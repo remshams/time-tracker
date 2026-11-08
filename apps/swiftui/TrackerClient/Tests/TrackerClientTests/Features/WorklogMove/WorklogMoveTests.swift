@@ -55,11 +55,9 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
-    private func finishHistory(
-        _ fixture: Fixture, task: String = firstTask.id, rows: [WorklogItem] = []
-    ) async throws {
+    private func finishHistory(_ fixture: Fixture, rows: [WorklogItem] = []) async throws {
         let history = try await fixture.client.next()
-        XCTAssertEqual(history.operation, .history(task: task, cursor: nil))
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         try await fixture.update("the reloaded history") {
             history.succeed(HistoryPage(worklogs: rows, nextCursor: nil, reset: false))
         } until: {
@@ -721,6 +719,20 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(search.operation, .candidates(source: firstTask.id, query: ""))
         try await loadCandidates(fixture, search)
         XCTAssertTrue(fixture.worklogMove.canSubmit)
+    }
+
+    @MainActor
+    func testCancelledOpeningIgnoresALateSearchFailure() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
+        fixture.worklogMove.open(worklogID: activeWorklog.id)
+        let opening = try await fixture.client.next()
+        fixture.worklogMove.cancel()
+        opening.fail(BridgeFailure(message: "Late failure"))
+        await deliverDroppedReply()
+        XCTAssertFalse(fixture.worklogMove.isPresented)
+        XCTAssertNil(fixture.worklogMove.error)
     }
 
     @MainActor
