@@ -21,7 +21,6 @@ final class TrackerStore {
     let menu: TrackerMenuPresentationObserver
     let creation: TaskCreationStore
     let bulkArchiving: BulkTaskArchivingStore
-    let archiving: TaskArchivingStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
@@ -52,7 +51,6 @@ final class TrackerStore {
             showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
-        archiving = TaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
         move = WorklogMoveStore(session: session, presentation: presentation)
         deletion = WorklogDeletionStore(session: session, presentation: presentation)
@@ -80,6 +78,8 @@ final class TrackerStore {
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
     /// The environment and the coordinator read the rename dialog from this store.
     var taskRename: TaskRenameStore { session.taskRename }
+    /// The environment and the coordinator read the archive dialog from this store.
+    var taskArchiving: TaskArchivingStore { session.taskArchiving }
 
     var canStopTracking: Bool { session.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }

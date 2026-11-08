@@ -50,7 +50,6 @@
 		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
 		C66F80324842D1AACBE93B6B /* TrackerMenuValueBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */; };
 		25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */; };
-		8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */; };
 		2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */; };
 		BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */; };
 		BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */; };
@@ -151,7 +150,6 @@
 		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 		58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenuValueBindings.swift; sourceTree = "<group>"; };
 		E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardSupport.swift; sourceTree = "<group>"; };
-		B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingStore.swift; sourceTree = "<group>"; };
 		BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingView.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingStore.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingView.swift; sourceTree = "<group>"; };
@@ -435,7 +433,6 @@
 		96323D4C37A17D8DDEDEE31F /* TaskArchiving */ = {
 			isa = PBXGroup;
 			children = (
-				B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */,
 				BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */,
 			);
 			path = TaskArchiving;
@@ -766,7 +763,6 @@
 				F70000000000000000000001 /* DelayedProgress.swift in Sources */,
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */,
-				8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */,
 				BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */,
 				BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */,
 				18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */,

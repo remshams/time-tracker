@@ -2,15 +2,14 @@ import SwiftUI
 import TrackerClient
 
 struct TaskArchivingSheet: View {
-    let archiving: TaskArchivingStore
+    @Environment(TaskArchivingStore.self) private var archiving
 
     var body: some View {
-        let state = archiving.sheetContent
-        let isUnarchiving = state.action == .unarchive
+        let isUnarchiving = archiving.action == .unarchive
         let actionTitle = isUnarchiving ? "Unarchive" : "Archive"
         VStack(alignment: .leading, spacing: 16) {
             Text("\(actionTitle) task").font(.title2.bold())
-            Text(state.taskName)
+            Text(archiving.taskName)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -22,7 +21,7 @@ struct TaskArchivingSheet: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            if let error = state.error {
+            if let error = archiving.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("task-archive.error")
                     .foregroundStyle(.red)
@@ -32,24 +31,24 @@ struct TaskArchivingSheet: View {
 
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
-                    isBusy: state.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
+                    isBusy: archiving.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
                     identifier: "task-archive.progress")
                 Spacer()
                 Button("Cancel") { archiving.cancel() }
                     .accessibilityIdentifier("task-archive.cancel")
                     .keyboardShortcut(.cancelAction)
-                    .disabled(state.isSubmitting)
+                    .disabled(archiving.isSubmitting)
                 Button(actionTitle) {
                     archiving.submit()
                 }
                 .accessibilityIdentifier("task-archive.confirm")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(!state.canSubmit)
+                .disabled(!archiving.canSubmit)
             }
         }
         .padding(24)
         .frame(width: 480)
-        .interactiveDismissDisabled(state.isSubmitting)
+        .interactiveDismissDisabled(archiving.isSubmitting)
     }
 }
