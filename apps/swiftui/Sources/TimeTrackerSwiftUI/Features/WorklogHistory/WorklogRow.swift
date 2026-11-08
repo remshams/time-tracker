@@ -6,7 +6,6 @@ struct WorklogRow: View {
     let active: WorklogItem?
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
-    let deletion: WorklogDeletionStore
 
     private var duration: TimeInterval { worklogDuration(worklog) }
 
@@ -32,7 +31,7 @@ struct WorklogRow: View {
             .foregroundStyle(.primary)
             .monospacedDigit()
             .fixedSize()
-            WorklogActionsMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
+            WorklogActionsMenu(correction: correction, move: move, worklog: worklog)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
@@ -43,7 +42,7 @@ struct WorklogRow: View {
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {
-            WorklogContextMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
+            WorklogContextMenu(correction: correction, move: move, worklog: worklog)
         }
     }
 }
@@ -51,13 +50,13 @@ struct WorklogRow: View {
 private struct WorklogActionsMenu: View {
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
-    let deletion: WorklogDeletionStore
     let worklog: WorklogItem
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
+    @Environment(WorklogDeletionStore.self) private var deletion
 
     var body: some View {
         Menu {
-            WorklogContextMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
+            WorklogContextMenu(correction: correction, move: move, worklog: worklog)
         } label: {
             Label("Worklog actions", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
@@ -74,9 +73,9 @@ private struct WorklogActionsMenu: View {
 private struct WorklogContextMenu: View {
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
-    let deletion: WorklogDeletionStore
     let worklog: WorklogItem
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
+    @Environment(WorklogDeletionStore.self) private var deletion
 
     var body: some View {
         let hasPresentation = presentation.hasPresentation
