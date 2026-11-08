@@ -308,6 +308,26 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(probes.changed(), ["error"])
         XCTAssertNil(fixture.session.tracking.error)
     }
+
+    @MainActor
+    func testANewTrackingRequestClearsTheShownErrorWhenItStarts() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
+        fixture.trackingActions.startTracking(taskID: firstTask.id)
+        try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
+        try await fixture.client.next().succeed(resources)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tracking.error, "Start rejected")
+
+        fixture.trackingActions.startTracking(taskID: firstTask.id)
+        XCTAssertNil(fixture.session.tracking.error)
+        try await fixture.client.next().fail(BridgeFailure(message: "Start rejected again"))
+        try await fixture.client.next().succeed(resources)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tracking.error, "Start rejected again")
+    }
 }
 
 /// Reports which tracking properties changed, in declaration order, as views reading each one would see them.
