@@ -172,7 +172,7 @@ TEST_PRODUCTION_COMPANIONS = {
     # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
-    **{coordinator: (WRITE_FAILURE,) for coordinator in (SESSION, SYNC, RENAME)},
+    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME)},
 }
 
 
