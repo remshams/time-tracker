@@ -425,7 +425,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertTrue(fixture.session.worklogMove.isPresented)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
-        XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
+        XCTAssertTrue(fixture.worklogDeletion.canOpen)
 
         fixture.session.openWorklogCorrection(worklogID: precise.id)
         fixture.session.setWorklogCorrectionStart(try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z")))
