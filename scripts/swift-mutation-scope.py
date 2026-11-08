@@ -42,7 +42,7 @@ CREATION = "Features/TaskCreation/TaskCreationStore.swift"
 RENAME = "Features/TaskRename/TaskRenameStore.swift"
 NAME_POLICY = "Features/TaskEditing/TaskNameEditingPolicy.swift"
 ARCHIVING = "Features/TaskArchiving/TaskArchivingStore.swift"
-BULK_ARCHIVING = "Features/BulkTaskArchiving/BulkTaskArchivingState.swift"
+BULK_ARCHIVING = "Features/BulkTaskArchiving/BulkTaskArchivingStore.swift"
 CORRECTION = "Features/WorklogCorrection/WorklogCorrectionState.swift"
 MOVE = "Features/WorklogMove/WorklogMoveStore.swift"
 DELETION = "Features/WorklogDeletion/WorklogDeletionStore.swift"
@@ -118,7 +118,7 @@ TEST_PRODUCTION = {
     ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME,
-        CORRECTION, MOVE, CONNECTION, DELETION,
+        CORRECTION, MOVE, CONNECTION, DELETION, BULK_ARCHIVING,
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
@@ -174,7 +174,7 @@ TEST_PRODUCTION_COMPANIONS = {
     # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
-    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE)},
+    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING)},
 }
 
 
@@ -193,23 +193,23 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # entry once its PR has merged, since its base snapshot no longer matches main.
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
     (
-        "#332 exposes the move store on the fixture",
+        "#329 exposes the bulk archive store on the fixture",
         ((
-            "    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }\n",
-            "    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }\n"
             "    var worklogMove: WorklogMoveStore { session.worklogMove }\n",
+            "    var worklogMove: WorklogMoveStore { session.worklogMove }\n"
+            "    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }\n",
         ),),
         None,
         None,
-        ("Features/WorklogMove/WorklogMoveTests.swift",),
-        ("Features/WorklogMove/WorklogMoveTests.swift",),
+        ("Features/BulkTaskArchiving/BulkTaskArchivingTests.swift",),
+        ("Features/BulkTaskArchiving/BulkTaskArchivingTests.swift",),
     ),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
         PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING,
-        TOTALS, AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE,
+        TOTALS, AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING,
     ],
     "Support/MenuHarness.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION, TRACKING,
@@ -221,7 +221,7 @@ SUPPORT_PRODUCTION = {
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
 REVIEWED_REPLACEMENTS: dict[str, str] = {
-    SOURCES + "Features/WorklogMove/WorklogMoveState.swift": SOURCES + MOVE,
+    SOURCES + "Features/BulkTaskArchiving/BulkTaskArchivingState.swift": SOURCES + BULK_ARCHIVING,
 }
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
