@@ -12,8 +12,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
 
     public private(set) var taskCreation: TaskCreationPresentation
     public private(set) var canOpenTaskCreation: Bool
-    public private(set) var taskRename: TaskRenamePresentation
-    public private(set) var canOpenTaskRename: Bool
     public private(set) var taskArchiving: TaskArchivingPresentation
     public private(set) var taskArchivingSheetContent: TaskArchivingPresentation
     public private(set) var archivableTaskIDs: Set<String>
@@ -35,8 +33,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
         runningTaskName = session.runningTaskName
         taskCreation = session.taskCreation
         canOpenTaskCreation = session.canOpenTaskCreation
-        taskRename = session.taskRename
-        canOpenTaskRename = session.canOpenTaskRename
         taskArchiving = session.taskArchiving
         taskArchivingSheetContent = session.taskArchiving
         archivableTaskIDs = Self.archivableTaskIDs(session)
@@ -59,8 +55,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
         set(\.runningTaskName, session.runningTaskName)
         set(\.taskCreation, session.taskCreation)
         set(\.canOpenTaskCreation, session.canOpenTaskCreation)
-        set(\.taskRename, session.taskRename)
-        set(\.canOpenTaskRename, session.canOpenTaskRename)
         set(\.taskArchiving, session.taskArchiving)
         set(\.archivableTaskIDs, Self.archivableTaskIDs(session))
         set(\.unarchivableTaskIDs, Self.unarchivableTaskIDs(session))

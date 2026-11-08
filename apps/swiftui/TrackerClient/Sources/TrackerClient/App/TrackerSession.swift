@@ -24,12 +24,13 @@ public final class TrackerSession {
     public let menuBar: MenuBarStore
     /// Views read the auto-pause preference and status here; the sync writes them.
     public let trackingAutomation: TrackingAutomationStore
+    /// The task rename dialog. The sheet and the context menus read it from the SwiftUI environment.
+    public let taskRename: TaskRenameStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
     private let creation = TaskCreationState()
-    private let rename = TaskRenameState()
     private let archiving = TaskArchivingState()
     private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
@@ -61,16 +62,16 @@ public final class TrackerSession {
         trackingActions = TrackingActions(
             client: client, clock: clock, sync: sync, catalog: taskCatalog, availability: trackingAvailability,
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
+        taskRename = TaskRenameStore(
+            client: client, clock: clock, connection: connection, catalog: taskCatalog,
+            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
     }
 
-    // The session's flows read these three; `TrackerPresentation` also reads `tasks`.
+    // The session's flows read these two; `TrackerPresentation` also reads `tasks`.
     public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
-    public var selectedTask: TaskItem? { taskCatalog.selectedTask }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool { connection.confirmed }
-    public var taskRename: TaskRenamePresentation { rename.presentation }
-    public var canOpenTaskRename: Bool { connection.confirmed && selectedTask != nil }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
     public var canOpenWorklogCorrection: Bool { connection.confirmed }
     public var worklogMove: WorklogMovePresentation { move.presentation }
@@ -210,44 +211,6 @@ public final class TrackerSession {
                 creation.fail(writeFailure(error))
                 await sync.reloadAfterTaskWrite()
             }
-        }
-    }
-
-    public func openTaskRename(taskID: String? = nil) {
-        guard canOpenTaskRename else { return }
-        let target = taskID.flatMap { task(withID: $0) } ?? (taskID == nil ? selectedTask : nil)
-        rename.open(target)
-        sync.publish()
-    }
-
-    public func setTaskRenameName(_ name: String) {
-        rename.updateName(name)
-        sync.publish()
-    }
-
-    public func cancelTaskRename() {
-        rename.cancel()
-        sync.publish()
-    }
-
-    public func submitTaskRename() {
-        guard let request = rename.submit() else {
-            sync.publish()
-            return
-        }
-        let occurredAt = formatTimestamp(clock.now)
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try await client.renameTask(
-                    taskID: request.taskID, expectedName: request.originalName, name: request.name,
-                    occurredAt: occurredAt)
-                rename.reset()
-            } catch {
-                rename.fail(writeFailure(error))
-            }
-            await sync.reloadAfterTaskWrite()
         }
     }
 

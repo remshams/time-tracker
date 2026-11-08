@@ -415,6 +415,7 @@ final class Fixture {
     var trackingActions: TrackingActions { session.trackingActions }
     var trackingAvailability: TrackingAvailability { session.trackingAvailability }
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
+    var taskRename: TaskRenameStore { session.taskRename }
     var canStartSelectedTask: Bool {
         guard let taskID = session.taskCatalog.selectedTaskID else { return false }
         return trackingAvailability.canStart(taskID: taskID)

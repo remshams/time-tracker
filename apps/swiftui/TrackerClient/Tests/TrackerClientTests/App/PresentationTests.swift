@@ -289,12 +289,6 @@ final class PresentationTests: XCTestCase {
                 name: "cancel bulk archiving", action: { session.cancelBulkTaskArchiving() },
                 presents: { !$0.bulkTaskArchiving.isPresented }),
             EditorStep(
-                name: "open rename", action: { session.openTaskRename() },
-                presents: { $0.taskRename.isPresented }),
-            EditorStep(
-                name: "cancel rename", action: { session.cancelTaskRename() },
-                presents: { !$0.taskRename.isPresented }),
-            EditorStep(
                 name: "open move", action: { session.openWorklogMove(worklogID: oldWorklog.id) },
                 presents: { $0.worklogMove.isSearching }, reply: { $0.candidates([second, third]) }),
             EditorStep(

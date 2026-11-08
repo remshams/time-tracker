@@ -65,6 +65,7 @@ final class PresentationHarness {
     var dailyTotals: DailyTotalsStore { session.dailyTotals }
     var automation: TrackingAutomationStore { session.trackingAutomation }
     var availability: TrackingAvailability { session.trackingAvailability }
+    var taskRename: TaskRenameStore { session.taskRename }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -167,8 +168,12 @@ enum PresentationReads {
     }
 
     static func taskRename(_ views: PresentationHarness) {
-        _ = views.presentation.taskRename
-        _ = views.presentation.canOpenTaskRename
+        _ = views.taskRename.isPresented
+        _ = views.taskRename.originalName
+        _ = views.taskRename.name
+        _ = views.taskRename.isSubmitting
+        _ = views.taskRename.error
+        _ = views.taskRename.canOpen
     }
 
     static func taskArchiving(_ views: PresentationHarness) {
@@ -220,8 +225,6 @@ func assertMirrors(
         file: file, line: line)
     XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)
     XCTAssertEqual(presentation.canOpenTaskCreation, session.canOpenTaskCreation, file: file, line: line)
-    XCTAssertEqual(presentation.taskRename, session.taskRename, file: file, line: line)
-    XCTAssertEqual(presentation.canOpenTaskRename, session.canOpenTaskRename, file: file, line: line)
     XCTAssertEqual(presentation.taskArchiving, session.taskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.bulkTaskArchiving, session.bulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving, file: file, line: line)
