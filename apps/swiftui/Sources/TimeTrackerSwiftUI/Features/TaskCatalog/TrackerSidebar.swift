@@ -13,7 +13,7 @@ struct TrackerSidebar: View {
     }
 
     private var selectionBinding: Binding<String?> {
-        Binding(get: { catalog.selectedTaskID }, set: { store.select($0) })
+        Binding(get: { catalog.selectedTaskID }, set: { store.selectTask($0) })
     }
 
     var body: some View {
