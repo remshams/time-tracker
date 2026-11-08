@@ -30,6 +30,8 @@ public final class TrackerSession {
     public let taskArchiving: TaskArchivingStore
     /// The task creation dialog.
     public let taskCreation: TaskCreationStore
+    /// The worklog deletion dialog.
+    public let worklogDeletion: WorklogDeletionStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
@@ -37,7 +39,6 @@ public final class TrackerSession {
     private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
-    private let deletion = WorklogDeletionState()
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -73,6 +74,9 @@ public final class TrackerSession {
         taskCreation = TaskCreationStore(
             client: client, clock: clock, connection: connection, showTask: sync.showTask(_:),
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+        worklogDeletion = WorklogDeletionStore(
+            client: client, connection: connection, catalog: taskCatalog, history: worklogHistory,
+            reloadAfterWrite: sync.reloadAfterWorklogWrite)
     }
 
     // The session's flows read these two.
@@ -82,8 +86,6 @@ public final class TrackerSession {
     public var canOpenWorklogCorrection: Bool { connection.confirmed }
     public var worklogMove: WorklogMovePresentation { move.presentation }
     public var canOpenWorklogMove: Bool { connection.confirmed }
-    public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
-    public var canOpenWorklogDeletion: Bool { connection.confirmed }
 
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
@@ -208,32 +210,6 @@ public final class TrackerSession {
                 correction.reset()
             } catch {
                 correction.fail(writeFailure(error))
-            }
-            await sync.reloadAfterWorklogWrite()
-        }
-    }
-
-    public func openWorklogDeletion(worklogID: String) {
-        guard canOpenWorklogDeletion, let worklog = worklog(withID: worklogID) else { return }
-        deletion.open(worklog, taskName: taskName(worklog.taskId))
-        sync.publish()
-    }
-
-    public func cancelWorklogDeletion() {
-        deletion.cancel()
-        sync.publish()
-    }
-
-    public func submitWorklogDeletion() {
-        guard let expected = deletion.submit() else { return }
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try await client.deleteWorklog(expected: expected)
-                deletion.reset()
-            } catch {
-                deletion.fail(writeFailure(error))
             }
             await sync.reloadAfterWorklogWrite()
         }

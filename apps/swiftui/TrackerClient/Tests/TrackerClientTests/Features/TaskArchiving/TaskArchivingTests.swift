@@ -210,7 +210,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
-        XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
+        XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.session.canOpenBulkTaskArchiving)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
         fixture.taskCreation.open()

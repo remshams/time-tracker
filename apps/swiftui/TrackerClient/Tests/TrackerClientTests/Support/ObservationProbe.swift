@@ -68,6 +68,7 @@ final class PresentationHarness {
     var taskRename: TaskRenameStore { session.taskRename }
     var taskArchiving: TaskArchivingStore { session.taskArchiving }
     var taskCreation: TaskCreationStore { session.taskCreation }
+    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -205,8 +206,12 @@ enum PresentationReads {
     }
 
     static func worklogDeletion(_ views: PresentationHarness) {
-        _ = views.presentation.worklogDeletion
-        _ = views.presentation.canOpenWorklogDeletion
+        _ = views.worklogDeletion.isPresented
+        _ = views.worklogDeletion.taskName
+        _ = views.worklogDeletion.original
+        _ = views.worklogDeletion.isSubmitting
+        _ = views.worklogDeletion.error
+        _ = views.worklogDeletion.canOpen
     }
 }
 
@@ -235,8 +240,6 @@ func assertMirrors(
     XCTAssertEqual(presentation.canOpenWorklogCorrection, session.canOpenWorklogCorrection, file: file, line: line)
     XCTAssertEqual(presentation.worklogMove, session.worklogMove, file: file, line: line)
     XCTAssertEqual(presentation.canOpenWorklogMove, session.canOpenWorklogMove, file: file, line: line)
-    XCTAssertEqual(presentation.worklogDeletion, session.worklogDeletion, file: file, line: line)
-    XCTAssertEqual(presentation.canOpenWorklogDeletion, session.canOpenWorklogDeletion, file: file, line: line)
     for task in session.tasks {
         XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
@@ -254,8 +257,5 @@ func assertMirrors(
     }
     if session.worklogMove.isPresented {
         XCTAssertEqual(presentation.worklogMoveSheetContent, session.worklogMove, file: file, line: line)
-    }
-    if session.worklogDeletion.isPresented {
-        XCTAssertEqual(presentation.worklogDeletionSheetContent, session.worklogDeletion, file: file, line: line)
     }
 }
