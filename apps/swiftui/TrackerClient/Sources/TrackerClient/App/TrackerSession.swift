@@ -2,7 +2,7 @@ import Foundation
 
 public final class TrackerSession {
     /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
-    /// change, and publishes after each change.
+    /// change, changes the tab and task selection, reloads after dialog writes, and publishes after each change.
     public let sync: TrackerSync
     /// Starts and stops tracking and decides which of those requests are possible.
     public let trackingActions: TrackingActions
