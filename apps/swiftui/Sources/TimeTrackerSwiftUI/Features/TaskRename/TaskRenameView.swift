@@ -1,17 +1,17 @@
 import SwiftUI
+import TrackerClient
 
 struct TaskRenameSheet: View {
-    let rename: TaskRenameStore
+    @Environment(TaskRenameStore.self) private var rename
 
     var body: some View {
-        let state = rename.state
         TaskNameSheet(
-            title: "Edit task name", context: "Task: \(state.originalName)",
+            title: "Edit task name", context: "Task: \(rename.originalName)",
             name: Binding(
-                get: { rename.state.name }, set: { rename.setName($0) }
+                get: { rename.name }, set: { rename.setName($0) }
             ), actionTitle: "Save",
-            progressTitle: "Saving task...", isSubmitting: state.isSubmitting,
-            canSubmit: state.canSubmit, error: state.error,
+            progressTitle: "Saving task...", isSubmitting: rename.isSubmitting,
+            canSubmit: rename.canSubmit, error: rename.error,
             cancel: rename.cancel, submit: rename.submit)
     }
 }
