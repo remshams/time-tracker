@@ -88,7 +88,6 @@ public final class TaskArchivingStore {
         let occurredAt = formatTimestamp(clock.now)
         // The dialog can open for another task during the reload, so the reload's follow-up reads these copies.
         let taskID = self.taskID
-        let taskName = self.taskName
         let action = self.action
         Task { [weak self] in
             guard let self else { return }
