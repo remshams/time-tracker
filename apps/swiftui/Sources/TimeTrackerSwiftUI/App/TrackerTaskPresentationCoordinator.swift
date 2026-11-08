@@ -50,7 +50,7 @@ extension TrackerStore {
     fileprivate var presentationFlags: (editorIsPresented: Bool, hasTrackingError: Bool) {
         let editorIsPresented =
             taskCreation.isPresented || taskRename.isPresented || correction.state.isPresented
-            || move.state.isPresented || deletion.state.isPresented || taskArchiving.isPresented
+            || move.state.isPresented || worklogDeletion.isPresented || taskArchiving.isPresented
             || bulkArchiving.state.isPresented
         return (editorIsPresented, tracking.error != nil)
     }
@@ -96,10 +96,10 @@ struct TrackerDetailPresentation: View {
                     WorklogMoveSheet(move: store.move)
                 }
                 EditorSheet(
-                    isPresented: { store.deletion.state.isPresented },
-                    cancel: store.deletion.cancel
+                    isPresented: { store.worklogDeletion.isPresented },
+                    cancel: store.worklogDeletion.cancel
                 ) {
-                    WorklogDeletionSheet(deletion: store.deletion)
+                    WorklogDeletionSheet()
                 }
                 EditorSheet(
                     isPresented: { store.bulkArchiving.state.isPresented },

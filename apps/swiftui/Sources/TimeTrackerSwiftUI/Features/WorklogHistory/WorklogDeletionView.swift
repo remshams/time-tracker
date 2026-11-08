@@ -2,19 +2,18 @@ import SwiftUI
 import TrackerClient
 
 struct WorklogDeletionSheet: View {
-    let deletion: WorklogDeletionStore
+    @Environment(WorklogDeletionStore.self) private var deletion
 
     var body: some View {
-        let state = deletion.sheetContent
         VStack(alignment: .leading, spacing: 16) {
             Text("Delete worklog").font(.title2.bold())
-            Text(state.taskName)
+            Text(deletion.taskName)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
-                .help(state.taskName)
+                .help(deletion.taskName)
 
-            if let original = state.original {
+            if let original = deletion.original {
                 WorklogDeletionSummary(worklog: original)
             }
 
@@ -22,7 +21,7 @@ struct WorklogDeletionSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let error = state.error {
+            if let error = deletion.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("worklog-deletion.error")
                     .foregroundStyle(.red)
@@ -32,13 +31,13 @@ struct WorklogDeletionSheet: View {
 
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
-                    isBusy: state.isSubmitting, title: "Deleting worklog...",
+                    isBusy: deletion.isSubmitting, title: "Deleting worklog...",
                     identifier: "worklog-deletion.progress")
                 Spacer()
                 Button("Cancel") { deletion.cancel() }
                     .accessibilityIdentifier("worklog-deletion.cancel")
                     .keyboardShortcut(.cancelAction)
-                    .disabled(state.isSubmitting)
+                    .disabled(deletion.isSubmitting)
                 Button("Delete", role: .destructive) {
                     deletion.submit()
                 }
@@ -46,12 +45,12 @@ struct WorklogDeletionSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
-                .disabled(!state.canSubmit)
+                .disabled(!deletion.canSubmit)
             }
         }
         .padding(24)
         .frame(width: 440)
-        .interactiveDismissDisabled(state.isSubmitting)
+        .interactiveDismissDisabled(deletion.isSubmitting)
     }
 }
 
