@@ -69,6 +69,7 @@ final class PresentationHarness {
     var taskArchiving: TaskArchivingStore { session.taskArchiving }
     var taskCreation: TaskCreationStore { session.taskCreation }
     var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
+    var worklogMove: WorklogMoveStore { session.worklogMove }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -201,8 +202,16 @@ enum PresentationReads {
     }
 
     static func worklogMove(_ views: PresentationHarness) {
-        _ = views.presentation.worklogMove
-        _ = views.presentation.canOpenWorklogMove
+        _ = views.worklogMove.isPresented
+        _ = views.worklogMove.original
+        _ = views.worklogMove.sourceTaskName
+        _ = views.worklogMove.query
+        _ = views.worklogMove.candidates
+        _ = views.worklogMove.selectedTaskID
+        _ = views.worklogMove.isSearching
+        _ = views.worklogMove.isSubmitting
+        _ = views.worklogMove.error
+        _ = views.worklogMove.canOpen
     }
 
     static func worklogDeletion(_ views: PresentationHarness) {
@@ -238,8 +247,6 @@ func assertMirrors(
     XCTAssertEqual(presentation.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.worklogCorrection, session.worklogCorrection, file: file, line: line)
     XCTAssertEqual(presentation.canOpenWorklogCorrection, session.canOpenWorklogCorrection, file: file, line: line)
-    XCTAssertEqual(presentation.worklogMove, session.worklogMove, file: file, line: line)
-    XCTAssertEqual(presentation.canOpenWorklogMove, session.canOpenWorklogMove, file: file, line: line)
     for task in session.tasks {
         XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
@@ -254,8 +261,5 @@ func assertMirrors(
     if session.worklogCorrection.isPresented {
         XCTAssertEqual(
             presentation.worklogCorrectionSheetContent, session.worklogCorrection, file: file, line: line)
-    }
-    if session.worklogMove.isPresented {
-        XCTAssertEqual(presentation.worklogMoveSheetContent, session.worklogMove, file: file, line: line)
     }
 }

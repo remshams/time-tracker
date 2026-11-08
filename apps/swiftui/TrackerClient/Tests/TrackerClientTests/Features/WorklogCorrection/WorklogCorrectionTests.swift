@@ -280,7 +280,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
         XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.session.canOpenWorklogMove)
+        XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
 

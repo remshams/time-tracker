@@ -8,22 +8,26 @@ final class PresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         let harness = PresentationHarness(session: fixture.session)
         let bulk = harness.counter(PresentationReads.bulkTaskArchiving)
-        let move = harness.counter(PresentationReads.worklogMove)
+        let move = ObservationProbe { PresentationReads.worklogMove(harness) }
         let correction = harness.counter(PresentationReads.worklogCorrection)
         let deletion = harness.counter(PresentationReads.worklogDeletion)
 
         harness.update()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 0, 0, 0])
+        XCTAssertEqual([bulk.count, correction.count, deletion.count], [0, 0, 0])
+        XCTAssertFalse(move.consume())
         XCTAssertFalse(harness.worklogDeletion.canOpen)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         harness.attach()
         harness.update()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
+        XCTAssertEqual([bulk.count, correction.count, deletion.count], [1, 1, 1])
+        XCTAssertTrue(move.consume())
         XCTAssertTrue(harness.worklogDeletion.canOpen)
+        XCTAssertTrue(fixture.worklogMove.canOpen)
         fixture.taskCreation.open()
         fixture.taskCreation.cancel()
         harness.update()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
+        XCTAssertEqual([bulk.count, correction.count, deletion.count], [1, 1, 1])
+        XCTAssertFalse(move.consume())
     }
 
     @MainActor
@@ -263,8 +267,6 @@ final class PresentationTests: XCTestCase {
         try await fixture.settled()
         let harness = PresentationHarness(session: fixture.session)
         let session = fixture.session
-        let second = WorklogMoveCandidate(id: secondTask.id, name: secondTask.name)
-        let third = WorklogMoveCandidate(id: "task-three", name: "Third task")
         let correctedEnd = try XCTUnwrap(parseTimestamp("2024-12-30T10:30:00.000Z"))
         let preview: @MainActor (FakeClient.Request) -> Void = { request in
             guard case .inactivePreview(let days, let at) = request.operation else {
@@ -286,26 +288,6 @@ final class PresentationTests: XCTestCase {
             EditorStep(
                 name: "cancel bulk archiving", action: { session.cancelBulkTaskArchiving() },
                 presents: { !$0.bulkTaskArchiving.isPresented }),
-            EditorStep(
-                name: "open move", action: { session.openWorklogMove(worklogID: oldWorklog.id) },
-                presents: { $0.worklogMove.isSearching }, reply: { $0.candidates([second, third]) }),
-            EditorStep(
-                name: "move the destination selection", action: { session.moveWorklogDestinationSelection(by: 1) },
-                presents: { $0.worklogMove.selectedTaskID == third.id }),
-            EditorStep(
-                name: "select a move destination", action: { session.selectWorklogMoveDestination(taskID: second.id) },
-                presents: { $0.worklogMove.selectedTaskID == second.id }),
-            EditorStep(
-                name: "change the move query", action: { session.setWorklogMoveQuery("task") },
-                presents: { $0.worklogMove.query == "task" && $0.worklogMove.isSearching },
-                reply: { $0.fail(BridgeFailure(message: "Search unavailable")) }),
-            EditorStep(
-                name: "retry move candidates", action: { session.retryWorklogMoveCandidates() },
-                presents: { $0.worklogMove.isSearching && $0.worklogMove.error == nil },
-                reply: { $0.candidates([second]) }),
-            EditorStep(
-                name: "cancel move", action: { session.cancelWorklogMove() },
-                presents: { !$0.worklogMove.isPresented }),
             EditorStep(
                 name: "open correction", action: { session.openWorklogCorrection(worklogID: oldWorklog.id) },
                 presents: { $0.worklogCorrection.isPresented }),
