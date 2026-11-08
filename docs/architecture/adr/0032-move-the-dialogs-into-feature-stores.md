@@ -26,7 +26,7 @@ A dialog store gets the dependencies it uses through its initializer, such as th
 
 ### Reload closures
 
-Features don't depend on `App/`, so a dialog store can't call `TrackerSync`. Each dialog store takes one closure instead:
+Features don't depend on `App/`, so a dialog store can't call `TrackerSync`. Each dialog store takes a reload closure instead:
 
 ```swift
 // Task dialogs. `then` runs after the task list arrives and before the last publish.
@@ -43,9 +43,11 @@ TaskRenameStore(client: client, reloadAfterWrite: sync.reloadAfterTaskWrite(then
 WorklogDeletionStore(client: client, reloadAfterWrite: sync.reloadAfterWorklogWrite)
 ```
 
-The `@MainActor` is part of the type. The package enables `NonisolatedNonsendingByDefault`, and default isolation doesn't apply to function types, so without it the closure type isn't isolated to the main actor and doesn't match the method. A store captures the method strongly. That forms no cycle, because `TrackerSync` doesn't hold dialog stores.
+The `@MainActor` is part of the type. Default isolation doesn't apply to function types, so without it the closure type isn't isolated to the main actor, and the non-Sendable `then` would cross an isolation boundary. A store captures the method strongly. That forms no cycle, because `TrackerSync` doesn't hold dialog stores.
 
-`then` holds the follow-up that needs the reloaded task list: restoring a task remembers it in the catalog, and creating a task shows it.
+`then` holds the follow-up that needs the reloaded task list, and it runs in the dialog store. Restoring a task calls `catalog.rememberRestoredTask`.
+
+Creating a task also has to show it: change the tab and selection, then reload the history once if either changed. Only `TrackerSync` can reload the history, and calling `changeTab(_:)` and `selectTask(_:)` in a row could send two requests. So #327 adds `TrackerSync.showTask(_:)`, and `TaskCreationStore` is the one store with a second closure, `showTask: @MainActor (TaskItem) -> Void`, which it calls in `then`.
 
 ### Reloads and selection
 
@@ -53,7 +55,7 @@ The `@MainActor` is part of the type. The package enables `NonisolatedNonsending
 
 ### TrackerFeatures
 
-`TrackerFeatures` is a package type in `App/` with no methods. It replaces the session's `init`: it creates and holds the stores, `TrackerSync`, `TrackingActions` and the dialog stores, and it passes the reload closures. `TrackerStore` and the test fixture both use it. The session's read-only forwarders go, and callers read the stores.
+`TrackerFeatures` is a public type in the package's `App/` with no methods, so the app target can create it. It replaces the session's `init`: it creates and holds the stores, `TrackerSync`, `TrackingActions` and the dialog stores, and it passes the reload closures. `TrackerStore` and the test fixture both use it. The session's read-only forwarders go, and callers read the stores.
 
 ### Views
 
@@ -79,13 +81,13 @@ A `TrackingAvailability` struct in `Features/Tracking` reads `ConnectionStore`, 
 
 ### Rejected alternatives
 
-- **Features depending on `App/`, or a shared folder for `TrackerSync`.** Either would let a dialog store call the sync directly. The first breaks the rule that only `App/` composes features, and the second would hold one class that isn't shared. A closure gives each store the single call it needs.
-- **`TrackingActions` as the owner of the start and stop checks.** The menu would then depend on `App/`, which forms a folder cycle.
+- **Features depending on `App/`, or a shared folder for `TrackerSync`.** Either would let a dialog store call the sync directly. The first breaks the rule that only `App/` composes features, and the second would hold one class that isn't shared. A closure gives each store only the calls it needs.
+- **`TrackingActions` as the owner of the start and stop checks.** See the folder cycle under Context.
 - **Keeping `TrackerPresentation` for the five remaining values.** It would keep one more copy and one more recomputation per `publish()` for values the stores can answer when asked.
 
 ### Steps
 
-Issues #325-#333 and #335-#340 track the steps. During the migration the session creates each new store and passes its closure. #326 sets the template for the other dialogs. #333 adds `TrackerFeatures` and deletes the session after #338 has deleted `TrackerPresentation`.
+Issues #324 and #334 list the steps. During the migration the session creates each new store and passes its closures.
 
 ### Superseded clauses
 
@@ -93,7 +95,11 @@ This record replaces these clauses:
 
 - ADR 0026: "Keep each sheet's last presented content while it closes, because SwiftUI renders the sheet during its dismissal animation." The reason stays. The store now keeps its own content and no copy is made.
 - ADR 0030: "`TrackerPresentation` and `publish()` go away step by step." `TrackerPresentation` goes and `publish()` stays.
-- ADR 0030: "Stores are passive. A store doesn't fetch data or call other stores, with one exception: `WorklogHistoryStore` sends its own page requests". Dialog stores also send their own requests, read the stores they depend on and run their reload closure.
+- ADR 0030: "Stores are passive. A store doesn't fetch data or call other stores, with one exception: `WorklogHistoryStore` sends its own page requests". Dialog stores also send their own requests, read the stores they depend on and run their reload closure, and their `then` can write to the catalog.
+- ADR 0030: "A new `TrackerSync` class and the orchestration code in `App/` write into stores". Dialog stores also write their own state, and a `then` step writes to the catalog.
+- ADR 0030: "Cross-feature follow-ups are explicit calls in `App/` in a fixed order". A follow-up to a dialog write is an explicit call in that store's `then`, and the order is still fixed. Stores still don't observe each other.
+- ADR 0030: "A store keeps a value that views read and that it derives from its own state … as a stored property." This no longer applies to a dialog store's `canSubmit` and `canOpen`, which are computed. One sheet or menu entry reads them, so the extra redraws don't matter.
+- ADR 0030: "Rows get plain values from their parent, so a row redraws only when its own values change." A row may call `TrackingAvailability.canStart(taskID:)` and `TaskArchivingStore.canArchive(taskID:)`. The consequences below cover the redraws.
 - ADR 0030: "keep a sheet's last content while it closes", and the kept sheet content in its list of ADR 0026 decisions that stay. The closing rule above replaces them.
 
 ## Consequences
@@ -103,5 +109,3 @@ A dialog's state, checks and request live in one file in its feature folder. A n
 Views can redraw a little more often, because a row that calls `canStart` also tracks `catalog.tasks`. These values also update when a store changes, not at the next `publish()`. The list is small and one person uses the app, so neither matters in practice.
 
 A closed dialog store still holds its last content. Code that reads it must check `isPresented` or `canSubmit`.
-
-A slice that renames a dialog's files updates `scripts/swift-mutation-scope.py`, as ADR 0030 describes. E2E tests stay unchanged, because the app's behavior doesn't change.
