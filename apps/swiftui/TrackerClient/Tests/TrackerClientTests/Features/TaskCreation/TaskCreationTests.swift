@@ -96,7 +96,7 @@ final class TaskCreationTests: XCTestCase {
     }
 
     @MainActor
-    func testFailedReloadStillChangesToTheCreatedTasksTabAndSelectsItsRememberedTask() async throws {
+    func testFailedReloadStillChangesToTheCreatedTasksTabAndSelectsThatTabsTask() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: nil))
