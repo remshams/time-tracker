@@ -149,14 +149,14 @@ final class PresentationTests: XCTestCase {
         XCTAssertTrue(harness.presentation.canArchiveTask(taskID: firstTask.id))
         XCTAssertGreaterThan(lists.count, 0)
 
-        XCTAssertTrue(harness.presentation.canStartTracking(taskID: firstTask.id))
+        XCTAssertTrue(harness.availability.canStart(taskID: firstTask.id))
         fixture.trackingActions.startTracking(taskID: firstTask.id)
-        XCTAssertFalse(harness.presentation.canStartTracking(taskID: firstTask.id))
+        XCTAssertFalse(harness.availability.canStart(taskID: firstTask.id))
         let start = try await fixture.client.next()
         start.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await harness.settled(fixture)
         XCTAssertEqual(harness.tracking.active, activeWorklog)
-        XCTAssertTrue(harness.presentation.canStopTracking)
+        XCTAssertTrue(harness.availability.canStop)
         XCTAssertFalse(harness.presentation.canArchiveTask(taskID: firstTask.id))
         XCTAssertGreaterThan(controls.count, 0)
     }

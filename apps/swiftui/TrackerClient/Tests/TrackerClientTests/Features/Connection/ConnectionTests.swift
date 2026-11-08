@@ -261,12 +261,12 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let harness = PresentationHarness(session: fixture.session)
-        XCTAssertTrue(harness.presentation.canStartTracking(taskID: firstTask.id))
+        XCTAssertTrue(harness.availability.canStart(taskID: firstTask.id))
 
         fixture.scheduler.poll?.fire()
         try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await harness.settled(fixture)
-        XCTAssertFalse(harness.presentation.canStartTracking(taskID: firstTask.id))
+        XCTAssertFalse(harness.availability.canStart(taskID: firstTask.id))
     }
 
     @MainActor

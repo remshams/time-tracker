@@ -9,8 +9,6 @@ import Observation
 @Observable
 public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var runningTaskName: String
-    public private(set) var canStopTracking: Bool
-    public private(set) var startableTaskIDs: Set<String>
 
     public private(set) var taskCreation: TaskCreationPresentation
     public private(set) var canOpenTaskCreation: Bool
@@ -35,8 +33,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
 
     public init(session: TrackerSession) {
         runningTaskName = session.runningTaskName
-        canStopTracking = session.trackingActions.canStopTracking
-        startableTaskIDs = Self.startableTaskIDs(session)
         taskCreation = session.taskCreation
         canOpenTaskCreation = session.canOpenTaskCreation
         taskRename = session.taskRename
@@ -61,8 +57,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
 
     public func update(from session: TrackerSession) {
         set(\.runningTaskName, session.runningTaskName)
-        set(\.canStopTracking, session.trackingActions.canStopTracking)
-        set(\.startableTaskIDs, Self.startableTaskIDs(session))
         set(\.taskCreation, session.taskCreation)
         set(\.canOpenTaskCreation, session.canOpenTaskCreation)
         set(\.taskRename, session.taskRename)
@@ -86,13 +80,8 @@ public final class TrackerPresentation: ChangeGuardedStore {
         if worklogDeletion.isPresented { set(\.worklogDeletionSheetContent, worklogDeletion) }
     }
 
-    public func canStartTracking(taskID: String) -> Bool { startableTaskIDs.contains(taskID) }
     public func canArchiveTask(taskID: String) -> Bool { archivableTaskIDs.contains(taskID) }
     public func canUnarchiveTask(taskID: String) -> Bool { unarchivableTaskIDs.contains(taskID) }
-
-    private static func startableTaskIDs(_ session: TrackerSession) -> Set<String> {
-        Set(session.tasks.map(\.id).filter { session.trackingActions.canStartTracking(taskID: $0) })
-    }
 
     private static func archivableTaskIDs(_ session: TrackerSession) -> Set<String> {
         Set(session.tasks.map(\.id).filter { session.canArchiveTask(taskID: $0) })
