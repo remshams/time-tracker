@@ -1,5 +1,3 @@
-import Foundation
-
 /// Decides which tracking requests are possible right now.
 ///
 /// It keeps no state. Each check reads the stores, so `Observations` and SwiftUI track what a caller's check read.
