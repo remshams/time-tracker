@@ -3,7 +3,7 @@ import Observation
 
 /// Holds the task rename dialog and sends its request.
 ///
-/// The sheet and the context menus read this store from the SwiftUI environment. Closing leaves the content in
+/// The sheet, the context menus and the toolbar read this store from the SwiftUI environment. Closing leaves the content in
 /// place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class TaskRenameStore {
@@ -12,7 +12,7 @@ public final class TaskRenameStore {
     public private(set) var name = ""
     public private(set) var isSubmitting = false
     public private(set) var error: String?
-    private(set) var taskID: String?
+    private(set) var taskID = ""
 
     private let client: any TrackerClient
     private let clock: any TrackerClock
@@ -59,7 +59,7 @@ public final class TaskRenameStore {
     }
 
     public func submit() {
-        guard canSubmit, let taskID else { return }
+        guard canSubmit else { return }
         if let message = TaskNameEditingPolicy.transportError(name) {
             error = message
             return

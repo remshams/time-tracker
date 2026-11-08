@@ -24,7 +24,7 @@ public final class TrackerSession {
     public let menuBar: MenuBarStore
     /// Views read the auto-pause preference and status here; the sync writes them.
     public let trackingAutomation: TrackingAutomationStore
-    /// The task rename dialog. The sheet and the context menus read it from the SwiftUI environment.
+    /// The task rename dialog.
     public let taskRename: TaskRenameStore
 
     private let client: any TrackerClient
