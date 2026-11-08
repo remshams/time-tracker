@@ -64,8 +64,9 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
-        let draft = try XCTUnwrap(parseTimestamp("2024-12-30T08:45:00.000Z"))
+        let draft = try XCTUnwrap(parseTimestamp("2024-12-30T11:00:00.000Z"))
         fixture.worklogCorrection.setStart(draft)
+        fixture.worklogCorrection.submit()
 
         fixture.worklogCorrection.cancel()
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
@@ -74,6 +75,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(fixture.worklogCorrection.original, log)
         XCTAssertEqual(fixture.worklogCorrection.taskName, firstTask.name)
         XCTAssertEqual(fixture.worklogCorrection.start, draft)
+        XCTAssertEqual(fixture.worklogCorrection.error, "End must be after Start.")
         XCTAssertTrue(fixture.taskCreation.canOpen)
 
         let operations = fixture.client.operations.count
@@ -94,6 +96,7 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.worklogCorrection.open(worklogID: running.id)
         XCTAssertTrue(fixture.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.worklogCorrection.original, running)
+        XCTAssertNil(fixture.worklogCorrection.error)
         XCTAssertEqual(fixture.worklogCorrection.taskName, secondTask.name)
         XCTAssertEqual(fixture.worklogCorrection.start, parseTimestamp(running.start))
         XCTAssertNil(fixture.worklogCorrection.end)
@@ -535,7 +538,7 @@ final class WorklogCorrectionTests: XCTestCase {
             id: "historical-log", taskId: firstTask.id,
             start: "1900-01-01T09:00:12.123456Z", end: "1900-01-01T11:00:45.654321Z")
         _ = try await openCompleted(fixture, worklog: log, timezone: timezone)
-        XCTAssertEqual(fixture.worklogCorrection.timezoneIdentifier, timezone.identifier)
+        XCTAssertEqual(fixture.worklogCorrection.timezone.identifier, timezone.identifier)
         fixture.worklogCorrection.setStart(parseTimestamp("1900-01-01T10:00:00.000Z")!)
 
         fixture.worklogCorrection.submit()

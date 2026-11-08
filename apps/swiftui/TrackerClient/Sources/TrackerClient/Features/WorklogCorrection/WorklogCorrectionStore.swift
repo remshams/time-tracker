@@ -9,7 +9,6 @@ import Observation
 public final class WorklogCorrectionStore {
     public private(set) var isPresented = false
     public private(set) var taskName = ""
-    public private(set) var timezoneIdentifier = TimeZone.current.identifier
     public private(set) var isSubmitting = false
     public private(set) var error: String?
     private(set) var original: WorklogItem?
@@ -52,6 +51,8 @@ public final class WorklogCorrectionStore {
 
     public var end: Date? { parseTimestamp(replacementEnd) }
 
+    public var timezone: TimeZone { calendar.timeZone }
+
     public func open(worklogID: String, timezone: TimeZone = .current) {
         guard canOpen, !isPresented, let worklog = worklog(withID: worklogID),
             let start = parseTimestamp(worklog.start), worklog.end == nil || parseTimestamp(worklog.end) != nil
@@ -60,7 +61,6 @@ public final class WorklogCorrectionStore {
         taskName = catalog.tasks.first { $0.id == worklog.taskId }?.name ?? "Unknown task"
         draftStart = start
         draftEnd = parseTimestamp(worklog.end)
-        timezoneIdentifier = timezone.identifier
         calendar.timeZone = timezone
         error = nil
         isPresented = true
@@ -134,14 +134,12 @@ public final class WorklogCorrectionStore {
     }
 
     private func validationError(at now: Date) -> String? {
-        guard let startDate = parseTimestamp(replacementStart), startDate <= now else {
-            return "Start must not be in the future."
-        }
-        guard let replacementEnd, let endDate = parseTimestamp(replacementEnd) else { return nil }
+        guard start <= now else { return "Start must not be in the future." }
+        guard let end, let replacementEnd else { return nil }
         guard hasPositiveWorklogDuration(start: replacementStart, end: replacementEnd) else {
             return "End must be after Start."
         }
-        guard endDate <= now else { return "End must not be in the future." }
+        guard end <= now else { return "End must not be in the future." }
         return nil
     }
 }

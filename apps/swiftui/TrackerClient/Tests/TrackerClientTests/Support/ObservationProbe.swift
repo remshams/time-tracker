@@ -210,11 +210,9 @@ enum PresentationReads {
         _ = views.worklogCorrection.taskName
         _ = views.worklogCorrection.start
         _ = views.worklogCorrection.end
-        _ = views.worklogCorrection.timezoneIdentifier
+        _ = views.worklogCorrection.timezone
         _ = views.worklogCorrection.isSubmitting
         _ = views.worklogCorrection.error
-        _ = views.worklogCorrection.canEdit
-        _ = views.worklogCorrection.canSubmit
         _ = views.worklogCorrection.canOpen
     }
 
