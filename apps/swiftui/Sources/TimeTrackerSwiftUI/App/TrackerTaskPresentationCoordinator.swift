@@ -11,7 +11,6 @@ final class TrackerTaskPresentationCoordinator {
     private(set) var hasPresentation = false
     private let store: TrackerStore
     private let revealWindow: () -> Void
-    @ObservationIgnored private var isRunning = false
     @ObservationIgnored private var editorWasPresented = false
 
     init(store: TrackerStore, revealWindow: @escaping () -> Void) {
@@ -19,40 +18,41 @@ final class TrackerTaskPresentationCoordinator {
         self.revealWindow = revealWindow
     }
 
+    /// The first value arrives after this returns, so `hasPresentation` stays false until then. Views observe the
+    /// flag, and a presentation that opens in between is part of that first value.
     func start() {
-        guard !isRunning else { return }
-        isRunning = true
-        observePresentations()
+        // The closure reads the store without the coordinator. The loop ends at the first change after the
+        // coordinator is released.
+        Task { [weak self, store] in
+            for await flags in Observations({ store.presentationFlags }) {
+                guard let self else { return }
+                update(flags)
+            }
+        }
     }
 
     /// The window stays open while it shows a sheet or alert, so the presentation isn't lost.
     var canCloseWindow: Bool { !hasPresentation }
 
-    private var editorIsPresented: Bool {
-        store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented
-    }
-
-    /// Updates the flag whenever a value read by `update()` changes.
-    private func observePresentations() {
-        withObservationTracking {
-            update()
-        } onChange: { [weak self] in
-            // Observation reports changes before the new value is stored; read it on the next main-actor turn.
-            Task { @MainActor in self?.observePresentations() }
-        }
-    }
-
-    private func update() {
-        guard isRunning else { return }
-        let editorIsPresented = editorIsPresented
-        let isVisible = editorIsPresented || store.tracking.error != nil
+    private func update(_ flags: (editorIsPresented: Bool, hasTrackingError: Bool)) {
+        let isVisible = flags.editorIsPresented || flags.hasTrackingError
         if hasPresentation != isVisible { hasPresentation = isVisible }
-        let editorOpened = editorIsPresented && !editorWasPresented
-        editorWasPresented = editorIsPresented
+        let editorOpened = flags.editorIsPresented && !editorWasPresented
+        editorWasPresented = flags.editorIsPresented
         // An editor's sheet needs the tracker window, so bring it up when an editor opens.
         if editorOpened { revealWindow() }
+    }
+}
+
+extension TrackerStore {
+    /// The values the presentation coordinator reacts to. A closure given to `Observations` re-reads them after
+    /// each change, so a flag that `||` skips is read as soon as it can change the result.
+    fileprivate var presentationFlags: (editorIsPresented: Bool, hasTrackingError: Bool) {
+        let editorIsPresented =
+            creation.state.isPresented || rename.state.isPresented || correction.state.isPresented
+            || move.state.isPresented || deletion.state.isPresented || archiving.state.isPresented
+            || bulkArchiving.state.isPresented
+        return (editorIsPresented, tracking.error != nil)
     }
 }
 
