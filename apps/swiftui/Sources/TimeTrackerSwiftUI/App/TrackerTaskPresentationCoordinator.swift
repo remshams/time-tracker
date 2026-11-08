@@ -51,7 +51,7 @@ extension TrackerStore {
         let editorIsPresented =
             taskCreation.isPresented || taskRename.isPresented || correction.state.isPresented
             || worklogMove.isPresented || worklogDeletion.isPresented || taskArchiving.isPresented
-            || bulkArchiving.state.isPresented
+            || bulkTaskArchiving.isPresented
         return (editorIsPresented, tracking.error != nil)
     }
 }
@@ -102,10 +102,10 @@ struct TrackerDetailPresentation: View {
                     WorklogDeletionSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.bulkArchiving.state.isPresented },
-                    cancel: store.bulkArchiving.cancel
+                    isPresented: { store.bulkTaskArchiving.isPresented },
+                    cancel: store.bulkTaskArchiving.cancel
                 ) {
-                    BulkTaskArchivingSheet(archiving: store.bulkArchiving)
+                    BulkTaskArchivingSheet()
                 }
                 EditorSheet(
                     isPresented: { store.taskArchiving.isPresented },

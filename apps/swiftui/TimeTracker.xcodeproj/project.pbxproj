@@ -48,7 +48,6 @@
 		C66F80324842D1AACBE93B6B /* TrackerMenuValueBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */; };
 		25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */; };
 		2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */; };
-		BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */; };
 		BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */; };
 		A10000000000000000000001 /* ArchiveFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* ArchiveFixture.swift */; };
 		A10000000000000000000002 /* BulkTaskArchivingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* BulkTaskArchivingUITests.swift */; };
@@ -145,7 +144,6 @@
 		58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenuValueBindings.swift; sourceTree = "<group>"; };
 		E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardSupport.swift; sourceTree = "<group>"; };
 		BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingView.swift; sourceTree = "<group>"; };
-		BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingStore.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingView.swift; sourceTree = "<group>"; };
 		A10000000000000000000003 /* ArchiveFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveFixture.swift; sourceTree = "<group>"; };
 		A10000000000000000000004 /* BulkTaskArchivingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingUITests.swift; sourceTree = "<group>"; };
@@ -432,7 +430,6 @@
         BD73674A963DDEAA117CE005 /* BulkTaskArchiving */ = {
             isa = PBXGroup;
             children = (
-                BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */,
                 BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */,
             );
             path = BulkTaskArchiving;
@@ -753,7 +750,6 @@
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */,
 				BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */,
-				BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
 				A10000000000000000000016 /* TrackerLaunchConfiguration.swift in Sources */,
 				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,

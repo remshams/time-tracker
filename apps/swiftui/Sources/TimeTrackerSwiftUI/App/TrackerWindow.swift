@@ -39,7 +39,7 @@ struct TrackerWindow: View {
             TrackerSidebar(store: store)
                 .toolbar {
                     ToolbarItemGroup(placement: .automatic) {
-                        TrackerSidebarToolbar(store: store)
+                        TrackerSidebarToolbar()
                     }
                 }
         } detail: {
@@ -135,13 +135,9 @@ struct TrackerWindow: View {
 
 private struct TrackerSidebarToolbar: View {
     @Environment(TaskCreationStore.self) private var creation
-    private let bulkArchiving: BulkTaskArchivingStore
+    @Environment(BulkTaskArchivingStore.self) private var bulkArchiving
     @Environment(\.openWindow) private var openWindow
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
-
-    init(store: TrackerStore) {
-        bulkArchiving = store.bulkArchiving
-    }
 
     private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
     private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen && !presentation.hasPresentation }
