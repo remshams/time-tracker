@@ -19,7 +19,6 @@ final class TrackerStore {
     var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
     /// The AppKit status menu reads its content, label and live values here.
     let menu: TrackerMenuPresentationObserver
-    let correction: WorklogCorrectionStore
     @ObservationIgnored private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -44,7 +43,6 @@ final class TrackerStore {
         presentation = TrackerPresentation(session: session)
         menu = TrackerMenuPresentationObserver(
             sources: TrackerMenuSources(session: session), showDailyTotal: showDailyTotal, taskOrder: taskOrder)
-        correction = WorklogCorrectionStore(session: session, presentation: presentation)
         session.sync.onChange = { [weak self] in
             guard let self else { return }
             presentation.update(from: session)
@@ -78,6 +76,8 @@ final class TrackerStore {
     var worklogMove: WorklogMoveStore { session.worklogMove }
     /// The environment and the coordinator read the bulk archive dialog from this store.
     var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
+    /// The environment and the coordinator read the worklog correction dialog from this store.
+    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }
 
     var canStopTracking: Bool { session.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }

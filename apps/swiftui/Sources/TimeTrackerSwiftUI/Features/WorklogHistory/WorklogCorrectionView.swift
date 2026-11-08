@@ -2,21 +2,20 @@ import SwiftUI
 import TrackerClient
 
 struct WorklogCorrectionSheet: View {
-    let correction: WorklogCorrectionStore
+    @Environment(WorklogCorrectionStore.self) private var correction
 
     private var timezone: TimeZone {
-        TimeZone(identifier: correction.sheetContent.timezoneIdentifier) ?? .gmt
+        TimeZone(identifier: correction.timezoneIdentifier) ?? .gmt
     }
 
     var body: some View {
-        let state = correction.sheetContent
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit worklog").font(.title2.bold())
-            Text(state.taskName)
+            Text(correction.taskName)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
-                .help(state.taskName)
+                .help(correction.taskName)
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 16) {
                 GridRow {
@@ -24,20 +23,20 @@ struct WorklogCorrectionSheet: View {
                     DatePicker(
                         "Start",
                         selection: Binding(
-                            get: { correction.sheetContent.start }, set: { correction.setStart($0) }
+                            get: { correction.start }, set: { correction.setStart($0) }
                         ), displayedComponents: [.date, .hourAndMinute]
                     )
                     .labelsHidden()
                     .accessibilityIdentifier("worklog-correction.start")
                 }
 
-                if state.end != nil {
+                if correction.end != nil {
                     GridRow {
                         Text("End")
                         DatePicker(
                             "End",
                             selection: Binding(
-                                get: { correction.sheetContent.end ?? correction.sheetContent.start },
+                                get: { correction.end ?? correction.start },
                                 set: { correction.setEnd($0) }
                             ), displayedComponents: [.date, .hourAndMinute]
                         )
@@ -46,37 +45,37 @@ struct WorklogCorrectionSheet: View {
                     }
                 }
             }
-            .disabled(!state.canEdit)
+            .disabled(!correction.canEdit)
 
-            if state.end == nil {
+            if correction.end == nil {
                 Label("This worklog is still running.", systemImage: "timer")
                     .foregroundStyle(.secondary)
             }
 
-            Text("Time zone: \(state.timezoneIdentifier)")
+            Text("Time zone: \(correction.timezoneIdentifier)")
                 .accessibilityIdentifier("worklog-correction.timezone")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if let end = state.end, end > state.start {
+            if let end = correction.end, end > correction.start {
                 LabeledContent("Duration") {
-                    Text(formatClockDuration(end.timeIntervalSince(state.start)))
+                    Text(formatClockDuration(end.timeIntervalSince(correction.start)))
                         .accessibilityIdentifier("worklog-correction.duration")
                         .monospacedDigit()
                 }
-            } else if state.end == nil {
+            } else if correction.end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     LabeledContent(
                         "Elapsed after save",
                         value: formatClockDuration(
-                            max(0, context.date.timeIntervalSince(state.start))
+                            max(0, context.date.timeIntervalSince(correction.start))
                         )
                     )
                     .monospacedDigit()
                 }
             }
 
-            if let error = state.error {
+            if let error = correction.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("worklog-correction.error")
                     .foregroundStyle(.red)
@@ -86,25 +85,25 @@ struct WorklogCorrectionSheet: View {
 
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
-                    isBusy: state.isSubmitting, title: "Saving worklog...",
+                    isBusy: correction.isSubmitting, title: "Saving worklog...",
                     identifier: "worklog-correction.progress")
                 Spacer()
                 Button("Cancel") { correction.cancel() }
                     .accessibilityIdentifier("worklog-correction.cancel")
                     .keyboardShortcut(.cancelAction)
-                    .disabled(state.isSubmitting)
+                    .disabled(correction.isSubmitting)
                 Button("Save") {
                     correction.submit()
                 }
                 .accessibilityIdentifier("worklog-correction.save")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(!state.canSubmit)
+                .disabled(!correction.canSubmit)
             }
         }
         .padding(24)
         .frame(width: 480)
         .environment(\.timeZone, timezone)
-        .interactiveDismissDisabled(state.isSubmitting)
+        .interactiveDismissDisabled(correction.isSubmitting)
     }
 }
