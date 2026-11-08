@@ -123,7 +123,7 @@ final class TaskCreationTests: XCTestCase {
         defer { fixture.cleanup() }
         let tasks = [firstTask, archivedTask]
         try await fixture.start(TaskListResources(tasks: tasks, active: activeWorklog))
-        fixture.session.changeTab(.archived)
+        fixture.sync.changeTab(.archived)
         let archivedHistory = try await fixture.client.next()
         archivedHistory.succeed(emptyPage)
         try await fixture.settled()

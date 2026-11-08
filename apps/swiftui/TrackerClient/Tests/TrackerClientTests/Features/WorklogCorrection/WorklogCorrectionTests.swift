@@ -540,7 +540,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let other = WorklogItem(
             id: "other-log", taskId: secondTask.id,
             start: log.start, end: log.end)

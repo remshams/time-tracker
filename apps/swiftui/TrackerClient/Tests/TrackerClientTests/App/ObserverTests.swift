@@ -75,7 +75,7 @@ final class ObserverTests: XCTestCase {
         fixture.sync.onChange = {
             guard !choseTask, fixture.session.tasks.contains(secondTask) else { return }
             choseTask = true
-            fixture.session.select(secondTask.id)
+            fixture.sync.selectTask(secondTask.id)
         }
         fixture.sync.start()
         let open = try await fixture.client.next()

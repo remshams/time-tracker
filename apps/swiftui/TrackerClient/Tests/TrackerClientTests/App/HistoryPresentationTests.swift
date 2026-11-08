@@ -10,7 +10,7 @@ final class HistoryPresentationTests: XCTestCase {
         let harness = PresentationHarness(session: fixture.session)
         let content = harness.counter(PresentationReads.content)
 
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let request = try await fixture.client.next()
         let changesWhileWaiting = content.count
         XCTAssertTrue(harness.history.isLoading)

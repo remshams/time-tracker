@@ -362,18 +362,6 @@ public final class TrackerSession {
         }
     }
 
-    public func changeTab(_ newTab: TaskTab) {
-        guard taskCatalog.changeTab(newTab) else { return }
-        sync.reloadHistory()
-        sync.publish()
-    }
-
-    public func select(_ taskID: String?) {
-        guard taskCatalog.select(taskID) else { return }
-        sync.reloadHistory()
-        sync.publish()
-    }
-
     private func loadBulkArchivePreview(_ search: BulkTaskArchivingState.Search?) {
         guard let search else { return }
         Task { [weak self] in

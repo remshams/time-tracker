@@ -12,7 +12,7 @@ final class MenuTaskClipboardTests: XCTestCase {
             TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 5_025_000_000),
         ]
         try await fixture.start(resources, rows: rows)
-        fixture.session.select(firstTask.id)
+        fixture.sync.selectTask(firstTask.id)
         XCTAssertEqual(
             fixture.session.menuCopyValue(.copyName, taskID: secondTask.id, connection: .local), "Second task")
         XCTAssertEqual(

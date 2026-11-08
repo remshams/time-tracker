@@ -170,7 +170,7 @@ final class WorklogDeletionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let selected = try await fixture.client.next()
         XCTAssertEqual(selected.operation, .history(task: secondTask.id, cursor: nil))
         selected.succeed(emptyPage)
