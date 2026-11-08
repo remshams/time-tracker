@@ -413,10 +413,11 @@ final class Fixture {
     let session: TrackerSession
     var sync: TrackerSync { session.sync }
     var trackingActions: TrackingActions { session.trackingActions }
+    var trackingAvailability: TrackingAvailability { session.trackingAvailability }
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
     var canStartSelectedTask: Bool {
         guard let taskID = session.taskCatalog.selectedTaskID else { return false }
-        return trackingActions.canStartTracking(taskID: taskID)
+        return trackingAvailability.canStart(taskID: taskID)
     }
     let preferences: MemoryTrackingPreferences
     private let reportsEnabled: Bool

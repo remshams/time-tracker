@@ -316,7 +316,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.trackingActions.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(start.operation, .start(task: secondTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))

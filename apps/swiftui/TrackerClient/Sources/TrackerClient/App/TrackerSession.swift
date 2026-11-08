@@ -4,7 +4,7 @@ public final class TrackerSession {
     /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
     /// change, changes the tab and task selection, reloads after dialog writes, and publishes after each change.
     public let sync: TrackerSync
-    /// Starts and stops tracking and decides which of those requests are possible.
+    /// Starts and stops tracking.
     public let trackingActions: TrackingActions
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
@@ -59,7 +59,7 @@ public final class TrackerSession {
             menuBar: menuBar, automation: trackingAutomation, settings: settings,
             trackingPreferences: trackingPreferences)
         trackingActions = TrackingActions(
-            client: client, clock: clock, sync: sync, catalog: taskCatalog, connection: connection,
+            client: client, clock: clock, sync: sync, catalog: taskCatalog, availability: trackingAvailability,
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
     }
 

@@ -704,7 +704,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         report.fail(BridgeFailure(message: "State changed", requiresRefresh: true))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.connection.stale)
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertEqual(fixture.totalsStatus, .cached)
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
@@ -714,11 +714,11 @@ final class DailyTotalsSessionTests: XCTestCase {
         guard case .report = replacement.operation else {
             return XCTFail("Recovery must reload totals before history.")
         }
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         replacement.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 15)]))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.connection.stale)
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertEqual(fixture.totalsStatus, .current)
     }
 
@@ -741,7 +741,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4, failure.message)
             XCTAssertTrue(fixture.session.connection.stale, failure.message)
             XCTAssertFalse(fixture.canStartSelectedTask, failure.message)
-            XCTAssertFalse(fixture.trackingActions.canStopTracking, failure.message)
+            XCTAssertFalse(fixture.trackingAvailability.canStop, failure.message)
             if failure.kind == "protocol" {
                 XCTAssertNil(fixture.scheduler.poll)
                 XCTAssertEqual(fixture.session.connection.statusText, "Incompatible server")
@@ -786,7 +786,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4)
         XCTAssertEqual(fixture.totalsStatus, .cached)
         XCTAssertTrue(fixture.session.connection.stale)
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertEqual(fixture.session.connection.statusText, "Incompatible server")
         XCTAssertNil(fixture.scheduler.poll)
     }

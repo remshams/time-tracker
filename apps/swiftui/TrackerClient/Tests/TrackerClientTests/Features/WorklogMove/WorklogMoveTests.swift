@@ -423,7 +423,7 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.submitWorklogMove()
         fixture.session.cancelWorklogMove()
         XCTAssertTrue(fixture.session.worklogMove.isPresented)
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
 
@@ -659,7 +659,7 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.setWorklogMoveQuery("ignored")
         XCTAssertEqual(fixture.session.worklogMove.selectedTaskID, secondTask.id)
         XCTAssertEqual(fixture.session.worklogMove.query, "")
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         try await fixture.update("the poll result") { poll.succeed(running) }
         XCTAssertTrue(fixture.session.worklogMove.isSubmitting)
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
