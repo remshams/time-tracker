@@ -171,7 +171,7 @@ final class WorklogMoveTests: XCTestCase {
         try await finishHistory(fixture)
         XCTAssertEqual(fixture.session.active, moved)
         XCTAssertEqual(fixture.session.tracking.elapsed(clock: fixture.session.clock), elapsed)
-        XCTAssertEqual(fixture.session.runningTaskName, secondTask.name)
+        XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, secondTask.name)
     }
 
     @MainActor

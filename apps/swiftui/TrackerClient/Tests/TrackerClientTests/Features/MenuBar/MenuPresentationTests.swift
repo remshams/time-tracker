@@ -3,6 +3,38 @@ import XCTest
 
 final class MenuPresentationTests: XCTestCase {
     @MainActor
+    func testRunningTaskNameFollowsConnectionTrackingAndCatalog() async throws {
+        let unconfirmed = Fixture()
+        defer { unconfirmed.cleanup() }
+        XCTAssertEqual(
+            MenuHarness(unconfirmed, showDailyTotal: false).observer.content.runningTaskName,
+            "Waiting for tracker state")
+
+        let orphan = WorklogItem(id: "worklog-orphan", taskId: "missing-task", start: activeWorklog.start, end: nil)
+        let cases = [
+            (TaskListResources(tasks: [firstTask], active: nil), "No timer running"),
+            (TaskListResources(tasks: [firstTask], active: activeWorklog), firstTask.name),
+            (TaskListResources(tasks: [firstTask], active: orphan), "Unknown task"),
+        ]
+        for (resources, expected) in cases {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            try await fixture.start(resources)
+            XCTAssertEqual(MenuHarness(fixture, showDailyTotal: false).observer.content.runningTaskName, expected)
+        }
+    }
+
+    @MainActor
+    func testMenuRebuildsWhenTheRunningTaskNameChanges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let menu = MenuHarness(fixture, showDailyTotal: false)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        try await menu.settled()
+        XCTAssertEqual(menu.observer.content.runningTaskName, firstTask.name)
+    }
+
+    @MainActor
     func testOpenSubmenuKeepsNavigationStableWhileValuesAdvanceAcrossTicksAndPolls() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
@@ -19,10 +51,7 @@ final class MenuPresentationTests: XCTestCase {
         let window = PresentationHarness(session: fixture.session)
         let windowTicks = window.counter(PresentationReads.timer)
         let windowControls = window.counter(PresentationReads.controls)
-        fixture.sync.onChange = {
-            menu.update()
-            window.update()
-        }
+        fixture.sync.onChange = { window.update() }
         observer.menuOpened()
         let originalContent = observer.content
         let originalLabel = observer.label

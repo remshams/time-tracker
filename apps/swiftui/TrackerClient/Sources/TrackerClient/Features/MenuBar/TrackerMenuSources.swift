@@ -36,8 +36,8 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
 
 /// The stores the menu bar reads.
 ///
-/// `TrackingAvailability` decides whether tracking can start or stop. The running task's name comes from
-/// `TrackerPresentation` until a later step moves it out of the session.
+/// `TrackingAvailability` decides whether tracking can start or stop. The running task's name is computed here,
+/// because only the menu shows it.
 public struct TrackerMenuSources: Sendable {
     let catalog: TaskCatalogStore
     let connection: ConnectionStore
@@ -46,12 +46,11 @@ public struct TrackerMenuSources: Sendable {
     let menuBar: MenuBarStore
     let automation: TrackingAutomationStore
     let availability: TrackingAvailability
-    let presentation: TrackerPresentation
 
     init(
         catalog: TaskCatalogStore, connection: ConnectionStore, tracking: TrackingStore,
         dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
-        availability: TrackingAvailability, presentation: TrackerPresentation
+        availability: TrackingAvailability
     ) {
         self.catalog = catalog
         self.connection = connection
@@ -60,7 +59,6 @@ public struct TrackerMenuSources: Sendable {
         self.menuBar = menuBar
         self.automation = automation
         self.availability = availability
-        self.presentation = presentation
     }
 
     /// Reads every value the menu shows, so an `Observations` closure that calls this tracks all of them.
@@ -73,7 +71,7 @@ public struct TrackerMenuSources: Sendable {
             active: tracking.active,
             timerText: tracking.timerText,
             trackingError: tracking.error,
-            runningTaskName: presentation.runningTaskName,
+            runningTaskName: runningTaskName,
             autoPauseStatusText: automation.statusText,
             canStopTracking: availability.canStop,
             startableTaskIDs: Set(catalog.tasks.map(\.id).filter { availability.canStart(taskID: $0) }),
@@ -82,5 +80,11 @@ public struct TrackerMenuSources: Sendable {
             totalsExplanation: dailyTotals.totalsExplanation,
             taskDurations: dailyTotals.taskDurations,
             lastTrackedTaskID: menuBar.lastTrackedTaskID)
+    }
+
+    private var runningTaskName: String {
+        guard connection.confirmed else { return "Waiting for tracker state" }
+        guard let active = tracking.active else { return "No timer running" }
+        return catalog.tasks.first { $0.id == active.taskId }?.name ?? "Unknown task"
     }
 }

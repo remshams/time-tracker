@@ -83,11 +83,6 @@ public final class TrackerSession {
     public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
     public var canOpenWorklogDeletion: Bool { connection.confirmed }
 
-    public var runningTaskName: String {
-        guard connection.confirmed else { return "Waiting for tracker state" }
-        guard let active else { return "No timer running" }
-        return taskName(active.taskId)
-    }
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
@@ -328,11 +323,11 @@ public final class TrackerSession {
 }
 
 public extension TrackerMenuSources {
-    /// Reads the menu's stores and tracking checks from the session and the running task's name from `presentation`.
-    init(session: TrackerSession, presentation: TrackerPresentation) {
+    /// Reads the menu's stores and tracking checks from the session.
+    init(session: TrackerSession) {
         self.init(
             catalog: session.taskCatalog, connection: session.connection, tracking: session.tracking,
             dailyTotals: session.dailyTotals, menuBar: session.menuBar, automation: session.trackingAutomation,
-            availability: session.trackingAvailability, presentation: presentation)
+            availability: session.trackingAvailability)
     }
 }

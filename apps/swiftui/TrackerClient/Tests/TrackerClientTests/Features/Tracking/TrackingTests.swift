@@ -71,7 +71,7 @@ final class TrackingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
-        XCTAssertEqual(fixture.session.runningTaskName, firstTask.name)
+        XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, firstTask.name)
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertFalse(fixture.canStartSelectedTask)
 

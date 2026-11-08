@@ -47,8 +47,7 @@ final class TrackerStore {
             reports: worker)
         presentation = TrackerPresentation(session: session)
         menu = TrackerMenuPresentationObserver(
-            sources: TrackerMenuSources(session: session, presentation: presentation),
-            showDailyTotal: showDailyTotal, taskOrder: taskOrder)
+            sources: TrackerMenuSources(session: session), showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
