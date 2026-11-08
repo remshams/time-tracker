@@ -435,7 +435,8 @@ final class TaskRenameTests: XCTestCase {
                 task: firstTask.id, expectedName: firstTask.name, name: "Renamed while locked",
                 at: "2025-01-01T00:00:00.000Z"))
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
-        poll.succeed(resources)
+        // Wait for the poll to apply, or its reply can land after the pause and restore the running worklog.
+        try await fixture.update("the poll") { poll.succeed(resources) }
         let pause = try await fixture.client.next()
         XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         let paused = TaskListResources(tasks: [firstTask], active: nil)
