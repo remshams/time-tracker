@@ -27,9 +27,7 @@ struct WorklogHistorySection: View {
                 }
 
                 ForEach(history.worklogs) { worklog in
-                    WorklogRow(
-                        worklog: worklog, active: tracking.active,
-                        correction: store.correction)
+                    WorklogRow(worklog: worklog, active: tracking.active)
                 }
 
                 if history.hasMore {
