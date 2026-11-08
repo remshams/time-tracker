@@ -4,10 +4,6 @@ import TrackerClient
 struct WorklogCorrectionSheet: View {
     @Environment(WorklogCorrectionStore.self) private var correction
 
-    private var timezone: TimeZone {
-        TimeZone(identifier: correction.timezoneIdentifier) ?? .gmt
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit worklog").font(.title2.bold())
@@ -52,7 +48,7 @@ struct WorklogCorrectionSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Time zone: \(correction.timezoneIdentifier)")
+            Text("Time zone: \(correction.timezone.identifier)")
                 .accessibilityIdentifier("worklog-correction.timezone")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -103,7 +99,7 @@ struct WorklogCorrectionSheet: View {
         }
         .padding(24)
         .frame(width: 480)
-        .environment(\.timeZone, timezone)
+        .environment(\.timeZone, correction.timezone)
         .interactiveDismissDisabled(correction.isSubmitting)
     }
 }
