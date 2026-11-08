@@ -2,17 +2,16 @@ import SwiftUI
 import TrackerClient
 
 struct WorklogMoveSheet: View {
-    let move: WorklogMoveStore
+    @Environment(WorklogMoveStore.self) private var move
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        let state = move.sheetContent
         VStack(alignment: .leading, spacing: 16) {
             Text("Move worklog").font(.title2.bold())
-            LabeledContent("From", value: state.sourceTaskName)
+            LabeledContent("From", value: move.sourceTaskName)
                 .lineLimit(2)
-                .help(state.sourceTaskName)
-            if let original = state.original {
+                .help(move.sourceTaskName)
+            if let original = move.original {
                 Text(
                     "\(localDay(original.start)) · \(localTimestamp(original.start)) to \(original.end.map(localTimestamp) ?? "Running")"
                 )
@@ -28,14 +27,14 @@ struct WorklogMoveSheet: View {
             TextField(
                 "Search destination tasks",
                 text: Binding(
-                    get: { move.sheetContent.query }, set: { move.setQuery($0) }
+                    get: { move.query }, set: { move.setQuery($0) }
                 )
             )
             .textFieldStyle(.roundedBorder)
             .disableAutocorrection(true)
             .focused($searchFocused)
             .accessibilityIdentifier("worklog-move.search")
-            .disabled(!state.canEdit)
+            .disabled(!move.canEdit)
             .onKeyPress(.upArrow) {
                 move.moveSelection(by: -1)
                 return .handled
@@ -44,15 +43,15 @@ struct WorklogMoveSheet: View {
                 move.moveSelection(by: 1)
                 return .handled
             }
-            .onSubmit { if move.state.canSubmit { move.submit() } }
+            .onSubmit { move.submit() }
 
             VStack(spacing: 8) {
                 DelayedProgressIndicator(
-                    isBusy: state.isSearching, title: "Loading destinations...",
+                    isBusy: move.isSearching, title: "Loading destinations...",
                     identifier: "worklog-move.search-progress")
-                if state.candidates.isEmpty {
-                    if !state.isSearching {
-                        Text(state.query.isEmpty ? "No available destination tasks." : "No matching tasks.")
+                if move.candidates.isEmpty {
+                    if !move.isSearching {
+                        Text(move.query.isEmpty ? "No available destination tasks." : "No matching tasks.")
                             .accessibilityIdentifier("worklog-move.empty")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -63,11 +62,11 @@ struct WorklogMoveSheet: View {
                     ScrollViewReader { proxy in
                         List(
                             selection: Binding<String?>(
-                                get: { move.sheetContent.selectedTaskID },
+                                get: { move.selectedTaskID },
                                 set: { if let taskID = $0 { move.select(taskID: taskID) } }
                             )
                         ) {
-                            ForEach(state.candidates) { candidate in
+                            ForEach(move.candidates) { candidate in
                                 Text(candidate.name)
                                     .lineLimit(2)
                                     .help(candidate.name)
@@ -77,8 +76,8 @@ struct WorklogMoveSheet: View {
                             }
                         }
                         .listStyle(.inset)
-                        .disabled(!state.canEdit || state.isSearching)
-                        .onChange(of: state.selectedTaskID) { _, taskID in
+                        .disabled(!move.canEdit || move.isSearching)
+                        .onChange(of: move.selectedTaskID) { _, taskID in
                             if let taskID { proxy.scrollTo(taskID) }
                         }
                     }
@@ -86,38 +85,38 @@ struct WorklogMoveSheet: View {
             }
             .frame(height: 220)
 
-            if let error = state.error {
+            if let error = move.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("worklog-move.error")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                if state.canEdit, state.candidates.isEmpty {
+                if move.canEdit, move.candidates.isEmpty {
                     Button("Reload destinations") { move.retryCandidates() }
                 }
             }
 
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
-                    isBusy: state.isSubmitting, title: "Moving worklog...",
+                    isBusy: move.isSubmitting, title: "Moving worklog...",
                     identifier: "worklog-move.submit-progress")
                 Spacer()
                 Button("Cancel") { move.cancel() }
                     .accessibilityIdentifier("worklog-move.cancel")
                     .keyboardShortcut(.cancelAction)
-                    .disabled(state.isSubmitting)
+                    .disabled(move.isSubmitting)
                 Button("Move") {
                     move.submit()
                 }
                 .accessibilityIdentifier("worklog-move.confirm")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(!state.canSubmit)
+                .disabled(!move.canSubmit)
             }
         }
         .padding(24)
         .frame(width: 560)
-        .interactiveDismissDisabled(state.isSubmitting)
+        .interactiveDismissDisabled(move.isSubmitting)
         .onAppear { searchFocused = true }
     }
 }

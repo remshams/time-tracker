@@ -19,6 +19,7 @@ struct TimeTrackerApp: App {
                 .environment(delegate.runtime.store.taskArchiving)
                 .environment(delegate.runtime.store.taskCreation)
                 .environment(delegate.runtime.store.worklogDeletion)
+                .environment(delegate.runtime.store.worklogMove)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
