@@ -5,7 +5,6 @@ struct WorklogRow: View {
     let worklog: WorklogItem
     let active: WorklogItem?
     let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
 
     private var duration: TimeInterval { worklogDuration(worklog) }
 
@@ -31,7 +30,7 @@ struct WorklogRow: View {
             .foregroundStyle(.primary)
             .monospacedDigit()
             .fixedSize()
-            WorklogActionsMenu(correction: correction, move: move, worklog: worklog)
+            WorklogActionsMenu(correction: correction, worklog: worklog)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
@@ -42,21 +41,21 @@ struct WorklogRow: View {
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {
-            WorklogContextMenu(correction: correction, move: move, worklog: worklog)
+            WorklogContextMenu(correction: correction, worklog: worklog)
         }
     }
 }
 
 private struct WorklogActionsMenu: View {
     let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
     let worklog: WorklogItem
+    @Environment(WorklogMoveStore.self) private var move
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
     @Environment(WorklogDeletionStore.self) private var deletion
 
     var body: some View {
         Menu {
-            WorklogContextMenu(correction: correction, move: move, worklog: worklog)
+            WorklogContextMenu(correction: correction, worklog: worklog)
         } label: {
             Label("Worklog actions", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
@@ -72,8 +71,8 @@ private struct WorklogActionsMenu: View {
 
 private struct WorklogContextMenu: View {
     let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
     let worklog: WorklogItem
+    @Environment(WorklogMoveStore.self) private var move
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
     @Environment(WorklogDeletionStore.self) private var deletion
 

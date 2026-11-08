@@ -29,7 +29,7 @@ struct WorklogHistorySection: View {
                 ForEach(history.worklogs) { worklog in
                     WorklogRow(
                         worklog: worklog, active: tracking.active,
-                        correction: store.correction, move: store.move)
+                        correction: store.correction)
                 }
 
                 if history.hasMore {

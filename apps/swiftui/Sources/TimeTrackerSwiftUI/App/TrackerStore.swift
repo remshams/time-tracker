@@ -21,7 +21,6 @@ final class TrackerStore {
     let menu: TrackerMenuPresentationObserver
     let bulkArchiving: BulkTaskArchivingStore
     let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
     @ObservationIgnored private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -48,7 +47,6 @@ final class TrackerStore {
             sources: TrackerMenuSources(session: session), showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
-        move = WorklogMoveStore(session: session, presentation: presentation)
         session.sync.onChange = { [weak self] in
             guard let self else { return }
             presentation.update(from: session)
@@ -79,6 +77,7 @@ final class TrackerStore {
     var taskCreation: TaskCreationStore { session.taskCreation }
     /// The environment and the coordinator read the worklog deletion dialog from this store.
     var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
+    var worklogMove: WorklogMoveStore { session.worklogMove }
 
     var canStopTracking: Bool { session.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }
