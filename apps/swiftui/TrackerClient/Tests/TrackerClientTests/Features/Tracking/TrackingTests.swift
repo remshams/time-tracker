@@ -212,7 +212,7 @@ final class TrackingTests: XCTestCase {
         XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        XCTAssertTrue(fixture.session.canOpenTaskRename)
+        XCTAssertTrue(fixture.taskRename.canOpen)
         reload.succeed(resources)
         try await fixture.settled()
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))

@@ -35,7 +35,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.selectedTask?.name, task.name)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, task.name)
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
     }
 
@@ -44,10 +44,10 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        fixture.session.openTaskRename()
+        fixture.taskRename.open(taskID: firstTask.id)
         let rawName = " \u{200b}Renamed task\u{200b}\u{00a0}"
-        fixture.session.setTaskRenameName(rawName)
-        fixture.session.submitTaskRename()
+        fixture.taskRename.setName(rawName)
+        fixture.taskRename.submit()
         let rename = try await fixture.client.next()
         XCTAssertEqual(
             rename.operation,
@@ -57,8 +57,8 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         try await fixture.update("the renamed task") {
             rename.succeed(TaskListResources(tasks: [task], active: nil))
         }
-        XCTAssertFalse(fixture.session.taskRename.isPresented)
-        XCTAssertNil(fixture.session.taskRename.error)
-        XCTAssertEqual(fixture.session.selectedTask?.name, task.name)
+        XCTAssertFalse(fixture.taskRename.isPresented)
+        XCTAssertNil(fixture.taskRename.error)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, task.name)
     }
 }

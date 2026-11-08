@@ -178,7 +178,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.taskArchiving.canSubmit)
         XCTAssertFalse(fixture.session.canUnarchiveTask(taskID: archivedTask.id))
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        XCTAssertTrue(fixture.session.canOpenTaskRename)
+        XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
