@@ -4,6 +4,8 @@
 
 Accepted. It partially supersedes the clauses of ADR 0026 listed under [Superseded clauses](#superseded-clauses). The other ADR 0026 decisions remain accepted.
 
+Partially superseded by [ADR 0032](0032-move-the-dialogs-into-feature-stores.md) for the removal of `publish()`, passive stores and the kept sheet content; all other decisions remain accepted.
+
 ## Date
 
 2026-10-20

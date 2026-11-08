@@ -1,0 +1,107 @@
+# 0032: move the dialogs into feature stores
+
+## Status
+
+Accepted. It partially supersedes the clauses of ADR 0026 and ADR 0030 listed under [Superseded clauses](#superseded-clauses). All other decisions in those records remain accepted.
+
+## Date
+
+2026-11-08
+
+## Context
+
+[ADR 0030](0030-replace-the-session-with-feature-stores.md) moved the task catalog, history, connection, tracking and totals into stores and left a later issue to cover the dialogs and the deletion of `TrackerSession`. Seven dialog flows remain in the session. A dialog value passes through a `*State` class, a `*Presentation` struct, a session forwarder, `TrackerPresentation` and an app store that only forwards.
+
+Once the dialogs move, `TrackerPresentation` only copies five values that other stores can answer themselves: `canStopTracking`, `canStartTracking(taskID:)`, the running task name, and the archivable and unarchivable task IDs. Every `publish()` recomputes them. The menu reads the same start and stop checks, but `TrackingActions` can't answer them for it: `TrackingActions` sits in `App/` and depends on `MenuBarStore`, so `TrackerMenuSources` reading it would form a folder cycle.
+
+[Issue #324](https://github.com/remshams/time-tracker/issues/324) covers the dialogs and the session. [Issue #334](https://github.com/remshams/time-tracker/issues/334) covers `TrackerPresentation`. This record decides both, so #334 has no record of its own.
+
+## Decision
+
+### Dialog stores
+
+Each dialog gets one public `@Observable` store in its folder under `Features/`, with individual properties (`name`, `isSubmitting`, `error`, a computed `canSubmit`) and methods (`open`, `setName`, `cancel`, `submit`). The `*State` class, the `*Presentation` struct and the app's forwarding store are deleted. `canOpen...` and per-task checks such as `canArchive(taskID:)` move to the dialog store.
+
+A dialog store gets the dependencies it uses through its initializer, such as the client, the clock and the stores it reads.
+
+### Reload closures
+
+Features don't depend on `App/`, so a dialog store can't call `TrackerSync`. Each dialog store takes one closure instead:
+
+```swift
+// Task dialogs. `then` runs after the task list arrives and before the last publish.
+reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
+
+// Worklog dialogs.
+reloadAfterWrite: @MainActor () async -> Void
+```
+
+`TrackerSync` has a method for each, and the code that creates a store passes it by name:
+
+```swift
+TaskRenameStore(client: client, reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+WorklogDeletionStore(client: client, reloadAfterWrite: sync.reloadAfterWorklogWrite)
+```
+
+The `@MainActor` is part of the type. The package enables `NonisolatedNonsendingByDefault`, and default isolation doesn't apply to function types, so without it the closure type isn't isolated to the main actor and doesn't match the method. A store captures the method strongly. That forms no cycle, because `TrackerSync` doesn't hold dialog stores.
+
+`then` holds the follow-up that needs the reloaded task list: restoring a task remembers it in the catalog, and creating a task shows it.
+
+### Reloads and selection
+
+`reloadAfterTaskWrite(then:)`, `reloadAfterWorklogWrite()`, `changeTab(_:)` and `selectTask(_:)` move from the session to `TrackerSync`. Views call the last two through `TrackerStore`.
+
+### TrackerFeatures
+
+`TrackerFeatures` is a package type in `App/` with no methods. It replaces the session's `init`: it creates and holds the stores, `TrackerSync`, `TrackingActions` and the dialog stores, and it passes the reload closures. `TrackerStore` and the test fixture both use it. The session's read-only forwarders go, and callers read the stores.
+
+### Views
+
+Sheets and context menus read dialog stores from the SwiftUI environment. The coordinator and the app menus read them through `TrackerStore` properties that point at `features`. `TrackerStore` otherwise keeps its Mac settings and forwarders.
+
+### Closing sheets
+
+SwiftUI renders a sheet during its dismissal animation, so its content must stay until the sheet is gone. The separate `sheetContent` copies go. Closing sets `isPresented` and `isSubmitting` to false and leaves the rest of the content until the next `open`. `canSubmit` is false while closed, so the kept content can't send a second request.
+
+### TrackingAvailability
+
+A `TrackingAvailability` struct in `Features/Tracking` reads `ConnectionStore`, `TaskCatalogStore` and `TrackingStore` and offers `canStart(taskID:)`, `canStop` and `canSend`. `TrackingActions`, `TrackerMenuSources` and the `TrackerStore` forwarders use it. Features may depend on each other, so the menu can read it without depending on `App/`.
+
+### Removing TrackerPresentation
+
+`TrackerMenuSources` computes the running task name, because only the menu reads it, and `startableTaskIDs` becomes a local value in its `read()`. `TaskContextMenu` calls `TaskArchivingStore.canArchive(taskID:)` and `canUnarchive(taskID:)`, and the ID sets go. `TrackerPresentation` and `TrackerSync.onChange` are then deleted.
+
+`TrackerTaskPresentationCoordinator` moves to `Observations`, as ADR 0030 decided.
+
+### publish() stays
+
+`TrackerSync.publish()` refreshes values derived from the clock (`timerText`, today's totals, the auto-pause status) and recorded errors, which the stores then assign. Observation reports changes to stored properties, and the clock isn't one, so something has to recompute these values on each tick and after each write. `onChange` goes, because stores notify their readers themselves. Calls to `publish()` that no longer affect those values are removed in their own PR. `publish()` keeps its name.
+
+### Rejected alternatives
+
+- **Features depending on `App/`, or a shared folder for `TrackerSync`.** Either would let a dialog store call the sync directly. The first breaks the rule that only `App/` composes features, and the second would hold one class that isn't shared. A closure gives each store the single call it needs.
+- **`TrackingActions` as the owner of the start and stop checks.** The menu would then depend on `App/`, which forms a folder cycle.
+- **Keeping `TrackerPresentation` for the five remaining values.** It would keep one more copy and one more recomputation per `publish()` for values the stores can answer when asked.
+
+### Steps
+
+Issues #325-#333 and #335-#340 track the steps. During the migration the session creates each new store and passes its closure. #326 sets the template for the other dialogs. #333 adds `TrackerFeatures` and deletes the session after #338 has deleted `TrackerPresentation`.
+
+### Superseded clauses
+
+This record replaces these clauses:
+
+- ADR 0026: "Keep each sheet's last presented content while it closes, because SwiftUI renders the sheet during its dismissal animation." The reason stays. The store now keeps its own content and no copy is made.
+- ADR 0030: "`TrackerPresentation` and `publish()` go away step by step." `TrackerPresentation` goes and `publish()` stays.
+- ADR 0030: "Stores are passive. A store doesn't fetch data or call other stores, with one exception: `WorklogHistoryStore` sends its own page requests". Dialog stores also send their own requests, read the stores they depend on and run their reload closure.
+- ADR 0030: "keep a sheet's last content while it closes", and the kept sheet content in its list of ADR 0026 decisions that stay. The closing rule above replaces them.
+
+## Consequences
+
+A dialog's state, checks and request live in one file in its feature folder. A new dialog adds one store, and its creator passes a reload closure.
+
+Views can redraw a little more often, because a row that calls `canStart` also tracks `catalog.tasks`. These values also update when a store changes, not at the next `publish()`. The list is small and one person uses the app, so neither matters in practice.
+
+A closed dialog store still holds its last content. Code that reads it must check `isPresented` or `canSubmit`.
+
+A slice that renames a dialog's files updates `scripts/swift-mutation-scope.py`, as ADR 0030 describes. E2E tests stay unchanged, because the app's behavior doesn't change.
