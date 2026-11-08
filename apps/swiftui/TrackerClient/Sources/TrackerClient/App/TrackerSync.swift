@@ -145,14 +145,12 @@ public final class TrackerSync {
         publish()
     }
 
-    /// Shows `newTab` and loads the history of the task selected on it.
     public func changeTab(_ newTab: TaskTab) {
         guard catalog.changeTab(newTab) else { return }
         reloadHistory()
         publish()
     }
 
-    /// Selects `taskID` and loads its history.
     public func selectTask(_ taskID: String?) {
         guard catalog.select(taskID) else { return }
         reloadHistory()
@@ -228,9 +226,7 @@ public final class TrackerSync {
         await loadReport()
     }
 
-    /// Publishes the write result, reloads the task list, runs `then` and publishes again. A task dialog store
-    /// takes this as `reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void`, so pass
-    /// `sync.reloadAfterTaskWrite(then:)`.
+    /// Publishes the write result, reloads the task list, runs `then` and publishes again.
     func reloadAfterTaskWrite(then: () -> Void = {}) async {
         publish()
         await reloadTaskList()
@@ -238,8 +234,7 @@ public final class TrackerSync {
         publish()
     }
 
-    /// Publishes the write result, reloads the task list and the history, and publishes again. A worklog dialog
-    /// store takes this as `reloadAfterWrite: @MainActor () async -> Void`, so pass `sync.reloadAfterWorklogWrite`.
+    /// Publishes the write result, reloads the task list and the history, and publishes again.
     func reloadAfterWorklogWrite() async {
         publish()
         await reloadTaskList()

@@ -69,7 +69,7 @@ TEST_PRODUCTION = {
     "App/RefreshPresentationTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION,
     ],
-    "App/TrackerSyncSelectionAndReloadTests.swift": [SYNC, CATALOG, HISTORY],
+    "App/TrackerSyncSelectionAndReloadTests.swift": [SYNC, CATALOG, HISTORY, CONNECTION],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TIME_FORMATTING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION,
