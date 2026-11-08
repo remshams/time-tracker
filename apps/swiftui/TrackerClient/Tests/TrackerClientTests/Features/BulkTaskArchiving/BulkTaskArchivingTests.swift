@@ -44,8 +44,8 @@ final class BulkTaskArchivingTests: XCTestCase {
     /// Answers a preview the store must ignore. The empty task runs after the reply, so the next assertion sees
     /// the store after it handled the reply.
     @MainActor
-    private func answerOutdated(_ request: FakeClient.Request, tasks: [TaskItem] = [secondTask]) async throws {
-        _ = try answerPreview(request, tasks: tasks)
+    private func answerOutdated(_ request: FakeClient.Request) async throws {
+        _ = try answerPreview(request)
         await Task { @MainActor in }.value
     }
 
@@ -494,8 +494,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         fixture.bulkTaskArchiving.open()
         let request = try await fixture.client.next()
         fixture.bulkTaskArchiving.cancel()
-        _ = try answerPreview(request)
-        try await fixture.settled()
+        try await answerOutdated(request)
         XCTAssertFalse(fixture.bulkTaskArchiving.isPresented)
         XCTAssertTrue(fixture.bulkTaskArchiving.tasks.isEmpty)
         XCTAssertFalse(fixture.bulkTaskArchiving.isLoading)

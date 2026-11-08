@@ -7,12 +7,6 @@ import Observation
 /// place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class BulkTaskArchivingStore {
-    private struct Search {
-        let generation: Int
-        let days: Int
-        let asOf: String
-    }
-
     public private(set) var isPresented = false
     public private(set) var daysText = "14"
     public private(set) var isLoading = false
@@ -44,19 +38,15 @@ public final class BulkTaskArchivingStore {
     public var hasPreview: Bool { preview != nil }
     public var tasks: [TaskItem] { preview?.tasks ?? [] }
 
-    public var canSubmit: Bool {
-        isPresented && !isLoading && !isSubmitting && archivedCount == nil
-            && preview?.inactiveDays == days && !(preview?.tasks.isEmpty ?? true)
-    }
+    /// A kept preview always matches `days`, and a finished archive has no preview, because `refresh` and `submit`
+    /// clear it.
+    public var canSubmit: Bool { isPresented && !isLoading && !isSubmitting && !tasks.isEmpty }
 
     private var days: Int? {
-        guard !daysText.isEmpty, daysText.allSatisfy(isDayDigit),
-            let value = UInt32(daysText), value > 0
+        guard daysText.allSatisfy({ $0.isASCII && $0.isNumber }), let value = UInt32(daysText), value > 0
         else { return nil }
         return Int(value)
     }
-
-    private func isDayDigit(_ character: Character) -> Bool { character.isASCII && character.isNumber }
 
     public func open() {
         guard canOpen, !isPresented else { return }
@@ -81,7 +71,7 @@ public final class BulkTaskArchivingStore {
         error = days == nil ? "Enter a positive whole number of days." : nil
         isLoading = days != nil
         guard let days else { return }
-        load(Search(generation: generation, days: days, asOf: formatTimestamp(clock.now)))
+        load(days: days)
     }
 
     public func cancel() {
@@ -108,33 +98,31 @@ public final class BulkTaskArchivingStore {
         }
     }
 
-    private func load(_ search: Search) {
+    private func load(days: Int) {
+        let requested = generation
+        let asOf = formatTimestamp(clock.now)
         Task { [weak self] in
             guard let self else { return }
             do {
-                let value = try await client.previewInactiveTasks(inactiveDays: search.days, asOf: search.asOf)
-                try accept(value, search: search)
+                let value = try await client.previewInactiveTasks(inactiveDays: days, asOf: asOf)
+                guard generation == requested else { return }
+                guard value.inactiveDays == days, parseTimestamp(value.asOf) == parseTimestamp(asOf),
+                    Set(value.tasks.map(\.id)).count == value.tasks.count,
+                    value.tasks.allSatisfy({ !$0.archived })
+                else {
+                    throw BridgeFailure(
+                        message: "The tracker returned an invalid archive preview.", kind: "protocol",
+                        requiresRefresh: true)
+                }
+                preview = value
+                isLoading = false
             } catch {
-                guard generation == search.generation else { return }
+                guard generation == requested else { return }
                 isLoading = false
                 preview = nil
                 self.error = error.localizedDescription
                 recordPreviewFailure(error)
             }
         }
-    }
-
-    private func accept(_ value: InactiveTaskPreview, search: Search) throws {
-        guard generation == search.generation else { return }
-        guard value.inactiveDays == search.days, parseTimestamp(value.asOf) == parseTimestamp(search.asOf),
-            parseTimestamp(value.asOf) != nil,
-            Set(value.tasks.map(\.id)).count == value.tasks.count,
-            value.tasks.allSatisfy({ !$0.archived })
-        else {
-            throw BridgeFailure(
-                message: "The tracker returned an invalid archive preview.", kind: "protocol", requiresRefresh: true)
-        }
-        preview = value
-        isLoading = false
     }
 }
