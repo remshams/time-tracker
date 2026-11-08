@@ -297,6 +297,17 @@ final class TrackingAutomationTests: XCTestCase {
             })
     }
 
+    func testPauseFailureShowsItsErrorWhenTheFollowingReloadAlsoFails() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        try await fixture.client.next().fail(BridgeFailure(message: "Pause rejected"))
+        try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tracking.error, "Pause rejected")
+    }
+
     func testSleepDoesNotPreventPauseAndWakeAloneDoesNotResume() async throws {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
