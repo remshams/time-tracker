@@ -39,7 +39,7 @@ CONNECTION = "Features/Connection/ConnectionStore.swift"
 CONNECTION_TESTING = "Features/Connection/ConnectionTesting.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationStore.swift"
 CREATION = "Features/TaskCreation/TaskCreationState.swift"
-RENAME = "Features/TaskRename/TaskRenameState.swift"
+RENAME = "Features/TaskRename/TaskRenameStore.swift"
 NAME_POLICY = "Features/TaskEditing/TaskNameEditingPolicy.swift"
 ARCHIVING = "Features/TaskArchiving/TaskArchivingState.swift"
 BULK_ARCHIVING = "Features/BulkTaskArchiving/BulkTaskArchivingState.swift"
@@ -134,7 +134,7 @@ TEST_PRODUCTION = {
     "Features/Tracking/TrackingAvailabilityTests.swift": [TRACKING_AVAILABILITY, CONNECTION, CATALOG, TRACKING],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION,
+        SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION, RENAME,
     ],
     "Features/TrackingAutomation/TrackingAutomationStoreTests.swift": [AUTOMATION],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
@@ -171,8 +171,8 @@ TEST_PRODUCTION_COMPANIONS = {
         PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
     # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
-    # The session's dialog flows and the sync's tracking failures explain uncertain writes the same way.
-    **{coordinator: (WRITE_FAILURE,) for coordinator in (SESSION, SYNC)},
+    # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
+    **{coordinator: (WRITE_FAILURE,) for coordinator in (SESSION, SYNC, RENAME)},
 }
 
 
@@ -189,23 +189,25 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-TRACKING_AVAILABILITY_SUPPORT_EDITS = (
-    ("    var trackingActions: TrackingActions { session.trackingActions }\n",
-     "    var trackingActions: TrackingActions { session.trackingActions }\n"
-     "    var trackingAvailability: TrackingAvailability { session.trackingAvailability }\n"),
-    ("        return trackingActions.canStartTracking(taskID: taskID)\n",
-     "        return trackingAvailability.canStart(taskID: taskID)\n"),
-)
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture reads the start and stop checks from TrackingAvailability",
-     TRACKING_AVAILABILITY_SUPPORT_EDITS, None, None,
-     ("Features/Tracking/TrackingTests.swift",), ("Features/Tracking/TrackingTests.swift",)),
+    (
+        "#326 exposes the rename store on the fixture",
+        ((
+            "    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }\n",
+            "    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }\n"
+            "    var taskRename: TaskRenameStore { session.taskRename }\n",
+        ),),
+        None,
+        None,
+        ("Features/TaskRename/TaskRenameTests.swift",),
+        ("Features/TaskRename/TaskRenameTests.swift",),
+    ),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
         PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING,
-        TOTALS, AUTOMATION,
+        TOTALS, AUTOMATION, RENAME,
     ],
     "Support/MenuHarness.swift": [
         PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG,
@@ -216,7 +218,9 @@ SUPPORT_PRODUCTION = {
 # deleted path to the successor here. The successor's own scope covers the
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
-REVIEWED_REPLACEMENTS: dict[str, str] = {}
+REVIEWED_REPLACEMENTS: dict[str, str] = {
+    SOURCES + "Features/TaskRename/TaskRenameState.swift": SOURCES + RENAME,
+}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
