@@ -78,7 +78,7 @@ final class TrackerStore {
     var dailyTotals: DailyTotalsStore { session.dailyTotals }
     /// Views read the auto-pause preference and status from this store the same way.
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
-    /// The rename sheet and the context menus read the dialog from this store the same way.
+    /// The environment and the coordinator read the rename dialog from this store.
     var taskRename: TaskRenameStore { session.taskRename }
 
     var canStopTracking: Bool { session.trackingAvailability.canStop }
