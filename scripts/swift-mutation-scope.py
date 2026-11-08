@@ -169,7 +169,7 @@ TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
     **{store: (CHANGE_GUARD,) for store in (
         PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
-    # TrackingActions asks TrackingAvailability before each request, and the menu reads it too.
+    # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The session's dialog flows and the sync's tracking failures explain uncertain writes the same way.
     **{coordinator: (WRITE_FAILURE,) for coordinator in (SESSION, SYNC)},
