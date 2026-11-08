@@ -244,7 +244,7 @@ public final class TrackerSync {
 
     /// Changes to the tab and selection of a task the tracker just created, and reloads the history once if either
     /// changed. The reload before this call may have failed. The catalog then doesn't hold the task, so `created`
-    /// decides the tab and the selection stays unchanged.
+    /// decides the tab and that tab keeps the selection it remembers.
     func showTask(_ created: TaskItem) {
         let confirmed = catalog.tasks.first { $0.id == created.id } ?? created
         let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
@@ -292,7 +292,7 @@ public final class TrackerSync {
     }
 
     /// Asks the history store for the selected task's first page.
-    func reloadHistory() {
+    private func reloadHistory() {
         history.reload(selectedTaskID: catalog.selectedTaskID, finished: historyPageFinished)
     }
 
