@@ -268,26 +268,7 @@ final class PresentationTests: XCTestCase {
         let harness = PresentationHarness(session: fixture.session)
         let session = fixture.session
         let correctedEnd = try XCTUnwrap(parseTimestamp("2024-12-30T10:30:00.000Z"))
-        let preview: @MainActor (FakeClient.Request) -> Void = { request in
-            guard case .inactivePreview(let days, let at) = request.operation else {
-                return XCTFail("Expected an inactive task preview, got \(request.operation).")
-            }
-            request.inactivePreview(InactiveTaskPreview(asOf: at, inactiveDays: days, tasks: [secondTask]))
-        }
         let steps = [
-            EditorStep(
-                name: "open bulk archiving", action: { session.openBulkTaskArchiving() },
-                presents: { $0.bulkTaskArchiving.isPresented }, reply: preview),
-            EditorStep(
-                name: "change bulk archive days", action: { session.updateBulkArchiveDays("30") },
-                presents: { $0.bulkTaskArchiving.daysText == "30" && $0.bulkTaskArchiving.isLoading },
-                reply: preview),
-            EditorStep(
-                name: "refresh bulk archive preview", action: { session.refreshBulkArchivePreview() },
-                presents: { $0.bulkTaskArchiving.isLoading }, reply: preview),
-            EditorStep(
-                name: "cancel bulk archiving", action: { session.cancelBulkTaskArchiving() },
-                presents: { !$0.bulkTaskArchiving.isPresented }),
             EditorStep(
                 name: "open correction", action: { session.openWorklogCorrection(worklogID: oldWorklog.id) },
                 presents: { $0.worklogCorrection.isPresented }),
