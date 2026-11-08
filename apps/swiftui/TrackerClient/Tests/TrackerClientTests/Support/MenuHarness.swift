@@ -3,7 +3,7 @@ import XCTest
 
 /// Builds the menu bar observer over a fixture's stores, as the app does.
 ///
-/// After each session change it updates the presentation, which supplies the values that combine features. The
+/// After each session change it updates the presentation, which supplies the running task's name. The
 /// observer then rebuilds the menu from its `Observations` loop; `settled` waits for that rebuild.
 @MainActor
 final class MenuHarness {
