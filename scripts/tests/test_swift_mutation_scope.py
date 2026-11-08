@@ -220,7 +220,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        self.assertIn(scope.SOURCES + "Features/TaskCreation/TaskCreationState.swift", result["files"])
+        self.assertIn(scope.SOURCES + "Features/TaskCreation/TaskCreationStore.swift", result["files"])
         self.assertIn(scope.SOURCES + "Features/TrackingAutomation/TrackingAutomationStore.swift", result["files"])
 
     def test_docs_only_change_records_explicit_empty_scope(self):

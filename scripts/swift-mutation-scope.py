@@ -38,7 +38,7 @@ MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
 CONNECTION = "Features/Connection/ConnectionStore.swift"
 CONNECTION_TESTING = "Features/Connection/ConnectionTesting.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationStore.swift"
-CREATION = "Features/TaskCreation/TaskCreationState.swift"
+CREATION = "Features/TaskCreation/TaskCreationStore.swift"
 RENAME = "Features/TaskRename/TaskRenameStore.swift"
 NAME_POLICY = "Features/TaskEditing/TaskNameEditingPolicy.swift"
 ARCHIVING = "Features/TaskArchiving/TaskArchivingStore.swift"
@@ -136,6 +136,7 @@ TEST_PRODUCTION = {
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION, RENAME, MENU_SOURCES,
+        CREATION,
     ],
     "Features/TrackingAutomation/TrackingAutomationStoreTests.swift": [AUTOMATION],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
@@ -173,7 +174,7 @@ TEST_PRODUCTION_COMPANIONS = {
     # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
-    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME, ARCHIVING)},
+    **{owner: (WRITE_FAILURE,) for owner in (SESSION, SYNC, RENAME, ARCHIVING, CREATION)},
 }
 
 
@@ -190,12 +191,25 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    (
+        "#327 exposes the creation store on the fixture",
+        ((
+            "    var taskArchiving: TaskArchivingStore { session.taskArchiving }\n",
+            "    var taskArchiving: TaskArchivingStore { session.taskArchiving }\n"
+            "    var taskCreation: TaskCreationStore { session.taskCreation }\n",
+        ),),
+        None,
+        None,
+        ("Features/TaskCreation/TaskCreationTests.swift",),
+        ("Features/TaskCreation/TaskCreationTests.swift",),
+    ),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
         PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING,
-        TOTALS, AUTOMATION, RENAME, ARCHIVING,
+        TOTALS, AUTOMATION, RENAME, ARCHIVING, CREATION,
     ],
     "Support/MenuHarness.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION, TRACKING,
@@ -207,7 +221,7 @@ SUPPORT_PRODUCTION = {
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
 REVIEWED_REPLACEMENTS: dict[str, str] = {
-    SOURCES + "Features/TaskArchiving/TaskArchivingState.swift": SOURCES + ARCHIVING,
+    SOURCES + "Features/TaskCreation/TaskCreationState.swift": SOURCES + CREATION,
 }
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
