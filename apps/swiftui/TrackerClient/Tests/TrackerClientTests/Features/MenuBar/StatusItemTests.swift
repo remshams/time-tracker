@@ -139,7 +139,7 @@ final class StatusItemTests: XCTestCase {
         let stoppedHistory = try await fixture.client.next()
         stoppedHistory.succeed(emptyPage)
         try await fixture.settled()
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let selectionHistory = try await fixture.client.next()
         selectionHistory.succeed(emptyPage)
         try await fixture.settled()

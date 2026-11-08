@@ -135,7 +135,7 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let destination = try await fixture.client.next()
         let retained = WorklogItem(
             id: "destination-history", taskId: secondTask.id,
@@ -603,7 +603,7 @@ final class WorklogMoveTests: XCTestCase {
         let refresh = try await fixture.client.next()
         refresh.succeed(TaskListResources(tasks: tasks, active: nil))
         try await fixture.settled()
-        fixture.session.select(third.id)
+        fixture.sync.selectTask(third.id)
         let selectedHistory = try await fixture.client.next()
         let unrelated = WorklogItem(id: "unrelated", taskId: third.id, start: log.start, end: log.end)
         selectedHistory.succeed(HistoryPage(worklogs: [unrelated], nextCursor: "older-third", reset: false))

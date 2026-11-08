@@ -93,7 +93,7 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(resources)
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let previousHistory = try await fixture.client.next()
         previousHistory.succeed(emptyPage)
         try await fixture.settled()

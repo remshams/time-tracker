@@ -126,7 +126,7 @@ final class PresentationTests: XCTestCase {
         let lists = harness.counter(PresentationReads.lists)
         let controls = harness.counter(PresentationReads.controls)
 
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let history = try await fixture.client.next()
         XCTAssertTrue(harness.history.isLoading)
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
@@ -135,7 +135,7 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual(harness.history.worklogs, [oldWorklog])
         XCTAssertTrue(harness.history.hasMore)
 
-        fixture.session.changeTab(.archived)
+        fixture.sync.changeTab(.archived)
         XCTAssertEqual(harness.catalog.tab, .archived)
         XCTAssertEqual(harness.catalog.visibleTasks, [archivedTask])
         XCTAssertEqual(harness.catalog.selectedTask, archivedTask)
@@ -143,7 +143,7 @@ final class PresentationTests: XCTestCase {
         try await harness.settled(fixture)
         XCTAssertTrue(harness.presentation.canUnarchiveTask(taskID: archivedTask.id))
         XCTAssertFalse(harness.presentation.canArchiveTask(taskID: archivedTask.id))
-        fixture.session.changeTab(.active)
+        fixture.sync.changeTab(.active)
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
         XCTAssertTrue(harness.presentation.canArchiveTask(taskID: firstTask.id))
@@ -183,7 +183,7 @@ final class PresentationTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let harness = PresentationHarness(session: fixture.session)
 
-        fixture.session.select(secondTask.id)
+        fixture.sync.selectTask(secondTask.id)
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
         try await harness.settled(fixture)
