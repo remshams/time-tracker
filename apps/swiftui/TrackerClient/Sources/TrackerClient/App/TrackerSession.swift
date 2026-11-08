@@ -34,11 +34,12 @@ public final class TrackerSession {
     public let worklogDeletion: WorklogDeletionStore
     /// The worklog move dialog.
     public let worklogMove: WorklogMoveStore
+    /// The bulk archive dialog.
+    public let bulkTaskArchiving: BulkTaskArchivingStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
-    private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
 
     public init(
@@ -81,6 +82,12 @@ public final class TrackerSession {
         worklogMove = WorklogMoveStore(
             client: client, connection: connection, catalog: taskCatalog, history: worklogHistory, tracking: tracking,
             reloadAfterWrite: sync.reloadAfterWorklogWrite)
+        bulkTaskArchiving = BulkTaskArchivingStore(
+            client: client, clock: clock, connection: connection,
+            recordPreviewFailure: { [sync] error in
+                if sync.requiresConnectionRecovery(error) { sync.recordConnectionFailure(error) }
+            },
+            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
     }
 
     // The session's flows read these two.
@@ -92,41 +99,6 @@ public final class TrackerSession {
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
-    }
-
-    public var bulkTaskArchiving: BulkTaskArchivingPresentation { bulkArchiving.presentation }
-    public var canOpenBulkTaskArchiving: Bool { connection.confirmed }
-
-    public func openBulkTaskArchiving() {
-        guard canOpenBulkTaskArchiving else { return }
-        loadBulkArchivePreview(bulkArchiving.open(asOf: formatTimestamp(clock.now)))
-        sync.publish()
-    }
-    public func updateBulkArchiveDays(_ text: String) {
-        loadBulkArchivePreview(bulkArchiving.updateDays(text, asOf: formatTimestamp(clock.now)))
-        sync.publish()
-    }
-    public func refreshBulkArchivePreview() {
-        loadBulkArchivePreview(bulkArchiving.requestPreview(asOf: formatTimestamp(clock.now)))
-        sync.publish()
-    }
-    public func cancelBulkTaskArchiving() {
-        bulkArchiving.cancel()
-        sync.publish()
-    }
-    public func submitBulkTaskArchiving() {
-        guard let preview = bulkArchiving.submit() else { return }
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await client.archiveInactiveTasks(preview: preview)
-                bulkArchiving.complete(count: result.archivedCount)
-            } catch {
-                bulkArchiving.failSubmission(writeFailure(error))
-            }
-            await sync.reloadAfterTaskWrite()
-        }
     }
 
     public func openWorklogCorrection(worklogID: String) {
@@ -167,22 +139,6 @@ public final class TrackerSession {
                 correction.fail(writeFailure(error))
             }
             await sync.reloadAfterWorklogWrite()
-        }
-    }
-
-    private func loadBulkArchivePreview(_ search: BulkTaskArchivingState.Search?) {
-        guard let search else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let value = try await client.previewInactiveTasks(inactiveDays: search.days, asOf: search.asOf)
-                try bulkArchiving.accept(value, search: search)
-            } catch {
-                guard bulkArchiving.matches(search) else { return }
-                bulkArchiving.failSearch(error, search: search)
-                if sync.requiresConnectionRecovery(error) { sync.recordConnectionFailure(error) }
-            }
-            sync.publish()
         }
     }
 

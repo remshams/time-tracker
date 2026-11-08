@@ -70,6 +70,7 @@ final class PresentationHarness {
     var taskCreation: TaskCreationStore { session.taskCreation }
     var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
     var worklogMove: WorklogMoveStore { session.worklogMove }
+    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -192,8 +193,15 @@ enum PresentationReads {
     }
 
     static func bulkTaskArchiving(_ views: PresentationHarness) {
-        _ = views.presentation.bulkTaskArchiving
-        _ = views.presentation.canOpenBulkTaskArchiving
+        _ = views.bulkTaskArchiving.isPresented
+        _ = views.bulkTaskArchiving.daysText
+        _ = views.bulkTaskArchiving.isLoading
+        _ = views.bulkTaskArchiving.isSubmitting
+        _ = views.bulkTaskArchiving.hasPreview
+        _ = views.bulkTaskArchiving.tasks
+        _ = views.bulkTaskArchiving.error
+        _ = views.bulkTaskArchiving.archivedCount
+        _ = views.bulkTaskArchiving.canOpen
     }
 
     static func worklogCorrection(_ views: PresentationHarness) {
@@ -243,8 +251,6 @@ func assertMirrors(
         session.tracking.timerText,
         session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),
         file: file, line: line)
-    XCTAssertEqual(presentation.bulkTaskArchiving, session.bulkTaskArchiving, file: file, line: line)
-    XCTAssertEqual(presentation.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.worklogCorrection, session.worklogCorrection, file: file, line: line)
     XCTAssertEqual(presentation.canOpenWorklogCorrection, session.canOpenWorklogCorrection, file: file, line: line)
     for task in session.tasks {
@@ -253,10 +259,6 @@ func assertMirrors(
             totals.taskTotal(taskID: task.id).content?.text,
             session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
         XCTAssertEqual(totals.taskTotal(taskID: task.id).content?.explanation, explanation, file: file, line: line)
-    }
-    if session.bulkTaskArchiving.isPresented {
-        XCTAssertEqual(
-            presentation.bulkTaskArchivingSheetContent, session.bulkTaskArchiving, file: file, line: line)
     }
     if session.worklogCorrection.isPresented {
         XCTAssertEqual(

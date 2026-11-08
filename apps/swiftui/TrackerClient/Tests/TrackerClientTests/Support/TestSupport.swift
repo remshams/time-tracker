@@ -420,6 +420,7 @@ final class Fixture {
     var taskCreation: TaskCreationStore { session.taskCreation }
     var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
     var worklogMove: WorklogMoveStore { session.worklogMove }
+    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
     var canStartSelectedTask: Bool {
         guard let taskID = session.taskCatalog.selectedTaskID else { return false }
         return trackingAvailability.canStart(taskID: taskID)
