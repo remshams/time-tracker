@@ -286,7 +286,7 @@ public final class TrackerSync {
             acceptTaskList(refreshed.taskList, requestReport: false)
         } catch {
             dailyTotals.fail(error, clock: clock)
-            if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
+            recordReadFailure(error)
             publish()
         }
     }
@@ -296,15 +296,20 @@ public final class TrackerSync {
         history.reload(selectedTaskID: catalog.selectedTaskID, finished: historyPageFinished)
     }
 
-    func recordConnectionFailure(_ failure: Error) {
+    private func recordConnectionFailure(_ failure: Error) {
         connection.recordFailure(failure)
         schedulePolling()
         history.showError(failure.localizedDescription)
         publish()
     }
 
+    /// Recovers the connection when a read failure calls for it.
+    func recordReadFailure(_ error: Error) {
+        if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
+    }
+
     /// Callers pass read failures, which the bridge never marks as uncertain.
-    func requiresConnectionRecovery(_ error: Error) -> Bool {
+    private func requiresConnectionRecovery(_ error: Error) -> Bool {
         guard let failure = error as? BridgeFailure else { return false }
         return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
     }
@@ -330,7 +335,7 @@ public final class TrackerSync {
     private var historyPageFinished: @MainActor (Error?) -> Void {
         { [weak self] failure in
             guard let self else { return }
-            if let failure, requiresConnectionRecovery(failure) { recordConnectionFailure(failure) }
+            if let failure { recordReadFailure(failure) }
             publish()
         }
     }
