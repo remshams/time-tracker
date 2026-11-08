@@ -297,7 +297,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.taskRename.isSubmitting)
         XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
-        XCTAssertTrue(fixture.session.canOpenWorklogMove)
+        XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))

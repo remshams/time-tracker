@@ -14,9 +14,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var worklogCorrection: WorklogCorrectionPresentation
     public private(set) var worklogCorrectionSheetContent: WorklogCorrectionPresentation
     public private(set) var canOpenWorklogCorrection: Bool
-    public private(set) var worklogMove: WorklogMovePresentation
-    public private(set) var worklogMoveSheetContent: WorklogMovePresentation
-    public private(set) var canOpenWorklogMove: Bool
 
     public init(session: TrackerSession) {
         bulkTaskArchiving = session.bulkTaskArchiving
@@ -25,9 +22,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
         worklogCorrection = session.worklogCorrection
         worklogCorrectionSheetContent = session.worklogCorrection
         canOpenWorklogCorrection = session.canOpenWorklogCorrection
-        worklogMove = session.worklogMove
-        worklogMoveSheetContent = session.worklogMove
-        canOpenWorklogMove = session.canOpenWorklogMove
     }
 
     public func update(from session: TrackerSession) {
@@ -35,11 +29,8 @@ public final class TrackerPresentation: ChangeGuardedStore {
         set(\.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving)
         set(\.worklogCorrection, session.worklogCorrection)
         set(\.canOpenWorklogCorrection, session.canOpenWorklogCorrection)
-        set(\.worklogMove, session.worklogMove)
-        set(\.canOpenWorklogMove, session.canOpenWorklogMove)
         // SwiftUI continues rendering a sheet while its dismissal animates, so keep the last presented content.
         if bulkTaskArchiving.isPresented { set(\.bulkTaskArchivingSheetContent, bulkTaskArchiving) }
         if worklogCorrection.isPresented { set(\.worklogCorrectionSheetContent, worklogCorrection) }
-        if worklogMove.isPresented { set(\.worklogMoveSheetContent, worklogMove) }
     }
 }

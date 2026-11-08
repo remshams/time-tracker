@@ -32,13 +32,14 @@ public final class TrackerSession {
     public let taskCreation: TaskCreationStore
     /// The worklog deletion dialog.
     public let worklogDeletion: WorklogDeletionStore
+    /// The worklog move dialog.
+    public let worklogMove: WorklogMoveStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
     private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
-    private let move = WorklogMoveState()
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -77,6 +78,9 @@ public final class TrackerSession {
         worklogDeletion = WorklogDeletionStore(
             client: client, connection: connection, catalog: taskCatalog, history: worklogHistory,
             reloadAfterWrite: sync.reloadAfterWorklogWrite)
+        worklogMove = WorklogMoveStore(
+            client: client, connection: connection, catalog: taskCatalog, history: worklogHistory, tracking: tracking,
+            reloadAfterWrite: sync.reloadAfterWorklogWrite)
     }
 
     // The session's flows read these two.
@@ -84,8 +88,6 @@ public final class TrackerSession {
     public var active: WorklogItem? { tracking.active }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
     public var canOpenWorklogCorrection: Bool { connection.confirmed }
-    public var worklogMove: WorklogMovePresentation { move.presentation }
-    public var canOpenWorklogMove: Bool { connection.confirmed }
 
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
@@ -131,53 +133,6 @@ public final class TrackerSession {
         guard canOpenWorklogCorrection, let worklog = worklogForEditor(worklogID) else { return }
         correction.open(worklog, taskName: taskName(worklog.taskId))
         sync.publish()
-    }
-
-    public func openWorklogMove(worklogID: String) {
-        guard canOpenWorklogMove, let worklog = worklogForEditor(worklogID) else { return }
-        loadMoveCandidates(move.open(worklog, sourceTaskName: taskName(worklog.taskId)))
-        sync.publish()
-    }
-
-    public func setWorklogMoveQuery(_ query: String) {
-        loadMoveCandidates(move.updateQuery(query))
-        sync.publish()
-    }
-
-    public func retryWorklogMoveCandidates() {
-        loadMoveCandidates(move.retrySearch())
-        sync.publish()
-    }
-
-    public func selectWorklogMoveDestination(taskID: String) {
-        move.select(taskID)
-        sync.publish()
-    }
-
-    public func moveWorklogDestinationSelection(by offset: Int) {
-        move.moveSelection(by: offset)
-        sync.publish()
-    }
-
-    public func cancelWorklogMove() {
-        move.cancel()
-        sync.publish()
-    }
-
-    public func submitWorklogMove() {
-        guard let request = move.submit() else { return }
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try await client.moveWorklog(
-                    expected: request.expected, destinationTaskID: request.destinationTaskID)
-                move.reset()
-            } catch {
-                move.fail(writeFailure(error))
-            }
-            await sync.reloadAfterWorklogWrite()
-        }
     }
 
     public func setWorklogCorrectionStart(_ date: Date) {
@@ -226,21 +181,6 @@ public final class TrackerSession {
                 guard bulkArchiving.matches(search) else { return }
                 bulkArchiving.failSearch(error, search: search)
                 if sync.requiresConnectionRecovery(error) { sync.recordConnectionFailure(error) }
-            }
-            sync.publish()
-        }
-    }
-
-    private func loadMoveCandidates(_ search: WorklogMoveState.Search?) {
-        guard let search else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                move.accept(
-                    try await client.moveCandidates(sourceTaskID: search.sourceTaskID, query: search.query),
-                    search: search)
-            } catch {
-                move.failSearch(error, search: search)
             }
             sync.publish()
         }
