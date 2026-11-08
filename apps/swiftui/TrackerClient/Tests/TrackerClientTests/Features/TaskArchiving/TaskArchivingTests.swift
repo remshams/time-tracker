@@ -165,6 +165,33 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningAnotherTaskDuringTheReloadStillRemembersTheRestoredTask() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let other = archived(secondTask)
+        try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask, other], active: nil))
+        fixture.sync.changeTab(.archived)
+        try await fixture.client.next().succeed(emptyPage)
+        try await fixture.settled()
+        fixture.taskArchiving.unarchive(taskID: other.id)
+        let command = try await fixture.client.next()
+        command.complete(.success(.task(TaskCommandResult(task: secondTask))))
+        let reload = try await fixture.client.next()
+        fixture.taskArchiving.openArchive(taskID: firstTask.id)
+        XCTAssertTrue(fixture.taskArchiving.isPresented)
+        XCTAssertEqual(fixture.taskArchiving.action, .archive)
+        try await fixture.update("the restored task") {
+            reload.succeed(TaskListResources(tasks: [firstTask, archivedTask, secondTask], active: nil))
+        }
+        XCTAssertEqual(fixture.taskArchiving.taskID, firstTask.id)
+        fixture.sync.changeTab(.active)
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+    }
+
+    @MainActor
     func testSubmitIsDisabledWhileSubmittingAndOtherFeaturesStayUsable() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
