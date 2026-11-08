@@ -415,11 +415,11 @@ public final class TrackerSession {
 }
 
 public extension TrackerMenuSources {
-    /// Reads the menu's stores from the session and the values that combine features from `presentation`.
+    /// Reads the menu's stores and tracking checks from the session and the running task's name from `presentation`.
     init(session: TrackerSession, presentation: TrackerPresentation) {
         self.init(
             catalog: session.taskCatalog, connection: session.connection, tracking: session.tracking,
             dailyTotals: session.dailyTotals, menuBar: session.menuBar, automation: session.trackingAutomation,
-            presentation: presentation)
+            availability: session.trackingAvailability, presentation: presentation)
     }
 }
