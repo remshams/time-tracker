@@ -50,7 +50,7 @@ final class MenuTaskClipboardTests: XCTestCase {
             TaskListResources(tasks: [archivedTask], active: nil),
             rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 1_200_000_000)])
         let operations = fixture.client.operations.count
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: archivedTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: archivedTask.id))
         XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: archivedTask.id, connection: .local), "20m 0s")
         XCTAssertEqual(
             fixture.session.menuCopyValue(.copyName, taskID: archivedTask.id, connection: .local), archivedTask.name)

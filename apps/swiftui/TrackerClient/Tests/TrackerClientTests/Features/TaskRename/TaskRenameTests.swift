@@ -242,7 +242,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
         XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         XCTAssertTrue(fixture.session.taskRename.canSubmit)
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertEqual(fixture.session.active, activeWorklog)
     }
 
@@ -261,8 +261,8 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))

@@ -7,21 +7,21 @@ final class TrackingTests: XCTestCase {
     func testTaskEligibilityAndAtomicSwitchDoNotDependOnSelection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         let tasks = [firstTask, secondTask, archivedTask]
         try await fixture.start(TaskListResources(tasks: tasks, active: activeWorklog))
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertFalse(fixture.canStartSelectedTask)
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         let operationCount = fixture.client.operations.count
         for taskID in [firstTask.id, archivedTask.id, "missing-task"] {
-            XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: taskID))
+            XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: taskID))
             fixture.trackingActions.startTracking(taskID: taskID)
         }
         XCTAssertEqual(fixture.client.operations.count, operationCount)
 
         fixture.trackingActions.startTracking(taskID: secondTask.id)
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         let switched = WorklogItem(
             id: "switched-worklog", taskId: secondTask.id,
             start: "2025-01-01T00:00:00.000Z", end: nil)
@@ -42,8 +42,8 @@ final class TrackingTests: XCTestCase {
             "Switching tasks must delegate one atomic start command without a separate stop.")
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertTrue(fixture.canStartSelectedTask)
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: firstTask.id))
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
     }
 
     @MainActor
@@ -51,15 +51,15 @@ final class TrackingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         let operationCount = fixture.client.operations.count
         refresh.fail(BridgeFailure(message: "Tracker offline", kind: "unavailable"))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.connection.stale)
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.trackingActions.startTracking(taskID: secondTask.id)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         fixture.trackingActions.startTracking(taskID: secondTask.id)
@@ -104,7 +104,7 @@ final class TrackingTests: XCTestCase {
                 task: secondTask.id, expected: activeWorklog.id,
                 at: "2025-01-01T00:00:00.000Z"))
         XCTAssertTrue(fixture.client.hasPendingRequests)
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         request.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await fixture.settled()
         XCTAssertEqual(
@@ -147,7 +147,7 @@ final class TrackingTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
     }
 
     @MainActor
@@ -161,14 +161,14 @@ final class TrackingTests: XCTestCase {
         let confirmation = try await fixture.client.next()
         XCTAssertEqual(confirmation.operation, .refresh(fixture.session.connection.settings))
         XCTAssertTrue(fixture.client.hasPendingRequests)
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
         XCTAssertEqual(fixture.client.operations.count, 4)
         confirmation.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.connection.stale)
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertEqual(
             fixture.session.tracking.recordedError,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
@@ -190,7 +190,7 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(fixture.session.active, activeWorklog)
         XCTAssertTrue(fixture.session.connection.stale)
         XCTAssertFalse(fixture.canStartSelectedTask)
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertEqual(
             fixture.session.tracking.recordedError,
             "Could not confirm the change. Check the reloaded data before trying again. Write response lost")
@@ -209,14 +209,14 @@ final class TrackingTests: XCTestCase {
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(.local))
         XCTAssertEqual(fixture.session.tracking.recordedError, "The active timer changed")
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         XCTAssertTrue(fixture.session.canOpenTaskRename)
         reload.succeed(resources)
         try await fixture.settled()
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertEqual(fixture.client.operations.count, 4)
         fixture.clock.now.addTimeInterval(10)
         fixture.trackingActions.startTracking(taskID: secondTask.id)
@@ -227,8 +227,8 @@ final class TrackingTests: XCTestCase {
             .start(task: secondTask.id, expected: activeWorklog.id, at: "2025-01-01T00:00:10.000Z"))
         retried.succeed(resources)
         try await fixture.settled()
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
     }
 
     @MainActor

@@ -88,10 +88,10 @@ final class PresentationTests: XCTestCase {
             fixture.scheduler.poll?.fire()
             let refresh = try await fixture.client.next()
             XCTAssertTrue(fixture.client.hasPendingRequests)
-            XCTAssertTrue(fixture.trackingActions.canStopTracking)
+            XCTAssertTrue(fixture.trackingAvailability.canStop)
             refresh.succeed(resources)
             try await harness.settled(fixture)
-            XCTAssertTrue(fixture.trackingActions.canStopTracking)
+            XCTAssertTrue(fixture.trackingAvailability.canStop)
         }
         XCTAssertEqual(content.count, 0)
         XCTAssertEqual(timer.count, 0)

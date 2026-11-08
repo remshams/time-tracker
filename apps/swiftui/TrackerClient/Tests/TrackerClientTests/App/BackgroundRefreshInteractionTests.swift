@@ -18,8 +18,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         XCTAssertEqual(
             start.operation,
             .start(task: secondTask.id, expected: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertFalse(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Independent task")
@@ -33,8 +33,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         poll.succeed(resources)
         start.succeed(resources)
         try await fixture.settled()
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertEqual(fixture.session.taskCreation.error, "Name rejected")
     }
 
@@ -51,7 +51,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertFalse(fixture.trackingActions.canStopTracking)
+        XCTAssertFalse(fixture.trackingAvailability.canStop)
         stop.succeed(TaskListResources(tasks: [firstTask], active: nil))
         history.succeed(emptyPage)
         // The stopped worklog belonged to the selected task, so the reload requests its history again.

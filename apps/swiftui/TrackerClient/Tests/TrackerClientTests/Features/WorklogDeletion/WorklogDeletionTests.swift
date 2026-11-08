@@ -207,7 +207,7 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.cancelWorklogDeletion()
         XCTAssertTrue(fixture.session.worklogDeletion.isPresented)
         XCTAssertEqual(deletions(fixture), 1)
-        XCTAssertTrue(fixture.trackingActions.canStopTracking)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         fixture.sync.onChange = nil

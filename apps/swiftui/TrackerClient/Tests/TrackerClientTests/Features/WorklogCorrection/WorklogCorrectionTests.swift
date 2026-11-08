@@ -282,7 +282,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
-        XCTAssertTrue(fixture.trackingActions.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
 
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Parallel task")
