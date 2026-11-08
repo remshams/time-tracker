@@ -2,10 +2,9 @@ import SwiftUI
 import TrackerClient
 
 struct BulkTaskArchivingSheet: View {
-    let archiving: BulkTaskArchivingStore
+    @Environment(BulkTaskArchivingStore.self) private var archiving
 
     var body: some View {
-        let state = archiving.sheetContent
         VStack(alignment: .leading, spacing: 16) {
             Text("Archive inactive tasks").font(.title2.bold())
             Text(
@@ -15,10 +14,10 @@ struct BulkTaskArchivingSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("Inactive for more than")
-                TextField("Days", text: Binding(get: { state.daysText }, set: archiving.updateDays))
+                TextField("Days", text: Binding(get: { archiving.daysText }, set: { archiving.setDays($0) }))
                     .frame(width: 100)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(state.isSubmitting)
+                    .disabled(archiving.isSubmitting)
                     .accessibilityLabel("Inactivity period in days")
                     .accessibilityIdentifier("bulk-archive.days")
                 Text("days")
@@ -26,7 +25,7 @@ struct BulkTaskArchivingSheet: View {
                 Button {
                     archiving.refresh()
                 } label: {
-                    DelayedProgress(isBusy: state.isLoading) { visible in
+                    DelayedProgress(isBusy: archiving.isLoading) { visible in
                         ZStack {
                             Image(systemName: "arrow.clockwise")
                                 .opacity(visible ? 0 : 1)
@@ -41,18 +40,18 @@ struct BulkTaskArchivingSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(state.isSubmitting || state.isLoading)
+                .disabled(archiving.isSubmitting || archiving.isLoading)
                 .help("Refresh preview")
-                .accessibilityLabel(state.isLoading ? "Refreshing preview" : "Refresh preview")
+                .accessibilityLabel(archiving.isLoading ? "Refreshing preview" : "Refresh preview")
                 .accessibilityIdentifier("bulk-archive.refresh")
             }
-            Text(previewTitle(state))
+            Text(previewTitle)
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 20)
                 .accessibilityIdentifier("bulk-archive.count")
             Group {
-                if let error = state.error {
+                if let error = archiving.error {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
@@ -64,20 +63,20 @@ struct BulkTaskArchivingSheet: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
-                            if let count = state.archivedCount {
+                            if let count = archiving.archivedCount {
                                 Label(
                                     "Archived \(count) \(count == 1 ? "task" : "tasks").",
                                     systemImage: "checkmark.circle"
                                 )
                                 .accessibilityIdentifier("bulk-archive.result")
                             } else {
-                                ForEach(state.tasks) { task in
+                                ForEach(archiving.tasks) { task in
                                     Text(task.name).frame(maxWidth: .infinity, alignment: .leading)
                                         .textSelection(.enabled)
                                         .accessibilityIdentifier("bulk-archive.candidate.\(task.id)")
                                     Divider()
                                 }
-                                if state.tasks.isEmpty, state.hasPreview {
+                                if archiving.tasks.isEmpty, archiving.hasPreview {
                                     Text("No tasks match this inactivity period.").foregroundStyle(.secondary)
                                         .accessibilityIdentifier("bulk-archive.empty")
                                 }
@@ -92,18 +91,18 @@ struct BulkTaskArchivingSheet: View {
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
-                    isBusy: state.isSubmitting, title: "Archiving tasks...",
+                    isBusy: archiving.isSubmitting, title: "Archiving tasks...",
                     identifier: "bulk-archive.submit-progress")
                 Spacer()
-                Button(state.archivedCount == nil ? "Cancel" : "Done") { archiving.cancel() }
+                Button(archiving.archivedCount == nil ? "Cancel" : "Done") { archiving.cancel() }
                     .keyboardShortcut(.cancelAction)
-                    .disabled(state.isSubmitting)
+                    .disabled(archiving.isSubmitting)
                     .accessibilityIdentifier("bulk-archive.cancel")
-                if state.archivedCount == nil {
+                if archiving.archivedCount == nil {
                     Button("Archive all") { archiving.submit() }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
-                        .disabled(!state.canSubmit)
+                        .disabled(!archiving.canSubmit)
                         .accessibilityIdentifier("bulk-archive.confirm")
                 }
             }
@@ -111,14 +110,14 @@ struct BulkTaskArchivingSheet: View {
         }
         .padding(24)
         .frame(width: 560)
-        .interactiveDismissDisabled(state.isSubmitting)
+        .interactiveDismissDisabled(archiving.isSubmitting)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bulk-archive.dialog")
     }
 
-    private func previewTitle(_ state: BulkTaskArchivingPresentation) -> String {
-        if state.archivedCount != nil { return "Archive complete" }
-        guard state.hasPreview else { return "Eligible tasks" }
-        return "\(state.tasks.count) \(state.tasks.count == 1 ? "task" : "tasks") to archive"
+    private var previewTitle: String {
+        if archiving.archivedCount != nil { return "Archive complete" }
+        guard archiving.hasPreview else { return "Eligible tasks" }
+        return "\(archiving.tasks.count) \(archiving.tasks.count == 1 ? "task" : "tasks") to archive"
     }
 }
