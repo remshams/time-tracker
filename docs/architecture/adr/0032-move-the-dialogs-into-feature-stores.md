@@ -29,7 +29,7 @@ A dialog store gets the dependencies it uses through its initializer, such as th
 Features don't depend on `App/`, so a dialog store can't call `TrackerSync`. Each dialog store takes a reload closure instead:
 
 ```swift
-// Task dialogs. `then` runs after the task list arrives and before the last publish.
+// Task dialogs. `then` runs after the reload attempt and before the last publish.
 reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
 
 // Worklog dialogs.
@@ -45,9 +45,9 @@ WorklogDeletionStore(client: client, reloadAfterWrite: sync.reloadAfterWorklogWr
 
 The `@MainActor` is part of the type. Default isolation doesn't apply to function types, so without it the closure type isn't isolated to the main actor, and the non-Sendable `then` would cross an isolation boundary. A store captures the method strongly. That forms no cycle, because `TrackerSync` doesn't hold dialog stores.
 
-`then` holds the follow-up that needs the reloaded task list, and it runs in the dialog store. Restoring a task calls `catalog.rememberRestoredTask`.
+`then` holds the follow-up to the reload, and it runs in the dialog store. It also runs when the reload failed, so it can't assume the task list changed. Restoring a task calls `catalog.rememberRestoredTask`.
 
-Creating a task also has to show it: change the tab and selection, then reload the history once if either changed. Only `TrackerSync` can reload the history, and calling `changeTab(_:)` and `selectTask(_:)` in a row could send two requests. So #327 adds `TrackerSync.showTask(_:)`, and `TaskCreationStore` is the one store with a second closure, `showTask: @MainActor (TaskItem) -> Void`, which it calls in `then`.
+Creating a task also has to show it: change the tab and selection, then reload the history once if either changed. Only `TrackerSync` can reload the history, and calling `changeTab(_:)` and `selectTask(_:)` in a row could send two requests. So #327 adds `TrackerSync.showTask(_:)`, and `TaskCreationStore` is the one store with a second closure, `showTask: @MainActor (TaskItem) -> Void`, which it calls in `then`. `showTask` keeps today's fallback to the created task when the catalog doesn't hold it yet.
 
 ### Reloads and selection
 
@@ -97,7 +97,7 @@ This record replaces these clauses:
 - ADR 0030: "`TrackerPresentation` and `publish()` go away step by step." `TrackerPresentation` goes and `publish()` stays.
 - ADR 0030: "Stores are passive. A store doesn't fetch data or call other stores, with one exception: `WorklogHistoryStore` sends its own page requests". Dialog stores also send their own requests, read the stores they depend on and run their reload closure, and their `then` can write to the catalog.
 - ADR 0030: "A new `TrackerSync` class and the orchestration code in `App/` write into stores". Dialog stores also write their own state, and a `then` step writes to the catalog.
-- ADR 0030: "Cross-feature follow-ups are explicit calls in `App/` in a fixed order". A follow-up to a dialog write is an explicit call in that store's `then`, and the order is still fixed. Stores still don't observe each other.
+- ADR 0030: "Cross-feature follow-ups are explicit calls in `App/` in a fixed order". A follow-up to a dialog write is an explicit call in that store's `then`, and the order is still fixed. Stores still don't observe each other. The same goes for the ADR 0030 consequence "Cross-feature follow-ups are visible as calls in `App/`."
 - ADR 0030: "A store keeps a value that views read and that it derives from its own state … as a stored property." This no longer applies to a dialog store's `canSubmit` and `canOpen`, which are computed. One sheet or menu entry reads them, so the extra redraws don't matter.
 - ADR 0030: "Rows get plain values from their parent, so a row redraws only when its own values change." A row may call `TrackingAvailability.canStart(taskID:)` and `TaskArchivingStore.canArchive(taskID:)`. The consequences below cover the redraws.
 - ADR 0030: "keep a sheet's last content while it closes", and the kept sheet content in its list of ADR 0026 decisions that stay. The closing rule above replaces them.
