@@ -44,7 +44,6 @@
 		18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */; };
 		D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */; };
 		571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */; };
-		E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */; };
 		42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */; };
 		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
 		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
@@ -146,7 +145,6 @@
 		3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationStore.swift; sourceTree = "<group>"; };
 		E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationView.swift; sourceTree = "<group>"; };
 		A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNameSheet.swift; sourceTree = "<group>"; };
-		F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameStore.swift; sourceTree = "<group>"; };
 		88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameView.swift; sourceTree = "<group>"; };
 		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
 		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
@@ -409,7 +407,6 @@
 		95106349D1A9FA32ACFC23AF /* TaskRename */ = {
 			isa = PBXGroup;
 			children = (
-				F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */,
 				88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */,
 			);
 			path = TaskRename;
@@ -767,7 +764,6 @@
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
 				571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */,
 				F70000000000000000000001 /* DelayedProgress.swift in Sources */,
-				E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */,
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */,
 				8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */,

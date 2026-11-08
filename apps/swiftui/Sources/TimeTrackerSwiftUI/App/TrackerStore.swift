@@ -20,7 +20,6 @@ final class TrackerStore {
     /// The AppKit status menu reads its content, label and live values here.
     let menu: TrackerMenuPresentationObserver
     let creation: TaskCreationStore
-    let rename: TaskRenameStore
     let bulkArchiving: BulkTaskArchivingStore
     let archiving: TaskArchivingStore
     let correction: WorklogCorrectionStore
@@ -52,7 +51,6 @@ final class TrackerStore {
             sources: TrackerMenuSources(session: session, presentation: presentation),
             showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
-        rename = TaskRenameStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
         archiving = TaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
@@ -80,6 +78,8 @@ final class TrackerStore {
     var dailyTotals: DailyTotalsStore { session.dailyTotals }
     /// Views read the auto-pause preference and status from this store the same way.
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
+    /// The rename sheet and the context menus read the dialog from this store the same way.
+    var taskRename: TaskRenameStore { session.taskRename }
 
     var canStopTracking: Bool { session.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }

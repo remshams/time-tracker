@@ -179,14 +179,13 @@ private struct TrackerSidebarToolbar: View {
 private struct TrackerTaskToolbar: View {
     let store: TrackerStore
     @Environment(TrackingStore.self) private var tracking
-    private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
+    @Environment(TaskRenameStore.self) private var rename
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
     @Environment(TaskCatalogStore.self) private var catalog
 
     init(store: TrackerStore) {
         self.store = store
-        rename = store.rename
         archiving = store.archiving
     }
 
