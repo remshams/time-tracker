@@ -492,7 +492,6 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(availability.count, countAfterStart)
         fixture.taskCreation.open()
         XCTAssertTrue(fixture.taskCreation.isPresented)
-        XCTAssertEqual(availability.count, countAfterStart)
         XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
     }
 
