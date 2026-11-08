@@ -22,6 +22,7 @@ PRESENTATION = "App/TrackerPresentation.swift"
 MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingStore.swift"
+TRACKING_AVAILABILITY = "Features/Tracking/TrackingAvailability.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
@@ -130,6 +131,7 @@ TEST_PRODUCTION = {
         SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION,
         CONNECTION, CONNECTION_TESTING, NAME_POLICY,
     ],
+    "Features/Tracking/TrackingAvailabilityTests.swift": [TRACKING_AVAILABILITY, CONNECTION, CATALOG, TRACKING],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION,
@@ -167,6 +169,8 @@ TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
     **{store: (CHANGE_GUARD,) for store in (
         PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
+    # TrackingActions asks TrackingAvailability before each request, and the menu reads it too.
+    TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The session's dialog flows and the sync's tracking failures explain uncertain writes the same way.
     **{coordinator: (WRITE_FAILURE,) for coordinator in (SESSION, SYNC)},
 }
@@ -185,11 +189,23 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+TRACKING_AVAILABILITY_SUPPORT_EDITS = (
+    ("    var trackingActions: TrackingActions { session.trackingActions }\n",
+     "    var trackingActions: TrackingActions { session.trackingActions }\n"
+     "    var trackingAvailability: TrackingAvailability { session.trackingAvailability }\n"),
+    ("        return trackingActions.canStartTracking(taskID: taskID)\n",
+     "        return trackingAvailability.canStart(taskID: taskID)\n"),
+)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    ("Shared fixture reads the start and stop checks from TrackingAvailability",
+     TRACKING_AVAILABILITY_SUPPORT_EDITS, None, None,
+     ("Features/Tracking/TrackingTests.swift",), ("Features/Tracking/TrackingTests.swift",)),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
-        PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS, AUTOMATION,
+        PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING,
+        TOTALS, AUTOMATION,
     ],
     "Support/MenuHarness.swift": [
         PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG,
