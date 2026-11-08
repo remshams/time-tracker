@@ -77,13 +77,12 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertFalse(fixture.worklogDeletion.isPresented)
 
         fixture.worklogDeletion.open(worklogID: oldWorklog.id)
-        let state = fixture.worklogDeletion
-        XCTAssertTrue(state.isPresented)
-        XCTAssertEqual(state.original, oldWorklog)
-        XCTAssertEqual(state.taskName, firstTask.name)
-        XCTAssertTrue(state.canSubmit)
-        XCTAssertFalse(state.isSubmitting)
-        XCTAssertNil(state.error)
+        XCTAssertTrue(fixture.worklogDeletion.isPresented)
+        XCTAssertEqual(fixture.worklogDeletion.original, oldWorklog)
+        XCTAssertEqual(fixture.worklogDeletion.taskName, firstTask.name)
+        XCTAssertTrue(fixture.worklogDeletion.canSubmit)
+        XCTAssertFalse(fixture.worklogDeletion.isSubmitting)
+        XCTAssertNil(fixture.worklogDeletion.error)
     }
 
     @MainActor
@@ -267,11 +266,10 @@ final class WorklogDeletionTests: XCTestCase {
         reload.succeed(resources)
         try await finishHistory(fixture, rows: [precise, oldWorklog])
 
-        let state = fixture.worklogDeletion
-        XCTAssertTrue(state.isPresented)
-        XCTAssertEqual(state.original, precise)
-        XCTAssertEqual(state.error, "Deletion failed: Storage error.")
-        XCTAssertTrue(state.canSubmit)
+        XCTAssertTrue(fixture.worklogDeletion.isPresented)
+        XCTAssertEqual(fixture.worklogDeletion.original, precise)
+        XCTAssertEqual(fixture.worklogDeletion.error, "Deletion failed: Storage error.")
+        XCTAssertTrue(fixture.worklogDeletion.canSubmit)
         XCTAssertFalse(fixture.session.connection.stale)
 
         fixture.worklogDeletion.submit()
@@ -394,6 +392,9 @@ final class WorklogDeletionTests: XCTestCase {
 
     @MainActor
     func testClosedDialogKeepsItsContentUntilTheNextOpenAndSendsNothing() async throws {
+        let otherTasks = WorklogItem(
+            id: "other-task", taskId: secondTask.id,
+            start: "2024-12-30T11:00:00.000000Z", end: "2024-12-30T12:00:00.000000Z")
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
@@ -401,7 +402,7 @@ final class WorklogDeletionTests: XCTestCase {
         let first = try await command(fixture)
         first.fail(BridgeFailure(message: "Rejected"))
         try await reloadTaskList(fixture)
-        try await finishHistory(fixture, rows: [precise, oldWorklog])
+        try await finishHistory(fixture, rows: [precise, otherTasks])
 
         fixture.worklogDeletion.cancel()
 
@@ -413,12 +414,19 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.worklogDeletion.submit()
         XCTAssertFalse(fixture.worklogDeletion.isSubmitting)
 
-        fixture.worklogDeletion.open(worklogID: oldWorklog.id)
+        fixture.worklogDeletion.open(worklogID: otherTasks.id)
 
         XCTAssertTrue(fixture.worklogDeletion.isPresented)
-        XCTAssertEqual(fixture.worklogDeletion.original, oldWorklog)
+        XCTAssertEqual(fixture.worklogDeletion.original, otherTasks)
+        XCTAssertEqual(fixture.worklogDeletion.taskName, secondTask.name)
         XCTAssertNil(fixture.worklogDeletion.error)
         XCTAssertTrue(fixture.worklogDeletion.canSubmit)
+
+        fixture.worklogDeletion.submit()
+        let second = try await command(fixture, expected: otherTasks)
+        second.deleted(worklog: otherTasks, resources: resources)
+        try await finishHistory(fixture, rows: [precise])
+        XCTAssertFalse(fixture.worklogDeletion.isPresented)
     }
 
     @MainActor
@@ -458,7 +466,6 @@ final class WorklogDeletionTests: XCTestCase {
     func testUnconfirmedConnectionKeepsTheDialogClosedEvenWithALoadedWorklog() async throws {
         let client = FakeClient()
         let history = WorklogHistoryStore(client: client)
-        history.request(selectedTaskID: firstTask.id)
         history.accept(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false), cursor: nil)
         let deletion = WorklogDeletionStore(
             client: client, connection: ConnectionStore(settings: .local), catalog: TaskCatalogStore(),
