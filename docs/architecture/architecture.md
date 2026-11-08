@@ -218,7 +218,8 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   status from `ConnectionStore`, the running worklog, tracking error and timer
   text from `TrackingStore`, today's status and task totals from
   `DailyTotalsStore`, the auto-pause preference and status from
-  `TrackingAutomationStore`, and the other session values from `TrackerPresentation`
+  `TrackingAutomationStore`, whether tracking can start or stop from
+  `TrackingAvailability`, and the other session values from `TrackerPresentation`
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
   bar observer reads these stores, the last tracked task from `MenuBarStore`,
   the start and stop checks from `TrackingAvailability` and the running task's
