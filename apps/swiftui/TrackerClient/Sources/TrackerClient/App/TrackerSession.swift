@@ -84,9 +84,7 @@ public final class TrackerSession {
             reloadAfterWrite: sync.reloadAfterWorklogWrite)
         bulkTaskArchiving = BulkTaskArchivingStore(
             client: client, clock: clock, connection: connection,
-            recordPreviewFailure: { [sync] error in
-                if sync.requiresConnectionRecovery(error) { sync.recordConnectionFailure(error) }
-            },
+            recordPreviewFailure: sync.recordReadFailure,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
     }
 
