@@ -116,7 +116,7 @@ public final class TrackerSession {
             } catch {
                 bulkArchiving.failSubmission(writeFailure(error))
             }
-            await reloadAfterTaskWrite()
+            await sync.reloadAfterTaskWrite()
         }
     }
 
@@ -164,12 +164,12 @@ public final class TrackerSession {
                     _ = try await client.unarchiveTask(taskID: request.taskID, occurredAt: occurredAt)
                 }
                 archiving.reset()
-                await reloadAfterTaskWrite {
+                await sync.reloadAfterTaskWrite {
                     if request.action == .unarchive { self.taskCatalog.rememberRestoredTask(request.taskID) }
                 }
             } catch {
                 archiving.fail(writeFailure(error))
-                await reloadAfterTaskWrite()
+                await sync.reloadAfterTaskWrite()
             }
         }
     }
@@ -202,10 +202,10 @@ public final class TrackerSession {
             do {
                 let created = try await client.createTask(name: name, occurredAt: occurredAt).task
                 creation.reset()
-                await reloadAfterTaskWrite { self.showCreatedTask(created) }
+                await sync.reloadAfterTaskWrite { self.showCreatedTask(created) }
             } catch {
                 creation.fail(writeFailure(error))
-                await reloadAfterTaskWrite()
+                await sync.reloadAfterTaskWrite()
             }
         }
     }
@@ -244,7 +244,7 @@ public final class TrackerSession {
             } catch {
                 rename.fail(writeFailure(error))
             }
-            await reloadAfterTaskWrite()
+            await sync.reloadAfterTaskWrite()
         }
     }
 
@@ -297,7 +297,7 @@ public final class TrackerSession {
             } catch {
                 move.fail(writeFailure(error))
             }
-            await reloadAfterWorklogWrite()
+            await sync.reloadAfterWorklogWrite()
         }
     }
 
@@ -332,7 +332,7 @@ public final class TrackerSession {
             } catch {
                 correction.fail(writeFailure(error))
             }
-            await reloadAfterWorklogWrite()
+            await sync.reloadAfterWorklogWrite()
         }
     }
 
@@ -358,7 +358,7 @@ public final class TrackerSession {
             } catch {
                 deletion.fail(writeFailure(error))
             }
-            await reloadAfterWorklogWrite()
+            await sync.reloadAfterWorklogWrite()
         }
     }
 
@@ -390,26 +390,11 @@ public final class TrackerSession {
         }
     }
 
-    /// Publishes the write result, reloads the task list, runs `afterReload`, and publishes again.
-    private func reloadAfterTaskWrite(afterReload: () -> Void = {}) async {
-        sync.publish()
-        await sync.reloadTaskList()
-        afterReload()
-        sync.publish()
-    }
-
     private func showCreatedTask(_ created: TaskItem) {
         let confirmed = task(withID: created.id) ?? created
         let changedTab = taskCatalog.changeTab(confirmed.archived ? .archived : .active)
         let changedSelection = taskCatalog.select(created.id)
         if changedTab || changedSelection { sync.reloadHistory() }
-    }
-
-    private func reloadAfterWorklogWrite() async {
-        sync.publish()
-        await sync.reloadTaskList()
-        sync.reloadHistory()
-        sync.publish()
     }
 
     private func loadMoveCandidates(_ search: WorklogMoveState.Search?) {

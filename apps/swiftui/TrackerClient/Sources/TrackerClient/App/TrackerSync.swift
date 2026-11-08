@@ -1,8 +1,8 @@
 import Foundation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
-/// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause and the
-/// connection change.
+/// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
+/// connection change, the tab and task selection, and the reloads after dialog writes.
 ///
 /// `TrackerSession` creates the stores and passes them in. Its flows and `TrackingActions` call the
 /// package-internal methods below, for example to reload the task list or the history, record a failure and
@@ -145,6 +145,20 @@ public final class TrackerSync {
         publish()
     }
 
+    /// Shows `newTab` and loads the history of the task selected on it.
+    public func changeTab(_ newTab: TaskTab) {
+        guard catalog.changeTab(newTab) else { return }
+        reloadHistory()
+        publish()
+    }
+
+    /// Selects `taskID` and loads its history.
+    public func selectTask(_ taskID: String?) {
+        guard catalog.select(taskID) else { return }
+        reloadHistory()
+        publish()
+    }
+
     /// Switches to `settings`, saves them and loads their task list and today's totals. Returns false when
     /// another change is running or the tracker rejects the settings; the current connection then stays.
     public func connect(_ settings: ConnectionSettings) async -> Bool {
@@ -212,6 +226,25 @@ public final class TrackerSync {
             }
         }
         await loadReport()
+    }
+
+    /// Publishes the write result, reloads the task list, runs `then` and publishes again. A task dialog store
+    /// takes this as `reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void`, so pass
+    /// `sync.reloadAfterTaskWrite(then:)`.
+    func reloadAfterTaskWrite(then: () -> Void = {}) async {
+        publish()
+        await reloadTaskList()
+        then()
+        publish()
+    }
+
+    /// Publishes the write result, reloads the task list and the history, and publishes again. A worklog dialog
+    /// store takes this as `reloadAfterWrite: @MainActor () async -> Void`, so pass `sync.reloadAfterWorklogWrite`.
+    func reloadAfterWorklogWrite() async {
+        publish()
+        await reloadTaskList()
+        reloadHistory()
+        publish()
     }
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
