@@ -221,10 +221,11 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   `TrackingAutomationStore`, whether tracking can start or stop from
   `TrackingAvailability`, and the other session values from `TrackerPresentation`
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
-  bar observer reads these stores, the last tracked task from `MenuBarStore`,
-  the start and stop checks from `TrackingAvailability` and the running task's
-  name from `TrackerPresentation` through one `Observations` loop. `TrackerSync` loads, refreshes and polls the stores,
-  runs the display, rollover and menu bar timers, handles visibility, sleep
+  bar observer reads these stores, the last tracked task from `MenuBarStore` and
+  the start and stop checks from `TrackingAvailability` through one
+  `Observations` loop, and `TrackerMenuSources` computes the running task's name
+  from the connection, tracking and catalog stores. `TrackerSync` loads,
+  refreshes and polls the stores, runs the display, rollover and menu bar timers, handles visibility, sleep
   and wake, pauses and resumes tracking when the screen locks and unlocks,
   switches the connection, changes the tab and task selection, and reloads
   after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
