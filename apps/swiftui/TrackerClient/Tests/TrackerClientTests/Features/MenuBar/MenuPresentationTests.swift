@@ -6,9 +6,7 @@ final class MenuPresentationTests: XCTestCase {
     func testRunningTaskNameFollowsConnectionTrackingAndCatalog() async throws {
         let unconfirmed = Fixture()
         defer { unconfirmed.cleanup() }
-        XCTAssertEqual(
-            MenuHarness(unconfirmed, showDailyTotal: false).observer.content.runningTaskName,
-            "Waiting for tracker state")
+        XCTAssertEqual(TrackerMenuInputs.current(unconfirmed.session).runningTaskName, "Waiting for tracker state")
 
         let orphan = WorklogItem(id: "worklog-orphan", taskId: "missing-task", start: activeWorklog.start, end: nil)
         let cases = [
@@ -20,7 +18,7 @@ final class MenuPresentationTests: XCTestCase {
             let fixture = Fixture()
             defer { fixture.cleanup() }
             try await fixture.start(resources)
-            XCTAssertEqual(MenuHarness(fixture, showDailyTotal: false).observer.content.runningTaskName, expected)
+            XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, expected)
         }
     }
 
@@ -51,7 +49,6 @@ final class MenuPresentationTests: XCTestCase {
         let window = PresentationHarness(session: fixture.session)
         let windowTicks = window.counter(PresentationReads.timer)
         let windowControls = window.counter(PresentationReads.controls)
-        fixture.sync.onChange = { window.update() }
         observer.menuOpened()
         let originalContent = observer.content
         let originalLabel = observer.label

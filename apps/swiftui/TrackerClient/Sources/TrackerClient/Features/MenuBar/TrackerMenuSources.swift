@@ -47,20 +47,6 @@ public struct TrackerMenuSources: Sendable {
     let automation: TrackingAutomationStore
     let availability: TrackingAvailability
 
-    init(
-        catalog: TaskCatalogStore, connection: ConnectionStore, tracking: TrackingStore,
-        dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
-        availability: TrackingAvailability
-    ) {
-        self.catalog = catalog
-        self.connection = connection
-        self.tracking = tracking
-        self.dailyTotals = dailyTotals
-        self.menuBar = menuBar
-        self.automation = automation
-        self.availability = availability
-    }
-
     /// Reads every value the menu shows, so an `Observations` closure that calls this tracks all of them.
     func read() -> TrackerMenuInputs {
         TrackerMenuInputs(
