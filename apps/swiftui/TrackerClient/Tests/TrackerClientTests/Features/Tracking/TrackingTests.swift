@@ -211,7 +211,7 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(fixture.session.tracking.recordedError, "The active timer changed")
         XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         XCTAssertFalse(fixture.trackingAvailability.canStop)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.taskRename.canOpen)
         reload.succeed(resources)
         try await fixture.settled()

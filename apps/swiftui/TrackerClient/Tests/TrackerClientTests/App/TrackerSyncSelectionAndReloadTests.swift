@@ -82,6 +82,28 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
     }
 
     @MainActor
+    func testShowingATaskInTheOtherTabChangesTabAndSelectionAndLoadsItsHistoryOnce() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
+        fixture.sync.changeTab(.archived)
+        let archivedHistory = try await fixture.client.next()
+        archivedHistory.succeed(emptyPage)
+        try await fixture.settled()
+
+        fixture.sync.showTask(secondTask)
+
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.client.operations.filter { $0 == .history(task: secondTask.id, cursor: nil) }.count, 1)
+        XCTAssertEqual(fixture.client.operations.last, .history(task: secondTask.id, cursor: nil))
+    }
+
+    @MainActor
     func testKeepingTheTabOrTaskSendsNothingAndDoesNotPublish() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

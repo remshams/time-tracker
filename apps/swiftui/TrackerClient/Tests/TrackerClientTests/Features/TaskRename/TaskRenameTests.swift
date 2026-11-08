@@ -295,7 +295,7 @@ final class TaskRenameTests: XCTestCase {
         fixture.taskRename.submit()
         let rename = try await fixture.client.next()
         XCTAssertTrue(fixture.taskRename.isSubmitting)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
@@ -344,13 +344,13 @@ final class TaskRenameTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        fixture.session.openTaskCreation()
+        fixture.taskCreation.open()
         XCTAssertTrue(fixture.taskRename.canOpen)
         fixture.taskRename.open(taskID: firstTask.id)
         fixture.taskRename.setName("Old server draft")
         XCTAssertTrue(fixture.taskRename.isPresented)
-        XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         let connect = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.succeed(emptyTaskListResources)
@@ -471,8 +471,8 @@ final class TaskRenameTests: XCTestCase {
         let harness = PresentationHarness(session: fixture.session)
         let rename = ObservationProbe { PresentationReads.taskRename(harness) }
         let content = ObservationProbe { PresentationReads.content(harness) }
-        fixture.session.openTaskCreation()
-        fixture.session.cancelTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.cancel()
         XCTAssertFalse(rename.consume())
         XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertFalse(fixture.taskRename.isPresented)

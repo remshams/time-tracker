@@ -418,8 +418,9 @@ final class WorklogDeletionTests: XCTestCase {
         harness.attach()
         XCTAssertEqual(changes.count, 1)
 
-        fixture.session.openTaskCreation()
-        fixture.session.cancelTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.cancel()
+        harness.update()
         XCTAssertEqual(changes.count, 1)
 
         fixture.session.openWorklogDeletion(worklogID: oldWorklog.id)

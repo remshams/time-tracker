@@ -339,7 +339,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, requests)
         XCTAssertEqual(fixture.session.bulkTaskArchiving.daysText, "14")
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isPresented)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
@@ -442,7 +442,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await openPreview(fixture)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
@@ -555,13 +555,13 @@ final class BulkTaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.session.openWorklogCorrection(worklogID: activeWorklog.id)
-        fixture.session.openTaskCreation()
+        fixture.taskCreation.open()
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(fixture.session.canOpenBulkTaskArchiving)
         try await openPreview(fixture)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isPresented)
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
-        XCTAssertTrue(fixture.session.taskCreation.isPresented)
+        XCTAssertTrue(fixture.taskCreation.isPresented)
         XCTAssertTrue(fixture.taskArchiving.isPresented)
     }
 

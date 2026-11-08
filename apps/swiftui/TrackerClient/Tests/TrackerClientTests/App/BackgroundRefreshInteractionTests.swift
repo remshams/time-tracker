@@ -20,10 +20,10 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             .start(task: secondTask.id, expected: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         XCTAssertFalse(fixture.trackingAvailability.canStop)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Independent task")
-        fixture.session.submitTaskCreation()
+        XCTAssertTrue(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Independent task")
+        fixture.taskCreation.submit()
         let create = try await fixture.client.next()
         XCTAssertEqual(create.operation, .create(name: "Independent task", at: "2025-01-01T00:02:00.000Z"))
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 3)
@@ -35,7 +35,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         XCTAssertTrue(fixture.trackingAvailability.canStop)
-        XCTAssertEqual(fixture.session.taskCreation.error, "Name rejected")
+        XCTAssertEqual(fixture.taskCreation.error, "Name rejected")
     }
 
     @MainActor

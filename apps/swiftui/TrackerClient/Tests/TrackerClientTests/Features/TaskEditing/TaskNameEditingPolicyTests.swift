@@ -22,12 +22,12 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("\u{00a0}\u{2000}\u{3000}")
-        XCTAssertFalse(fixture.session.taskCreation.canSubmit)
-        fixture.session.setTaskCreationName("\u{200b}")
-        XCTAssertTrue(fixture.session.taskCreation.canSubmit)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("\u{00a0}\u{2000}\u{3000}")
+        XCTAssertFalse(fixture.taskCreation.canSubmit)
+        fixture.taskCreation.setName("\u{200b}")
+        XCTAssertTrue(fixture.taskCreation.canSubmit)
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: "\u{200b}", at: "2025-01-01T00:00:00.000Z"))
         let task = TaskItem(id: "zero-width-task", name: "\u{200b}", archived: false, latestStart: nil)
@@ -36,7 +36,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, task.name)
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
     }
 
     @MainActor

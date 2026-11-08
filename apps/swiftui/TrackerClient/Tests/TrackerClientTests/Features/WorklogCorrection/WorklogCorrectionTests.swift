@@ -56,7 +56,7 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.cancelWorklogCorrection()
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
         XCTAssertNil(fixture.session.worklogCorrection.original)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
@@ -279,18 +279,18 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.cancelWorklogCorrection()
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
 
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Parallel task")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Parallel task")
+        fixture.taskCreation.submit()
         let create = try await fixture.client.next()
         XCTAssertEqual(create.operation, .create(name: "Parallel task", at: "2025-01-01T00:00:00.000Z"))
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         XCTAssertTrue(fixture.session.worklogCorrection.isSubmitting)
 
         let corrected = WorklogItem(
@@ -298,7 +298,7 @@ final class WorklogCorrectionTests: XCTestCase {
         command.corrected(worklog: corrected, resources: resources)
         try await finishHistory(fixture, rows: [corrected])
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         XCTAssertEqual(corrections(fixture), 1)
 
         let created = TaskItem(id: "task-created", name: "Parallel task", archived: false, latestStart: nil)
@@ -306,9 +306,9 @@ final class WorklogCorrectionTests: XCTestCase {
             create.created(
                 taskID: created.id, resources: TaskListResources(tasks: [firstTask, secondTask, created], active: nil))
         } until: {
-            !fixture.session.taskCreation.isSubmitting
+            !fixture.taskCreation.isSubmitting
         }
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         XCTAssertEqual(fixture.session.tasks, [firstTask, secondTask, created])
     }
 

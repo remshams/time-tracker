@@ -8,28 +8,28 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName(secondTask.name)
-        fixture.session.submitTaskCreation()
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
-        XCTAssertFalse(fixture.session.taskCreation.canSubmit)
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(secondTask.name)
+        fixture.taskCreation.submit()
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
+        XCTAssertFalse(fixture.taskCreation.canSubmit)
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
         let harness = PresentationHarness(session: fixture.session)
         creation.created(task: secondTask)
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
-        XCTAssertFalse(harness.presentation.taskCreation.isPresented, "The sheet must close before the reload.")
+        XCTAssertFalse(fixture.taskCreation.isPresented, "The sheet must close before the reload.")
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
         reload.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await harness.settled(fixture)
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.taskCreation.name, "")
-        XCTAssertNil(fixture.session.taskCreation.error)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
+        XCTAssertEqual(fixture.taskCreation.name, secondTask.name, "The closing sheet keeps its content.")
+        XCTAssertFalse(fixture.taskCreation.canSubmit)
+        XCTAssertNil(fixture.taskCreation.error)
         XCTAssertEqual(fixture.session.tasks, [secondTask])
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertEqual(
@@ -39,6 +39,8 @@ final class TaskCreationTests: XCTestCase {
                 .refresh(fixture.session.connection.settings),
                 .history(task: secondTask.id, cursor: nil),
             ])
+        fixture.taskCreation.open()
+        XCTAssertEqual(fixture.taskCreation.name, "")
     }
 
     @MainActor
@@ -46,9 +48,9 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName(archivedTask.name)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(archivedTask.name)
+        fixture.taskCreation.submit()
         let command = try await fixture.client.next()
         let created = TaskItem(id: archivedTask.id, name: archivedTask.name, archived: false, latestStart: nil)
         command.created(task: created)
@@ -59,7 +61,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(history.operation, .history(task: archivedTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, archivedTask.id)
         XCTAssertEqual(
@@ -73,9 +75,9 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName(secondTask.name)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(secondTask.name)
+        fixture.taskCreation.submit()
         let command = try await fixture.client.next()
         command.created(task: secondTask)
         let refresh = try await fixture.client.next()
@@ -85,8 +87,8 @@ final class TaskCreationTests: XCTestCase {
         } until: {
             fixture.session.connection.stale
         }
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        XCTAssertNil(fixture.session.taskCreation.error)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
+        XCTAssertNil(fixture.taskCreation.error)
         XCTAssertTrue(fixture.session.tasks.isEmpty)
         XCTAssertEqual(
             fixture.client.operations.filter {
@@ -95,26 +97,58 @@ final class TaskCreationTests: XCTestCase {
     }
 
     @MainActor
+    func testFailedReloadStillChangesToTheCreatedTasksTabAndKeepsTheSelection() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: nil))
+        fixture.sync.changeTab(.archived)
+        let archivedHistory = try await fixture.client.next()
+        archivedHistory.succeed(emptyPage)
+        try await fixture.settled()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(secondTask.name)
+        fixture.taskCreation.submit()
+        let command = try await fixture.client.next()
+        command.created(task: secondTask)
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(refresh.operation, .refresh(fixture.session.connection.settings))
+        refresh.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable", requiresRefresh: true))
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.connection.stale)
+        XCTAssertEqual(fixture.session.tasks, [firstTask, archivedTask])
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
+    }
+
+    @MainActor
     func testDraftCancellationMakesNoWriteAndEmptyNamesCannotSubmit() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         try await fixture.start()
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.taskCreation.canSubmit)
-        fixture.session.setTaskCreationName(" \n\t ")
-        fixture.session.submitTaskCreation()
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
-        fixture.session.setTaskCreationName("New task")
-        XCTAssertTrue(fixture.session.taskCreation.canSubmit)
-        fixture.session.cancelTaskCreation()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        XCTAssertFalse(fixture.taskCreation.canSubmit)
+        fixture.taskCreation.setName(" \n\t ")
+        fixture.taskCreation.submit()
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
+        fixture.taskCreation.setName("New task")
+        XCTAssertTrue(fixture.taskCreation.canSubmit)
+        fixture.taskCreation.open()
+        XCTAssertEqual(fixture.taskCreation.name, "New task", "Opening an open dialog must keep the draft.")
+        fixture.taskCreation.cancel()
+        XCTAssertFalse(fixture.taskCreation.isPresented)
+        XCTAssertEqual(fixture.taskCreation.name, "New task", "The closing sheet keeps its content.")
+        XCTAssertFalse(fixture.taskCreation.canSubmit)
+        fixture.taskCreation.submit()
         XCTAssertEqual(fixture.client.operations.count, 1)
-        fixture.session.openTaskCreation()
-        XCTAssertEqual(fixture.session.taskCreation.name, "")
+        fixture.taskCreation.open()
+        XCTAssertEqual(fixture.taskCreation.name, "")
     }
 
     @MainActor
@@ -127,16 +161,16 @@ final class TaskCreationTests: XCTestCase {
         let archivedHistory = try await fixture.client.next()
         archivedHistory.succeed(emptyPage)
         try await fixture.settled()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("New task")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("New task")
+        fixture.taskCreation.submit()
         let request = try await fixture.client.next()
         XCTAssertEqual(request.operation, .create(name: "New task", at: "2025-01-01T00:00:00.000Z"))
-        fixture.session.submitTaskCreation()
-        fixture.session.cancelTaskCreation()
-        fixture.session.setTaskCreationName("Changed task")
-        XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.taskCreation.name, "New task")
+        fixture.taskCreation.submit()
+        fixture.taskCreation.cancel()
+        fixture.taskCreation.setName("Changed task")
+        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertEqual(fixture.taskCreation.name, "New task")
         let created = TaskItem(id: "created-id", name: "New task", archived: false, latestStart: nil)
         request.created(
             taskID: created.id, resources: TaskListResources(tasks: tasks + [created], active: activeWorklog))
@@ -144,7 +178,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(history.operation, .history(task: created.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, created.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
@@ -162,13 +196,13 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.start()
         fixture.sync.refresh()
         let poll = try await fixture.client.next()
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("  Task draft  ")
-        fixture.session.submitTaskCreation()
+        XCTAssertTrue(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("  Task draft  ")
+        fixture.taskCreation.submit()
         fixture.clock.now.addTimeInterval(60)
-        fixture.session.setTaskCreationName("Replacement")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.setName("Replacement")
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: "  Task draft  ", at: "2025-01-01T00:00:00.000Z"))
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
@@ -178,7 +212,7 @@ final class TaskCreationTests: XCTestCase {
         } until: {
             fixture.session.taskCatalog.selectedTaskID == firstTask.id
         }
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         poll.succeed(created)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
@@ -195,30 +229,30 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Task\u{0001}")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Task\u{0001}")
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         creation.fail(BridgeFailure(message: "Invalid task name", kind: "validation"))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
-        XCTAssertEqual(fixture.session.taskCreation.error, "Invalid task name")
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
+        XCTAssertEqual(fixture.taskCreation.error, "Invalid task name")
         let reloaded = TaskListResources(tasks: [archivedTask], active: nil)
         try await fixture.update("the reloaded task list") {
             reload.succeed(reloaded)
         }
         XCTAssertEqual(fixture.session.tasks, [archivedTask])
-        XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.taskCreation.name, "Task\u{0001}")
-        XCTAssertEqual(fixture.session.taskCreation.error, "Invalid task name")
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
-        XCTAssertTrue(fixture.session.taskCreation.canSubmit)
+        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertEqual(fixture.taskCreation.name, "Task\u{0001}")
+        XCTAssertEqual(fixture.taskCreation.error, "Invalid task name")
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.canSubmit)
         XCTAssertFalse(fixture.session.connection.stale)
         fixture.clock.now.addTimeInterval(30)
-        fixture.session.setTaskCreationName("Valid task")
-        XCTAssertNil(fixture.session.taskCreation.error)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.setName("Valid task")
+        XCTAssertNil(fixture.taskCreation.error)
+        fixture.taskCreation.submit()
         let retry = try await fixture.client.next()
         XCTAssertEqual(retry.operation, .create(name: "Valid task", at: "2025-01-01T00:00:30.000Z"))
         retry.fail(BridgeFailure(message: "Rejected", kind: "validation"))
@@ -227,8 +261,8 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.update("the second reload") {
             retryReload.succeed(reloaded)
         }
-        XCTAssertEqual(fixture.session.taskCreation.error, "Rejected")
-        XCTAssertEqual(fixture.session.taskCreation.name, "Valid task")
+        XCTAssertEqual(fixture.taskCreation.error, "Rejected")
+        XCTAssertEqual(fixture.taskCreation.name, "Valid task")
     }
 
     @MainActor
@@ -236,9 +270,9 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("New task")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("New task")
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         creation.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let reload = try await fixture.client.next()
@@ -248,11 +282,11 @@ final class TaskCreationTests: XCTestCase {
             fixture.session.connection.stale
         }
         XCTAssertEqual(
-            fixture.session.taskCreation.error,
+            fixture.taskCreation.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        XCTAssertEqual(fixture.session.taskCreation.name, "New task")
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
-        XCTAssertTrue(fixture.session.taskCreation.canSubmit)
+        XCTAssertEqual(fixture.taskCreation.name, "New task")
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.canSubmit)
         XCTAssertEqual(fixture.client.operations.count, 3)
     }
 
@@ -271,18 +305,18 @@ final class TaskCreationTests: XCTestCase {
                 task: firstTask.id, expectedName: firstTask.name, name: "Renamed task",
                 at: "2025-01-01T00:00:00.000Z"))
         XCTAssertTrue(fixture.taskRename.isSubmitting)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName(secondTask.name)
-        XCTAssertTrue(fixture.session.taskCreation.canSubmit)
-        fixture.session.submitTaskCreation()
+        XCTAssertTrue(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(secondTask.name)
+        XCTAssertTrue(fixture.taskCreation.canSubmit)
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
         creation.created(task: secondTask)
         let creationReload = try await fixture.client.next()
         XCTAssertEqual(creationReload.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         XCTAssertTrue(fixture.taskRename.isSubmitting)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         try await fixture.update("the rename result") {
@@ -297,7 +331,7 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tasks, [renamed, secondTask])
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
-        XCTAssertNil(fixture.session.taskCreation.error)
+        XCTAssertNil(fixture.taskCreation.error)
         XCTAssertNil(fixture.taskRename.error)
     }
 
@@ -307,11 +341,11 @@ final class TaskCreationTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(resources)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("New task")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("New task")
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
@@ -320,12 +354,12 @@ final class TaskCreationTests: XCTestCase {
         fixture.trackingActions.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(start.operation, .start(task: secondTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         let worklog = WorklogItem(id: "worklog-new", taskId: secondTask.id, start: "2025-01-01T00:00:00.000Z", end: nil)
         let tracked = TaskListResources(tasks: [firstTask, secondTask], active: worklog)
         try await fixture.update("the started timer") { start.succeed(tracked) }
         XCTAssertEqual(fixture.session.active, worklog)
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         let created = TaskItem(id: "created-id", name: "New task", archived: false, latestStart: nil)
         creation.created(
             taskID: created.id, resources: TaskListResources(tasks: [firstTask, secondTask, created], active: worklog))
@@ -333,7 +367,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(history.operation, .history(task: created.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, created.id)
         XCTAssertEqual(fixture.session.active, worklog)
     }
@@ -344,17 +378,17 @@ final class TaskCreationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start()
         let harness = PresentationHarness(session: fixture.session)
-        let creationUpdates = harness.counter(PresentationReads.taskCreation)
-        let contentUpdates = harness.counter(PresentationReads.content)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Draft")
-        fixture.session.setTaskCreationName("Draft")
-        harness.update()
-        XCTAssertEqual(creationUpdates.count, 2)
-        XCTAssertEqual(contentUpdates.count, 0)
-        fixture.session.cancelTaskCreation()
-        XCTAssertEqual(creationUpdates.count, 3)
-        XCTAssertEqual(contentUpdates.count, 0)
+        let creation = ObservationProbe { PresentationReads.taskCreation(harness) }
+        let content = ObservationProbe { PresentationReads.content(harness) }
+        fixture.taskCreation.open()
+        XCTAssertTrue(creation.consume())
+        fixture.taskCreation.setName("Draft")
+        XCTAssertTrue(creation.consume())
+        fixture.taskCreation.setName("Draft")
+        XCTAssertFalse(creation.consume(), "Repeating the name must not redraw the sheet.")
+        fixture.taskCreation.cancel()
+        XCTAssertTrue(creation.consume())
+        XCTAssertFalse(content.consume())
     }
 
     @MainActor
@@ -364,9 +398,9 @@ final class TaskCreationTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(
             resources, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)])
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName(secondTask.name)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(secondTask.name)
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         let createdResources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         creation.created(taskID: secondTask.id, resources: createdResources)
@@ -393,13 +427,13 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.setTaskCreationName("Hidden name")
-        XCTAssertEqual(fixture.session.taskCreation.name, "")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.setName("Hidden name")
+        XCTAssertEqual(fixture.taskCreation.name, "")
+        fixture.taskCreation.submit()
         XCTAssertEqual(fixture.client.operations.count, 1)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Pending task")
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Pending task")
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         let connecting = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
@@ -408,15 +442,15 @@ final class TaskCreationTests: XCTestCase {
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
         XCTAssertEqual(fixture.session.connection.settings, serverSettings)
-        XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         creation.fail(BridgeFailure(message: "Rejected", kind: "validation"))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
         try await fixture.update("the reloaded task list") {
             reload.succeed(emptyTaskListResources)
         }
-        XCTAssertEqual(fixture.session.taskCreation.error, "Rejected")
-        XCTAssertEqual(fixture.session.taskCreation.name, "Pending task")
+        XCTAssertEqual(fixture.taskCreation.error, "Rejected")
+        XCTAssertEqual(fixture.taskCreation.name, "Pending task")
     }
 
     @MainActor
@@ -424,16 +458,21 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Valid\u{0000}suffix")
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Valid\u{0000}suffix")
         let harness = PresentationHarness(session: fixture.session)
-        let displayedErrors = harness.recorder(PresentationReads.taskCreation) { fixture.session.taskCreation.error }
-        fixture.session.submitTaskCreation()
-        XCTAssertEqual(fixture.session.taskCreation.error, "Task names must not contain control characters.")
-        XCTAssertEqual(fixture.session.taskCreation.name, "Valid\u{0000}suffix")
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
+        let creation = ObservationProbe { PresentationReads.taskCreation(harness) }
+        fixture.taskCreation.submit()
+        XCTAssertEqual(fixture.taskCreation.error, "Task names must not contain control characters.")
+        XCTAssertEqual(fixture.taskCreation.name, "Valid\u{0000}suffix")
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
         XCTAssertEqual(fixture.client.operations.count, 1)
-        XCTAssertEqual(displayedErrors.values, ["Task names must not contain control characters."])
+        XCTAssertTrue(creation.consume())
+        fixture.taskCreation.cancel()
+        XCTAssertEqual(fixture.taskCreation.error, "Task names must not contain control characters.")
+        fixture.taskCreation.open()
+        XCTAssertNil(fixture.taskCreation.error, "Opening starts a new draft.")
+        XCTAssertEqual(fixture.taskCreation.name, "")
     }
 
     @MainActor
@@ -441,17 +480,17 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Draft task")
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Draft task")
         let connect = Task { await fixture.sync.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connect)
         XCTAssertTrue(connected)
         XCTAssertEqual(fixture.session.connection.settings, serverSettings)
-        XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.taskCreation.name, "Draft task")
-        fixture.session.submitTaskCreation()
+        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertEqual(fixture.taskCreation.name, "Draft task")
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: "Draft task", at: "2025-01-01T00:00:00.000Z"))
         creation.fail(BridgeFailure(message: "Invalid", kind: "validation"))
@@ -466,9 +505,9 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName(firstTask.name)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(firstTask.name)
+        fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         creation.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let confirmed = TaskListResources(tasks: [firstTask], active: nil)
@@ -480,24 +519,19 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertEqual(
-            fixture.session.taskCreation.error,
+            fixture.taskCreation.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
         fixture.clock.now.addTimeInterval(45)
-        fixture.session.submitTaskCreation()
+        fixture.taskCreation.submit()
         let resubmission = try await fixture.client.next()
         XCTAssertEqual(resubmission.operation, .create(name: firstTask.name, at: "2025-01-01T00:00:45.000Z"))
 
-        let harness = PresentationHarness(session: fixture.session)
-        let creationUpdates = harness.recorder(PresentationReads.taskCreation) {
-            fixture.session.taskCreation.isPresented
-        }
         resubmission.created(taskID: firstTask.id, resources: confirmed)
         let finished = Task { @MainActor in
-            while fixture.session.taskCreation.isPresented && !Task.isCancelled { await Task.yield() }
+            while fixture.taskCreation.isPresented && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
-        XCTAssertEqual(creationUpdates.values.filter { !$0 }.count, 1)
-        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
+        XCTAssertFalse(fixture.taskCreation.isSubmitting)
         XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertTrue(fixture.canStartSelectedTask)
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
