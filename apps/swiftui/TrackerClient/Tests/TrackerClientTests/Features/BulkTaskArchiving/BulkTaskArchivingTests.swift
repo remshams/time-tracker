@@ -553,6 +553,38 @@ final class BulkTaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testReopeningDropsAKeptPreviewForTheSameDays() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        try await openPreview(fixture)
+        fixture.bulkTaskArchiving.cancel()
+        XCTAssertTrue(fixture.bulkTaskArchiving.hasPreview)
+
+        fixture.bulkTaskArchiving.open()
+        XCTAssertFalse(fixture.bulkTaskArchiving.hasPreview)
+        XCTAssertTrue(fixture.bulkTaskArchiving.tasks.isEmpty)
+        try await loadPreview(fixture, try await fixture.client.next())
+    }
+
+    @MainActor
+    func testOpeningAnOpenDialogKeepsItsDaysAndSendsNoRequest() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        try await openPreview(fixture)
+        fixture.bulkTaskArchiving.setDays("3")
+        try await loadPreview(fixture, try await fixture.client.next())
+        let requests = fixture.client.operations.count
+
+        fixture.bulkTaskArchiving.open()
+
+        XCTAssertEqual(fixture.bulkTaskArchiving.daysText, "3")
+        XCTAssertTrue(fixture.bulkTaskArchiving.hasPreview)
+        XCTAssertEqual(fixture.client.operations.count, requests)
+    }
+
+    @MainActor
     func testOpeningAfterAFinishedArchiveStartsOver() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

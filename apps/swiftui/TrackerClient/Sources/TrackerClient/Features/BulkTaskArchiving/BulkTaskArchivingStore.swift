@@ -84,7 +84,6 @@ public final class BulkTaskArchivingStore {
     public func submit() {
         guard canSubmit, let preview else { return }
         isSubmitting = true
-        error = nil
         Task { [weak self] in
             guard let self else { return }
             do {
