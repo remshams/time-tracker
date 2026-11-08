@@ -12,8 +12,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
 
     public private(set) var taskCreation: TaskCreationPresentation
     public private(set) var canOpenTaskCreation: Bool
-    public private(set) var taskArchiving: TaskArchivingPresentation
-    public private(set) var taskArchivingSheetContent: TaskArchivingPresentation
     public private(set) var archivableTaskIDs: Set<String>
     public private(set) var unarchivableTaskIDs: Set<String>
     public private(set) var bulkTaskArchiving: BulkTaskArchivingPresentation
@@ -33,8 +31,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
         runningTaskName = session.runningTaskName
         taskCreation = session.taskCreation
         canOpenTaskCreation = session.canOpenTaskCreation
-        taskArchiving = session.taskArchiving
-        taskArchivingSheetContent = session.taskArchiving
         archivableTaskIDs = Self.archivableTaskIDs(session)
         unarchivableTaskIDs = Self.unarchivableTaskIDs(session)
         bulkTaskArchiving = session.bulkTaskArchiving
@@ -55,7 +51,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
         set(\.runningTaskName, session.runningTaskName)
         set(\.taskCreation, session.taskCreation)
         set(\.canOpenTaskCreation, session.canOpenTaskCreation)
-        set(\.taskArchiving, session.taskArchiving)
         set(\.archivableTaskIDs, Self.archivableTaskIDs(session))
         set(\.unarchivableTaskIDs, Self.unarchivableTaskIDs(session))
         set(\.bulkTaskArchiving, session.bulkTaskArchiving)
@@ -67,7 +62,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
         set(\.worklogDeletion, session.worklogDeletion)
         set(\.canOpenWorklogDeletion, session.canOpenWorklogDeletion)
         // SwiftUI continues rendering a sheet while its dismissal animates, so keep the last presented content.
-        if taskArchiving.isPresented { set(\.taskArchivingSheetContent, taskArchiving) }
         if bulkTaskArchiving.isPresented { set(\.bulkTaskArchivingSheetContent, bulkTaskArchiving) }
         if worklogCorrection.isPresented { set(\.worklogCorrectionSheetContent, worklogCorrection) }
         if worklogMove.isPresented { set(\.worklogMoveSheetContent, worklogMove) }
@@ -78,10 +72,10 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public func canUnarchiveTask(taskID: String) -> Bool { unarchivableTaskIDs.contains(taskID) }
 
     private static func archivableTaskIDs(_ session: TrackerSession) -> Set<String> {
-        Set(session.tasks.map(\.id).filter { session.canArchiveTask(taskID: $0) })
+        Set(session.tasks.map(\.id).filter { session.taskArchiving.canArchive(taskID: $0) })
     }
 
     private static func unarchivableTaskIDs(_ session: TrackerSession) -> Set<String> {
-        Set(session.tasks.map(\.id).filter { session.canUnarchiveTask(taskID: $0) })
+        Set(session.tasks.map(\.id).filter { session.taskArchiving.canUnarchive(taskID: $0) })
     }
 }

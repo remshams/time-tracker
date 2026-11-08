@@ -94,12 +94,12 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.cancelWorklogDeletion()
 
         fixture.session.openWorklogCorrection(worklogID: precise.id)
-        fixture.session.openTaskArchive(taskID: secondTask.id)
+        fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
         fixture.session.openWorklogDeletion(worklogID: oldWorklog.id)
 
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
-        XCTAssertTrue(fixture.session.taskArchiving.isPresented)
+        XCTAssertTrue(fixture.taskArchiving.isPresented)
         XCTAssertTrue(fixture.session.worklogDeletion.isPresented)
         XCTAssertEqual(fixture.session.worklogDeletion.original, oldWorklog)
     }

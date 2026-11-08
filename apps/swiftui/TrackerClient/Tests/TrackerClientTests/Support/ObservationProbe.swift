@@ -66,6 +66,7 @@ final class PresentationHarness {
     var automation: TrackingAutomationStore { session.trackingAutomation }
     var availability: TrackingAvailability { session.trackingAvailability }
     var taskRename: TaskRenameStore { session.taskRename }
+    var taskArchiving: TaskArchivingStore { session.taskArchiving }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -177,7 +178,11 @@ enum PresentationReads {
     }
 
     static func taskArchiving(_ views: PresentationHarness) {
-        _ = views.presentation.taskArchiving
+        _ = views.taskArchiving.isPresented
+        _ = views.taskArchiving.taskName
+        _ = views.taskArchiving.action
+        _ = views.taskArchiving.isSubmitting
+        _ = views.taskArchiving.error
         _ = views.presentation.archivableTaskIDs
         _ = views.presentation.unarchivableTaskIDs
     }
@@ -225,7 +230,6 @@ func assertMirrors(
         file: file, line: line)
     XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)
     XCTAssertEqual(presentation.canOpenTaskCreation, session.canOpenTaskCreation, file: file, line: line)
-    XCTAssertEqual(presentation.taskArchiving, session.taskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.bulkTaskArchiving, session.bulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.worklogCorrection, session.worklogCorrection, file: file, line: line)
@@ -236,19 +240,16 @@ func assertMirrors(
     XCTAssertEqual(presentation.canOpenWorklogDeletion, session.canOpenWorklogDeletion, file: file, line: line)
     for task in session.tasks {
         XCTAssertEqual(
-            presentation.canArchiveTask(taskID: task.id), session.canArchiveTask(taskID: task.id),
+            presentation.canArchiveTask(taskID: task.id), session.taskArchiving.canArchive(taskID: task.id),
             file: file, line: line)
         XCTAssertEqual(
-            presentation.canUnarchiveTask(taskID: task.id), session.canUnarchiveTask(taskID: task.id),
+            presentation.canUnarchiveTask(taskID: task.id), session.taskArchiving.canUnarchive(taskID: task.id),
             file: file, line: line)
         XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
             totals.taskTotal(taskID: task.id).content?.text,
             session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
         XCTAssertEqual(totals.taskTotal(taskID: task.id).content?.explanation, explanation, file: file, line: line)
-    }
-    if session.taskArchiving.isPresented {
-        XCTAssertEqual(presentation.taskArchivingSheetContent, session.taskArchiving, file: file, line: line)
     }
     if session.bulkTaskArchiving.isPresented {
         XCTAssertEqual(

@@ -26,12 +26,13 @@ public final class TrackerSession {
     public let trackingAutomation: TrackingAutomationStore
     /// The task rename dialog.
     public let taskRename: TaskRenameStore
+    /// The task archive dialog.
+    public let taskArchiving: TaskArchivingStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
     private let creation = TaskCreationState()
-    private let archiving = TaskArchivingState()
     private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
@@ -64,6 +65,9 @@ public final class TrackerSession {
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog,
+            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+        taskArchiving = TaskArchivingStore(
+            client: client, clock: clock, connection: connection, catalog: taskCatalog, tracking: tracking,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
     }
 
@@ -121,60 +125,6 @@ public final class TrackerSession {
                 bulkArchiving.failSubmission(writeFailure(error))
             }
             await sync.reloadAfterTaskWrite()
-        }
-    }
-
-    public var taskArchiving: TaskArchivingPresentation { archiving.presentation }
-
-    private var canBeginTaskArchiving: Bool { connection.confirmed && !archiving.isOpen }
-
-    public func canArchiveTask(taskID: String) -> Bool {
-        canBeginTaskArchiving && active?.taskId != taskID && task(withID: taskID)?.archived == false
-    }
-
-    public func canUnarchiveTask(taskID: String) -> Bool {
-        canBeginTaskArchiving && task(withID: taskID)?.archived == true
-    }
-
-    public func openTaskArchive(taskID: String) {
-        guard canArchiveTask(taskID: taskID), let task = task(withID: taskID) else { return }
-        archiving.open(task, action: .archive)
-        sync.publish()
-    }
-
-    public func unarchiveTask(taskID: String) {
-        guard canUnarchiveTask(taskID: taskID), let task = task(withID: taskID) else { return }
-        archiving.open(task, action: .unarchive)
-        submitTaskArchiving()
-    }
-
-    public func cancelTaskArchiving() {
-        archiving.cancel()
-        sync.publish()
-    }
-
-    public func submitTaskArchiving() {
-        guard let request = archiving.submit() else { return }
-        let occurredAt = formatTimestamp(clock.now)
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                switch request.action {
-                case .archive:
-                    _ = try await client.archiveTask(
-                        taskID: request.taskID, expectedName: request.taskName, occurredAt: occurredAt)
-                case .unarchive:
-                    _ = try await client.unarchiveTask(taskID: request.taskID, occurredAt: occurredAt)
-                }
-                archiving.reset()
-                await sync.reloadAfterTaskWrite {
-                    if request.action == .unarchive { self.taskCatalog.rememberRestoredTask(request.taskID) }
-                }
-            } catch {
-                archiving.fail(writeFailure(error))
-                await sync.reloadAfterTaskWrite()
-            }
         }
     }
 
