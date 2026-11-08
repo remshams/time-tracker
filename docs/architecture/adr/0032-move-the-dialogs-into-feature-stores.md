@@ -47,7 +47,7 @@ The `@MainActor` is part of the type. Default isolation doesn't apply to functio
 
 `then` holds the follow-up to the reload, and it runs in the dialog store. It also runs when the reload failed, so it can't assume the task list changed. Restoring a task calls `catalog.rememberRestoredTask`.
 
-Creating a task also has to show it: change the tab and selection, then reload the history once if either changed. Only `TrackerSync` can reload the history, and calling `changeTab(_:)` and `selectTask(_:)` in a row could send two requests. So #327 adds `TrackerSync.showTask(_:)`, and `TaskCreationStore` is the one store with a second closure, `showTask: @MainActor (TaskItem) -> Void`, which it calls in `then`. `showTask` keeps today's fallback to the created task when the catalog doesn't hold it yet.
+Creating a task also has to show it: change the tab and selection, then reload the history once if either changed. Only `TrackerSync` can reload the history, and calling `changeTab(_:)` and `selectTask(_:)` in a row could send two requests. So #327 adds `TrackerSync.showTask(_:)`, and `TaskCreationStore` is the one store with a second closure, `showTask: @MainActor (TaskItem) -> Void`, which it calls in `then`. When the catalog doesn't hold the created task yet, `showTask` still picks the tab from it, as today, and the selection stays unchanged.
 
 ### Reloads and selection
 
