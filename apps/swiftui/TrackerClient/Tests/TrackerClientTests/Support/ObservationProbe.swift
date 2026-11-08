@@ -223,7 +223,6 @@ func assertMirrors(
         totals.dayTotal, totals.totalDuration(active: session.active, clock: session.clock), file: file, line: line)
     let explanation = totals.explanation(clock: session.clock)
     XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
-    XCTAssertEqual(presentation.runningTaskName, session.runningTaskName, file: file, line: line)
     XCTAssertEqual(
         session.tracking.timerText,
         session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),

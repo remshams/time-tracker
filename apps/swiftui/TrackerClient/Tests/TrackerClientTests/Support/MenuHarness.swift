@@ -3,31 +3,19 @@ import XCTest
 
 /// Builds the menu bar observer over a fixture's stores, as the app does.
 ///
-/// After each session change it updates the presentation, which supplies the running task's name. The
-/// observer then rebuilds the menu from its `Observations` loop; `settled` waits for that rebuild.
+/// The observer rebuilds the menu from its `Observations` loop; `settled` waits for that rebuild.
 @MainActor
 final class MenuHarness {
-    let presentation: TrackerPresentation
     let sources: TrackerMenuSources
     let observer: TrackerMenuPresentationObserver
     private let fixture: Fixture
 
     init(_ fixture: Fixture, showDailyTotal: Bool, taskOrder: MenuTaskOrder = .newestFirst) {
         self.fixture = fixture
-        let presentation = TrackerPresentation(session: fixture.session)
-        self.presentation = presentation
-        sources = TrackerMenuSources(session: fixture.session, presentation: presentation)
+        sources = TrackerMenuSources(session: fixture.session)
         observer = TrackerMenuPresentationObserver(
             sources: sources, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
-        attach()
     }
-
-    /// Restores the session change handler after a fixture helper replaced it.
-    func attach() {
-        fixture.sync.onChange = { [weak self] in self?.update() }
-    }
-
-    func update() { presentation.update(from: fixture.session) }
 
     /// Opens the menu as the app does: the sync publishes first, then the menu captures its content.
     func menuOpened() {
@@ -60,8 +48,8 @@ final class MenuHarness {
 }
 
 extension TrackerMenuInputs {
-    /// Reads the menu's inputs from the session's stores and a presentation updated from the session.
+    /// Reads the menu's inputs from the session's stores.
     @MainActor static func current(_ session: TrackerSession) -> TrackerMenuInputs {
-        TrackerMenuSources(session: session, presentation: TrackerPresentation(session: session)).read()
+        TrackerMenuSources(session: session).read()
     }
 }

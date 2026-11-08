@@ -122,7 +122,7 @@ final class ConnectionTests: XCTestCase {
 
         XCTAssertEqual(fixture.session.connection.settings, serverSettings)
         XCTAssertEqual(fixture.session.connection.statusText, "Unavailable")
-        XCTAssertEqual(fixture.session.runningTaskName, "Waiting for tracker state")
+        XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, "Waiting for tracker state")
         XCTAssertEqual(fixture.session.tracking.timerText, "Unavailable")
         XCTAssertTrue(fixture.session.connection.stale)
         XCTAssertFalse(fixture.canStartSelectedTask)
@@ -237,7 +237,7 @@ final class ConnectionTests: XCTestCase {
         XCTAssertEqual(fixture.session.tasks, [secondTask])
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertNil(fixture.session.active)
-        XCTAssertEqual(fixture.session.runningTaskName, "No timer running")
+        XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, "No timer running")
     }
 
     @MainActor
