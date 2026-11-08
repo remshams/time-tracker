@@ -49,7 +49,7 @@ extension TrackerStore {
     /// each change, so a flag that `||` skips is read as soon as it can change the result.
     fileprivate var presentationFlags: (editorIsPresented: Bool, hasTrackingError: Bool) {
         let editorIsPresented =
-            creation.state.isPresented || taskRename.isPresented || correction.state.isPresented
+            taskCreation.isPresented || taskRename.isPresented || correction.state.isPresented
             || move.state.isPresented || deletion.state.isPresented || taskArchiving.isPresented
             || bulkArchiving.state.isPresented
         return (editorIsPresented, tracking.error != nil)
@@ -72,10 +72,10 @@ struct TrackerDetailPresentation: View {
         TaskDetails(store: store)
             .background {
                 EditorSheet(
-                    isPresented: { store.creation.state.isPresented },
-                    cancel: store.creation.cancel
+                    isPresented: { store.taskCreation.isPresented },
+                    cancel: store.taskCreation.cancel
                 ) {
-                    TaskCreationSheet(creation: store.creation)
+                    TaskCreationSheet()
                 }
                 EditorSheet(
                     isPresented: { store.taskRename.isPresented },

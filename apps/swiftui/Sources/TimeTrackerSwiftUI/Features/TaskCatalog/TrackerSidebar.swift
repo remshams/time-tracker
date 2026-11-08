@@ -60,7 +60,7 @@ struct TrackerSidebar: View {
                     .accessibilityIdentifier("task-sidebar.task.\(task.id)")
                     .contextMenu {
                         TaskContextMenu(
-                            creation: store.creation, taskID: task.id, taskIsArchived: task.archived,
+                            taskID: task.id, taskIsArchived: task.archived,
                             taskIsRunning: tracking.active?.taskId == task.id)
                     }
                 }
@@ -68,7 +68,7 @@ struct TrackerSidebar: View {
             .listStyle(.sidebar)
             .accessibilityIdentifier("task-sidebar.list")
             .contextMenu {
-                TaskContextMenu(creation: store.creation, taskID: nil)
+                TaskContextMenu(taskID: nil)
             }
             .overlay {
                 if catalog.visibleTasks.isEmpty {

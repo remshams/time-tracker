@@ -2,17 +2,16 @@ import SwiftUI
 import TrackerClient
 
 struct TaskCreationSheet: View {
-    let creation: TaskCreationStore
+    @Environment(TaskCreationStore.self) private var creation
 
     var body: some View {
-        let state = creation.state
         TaskNameSheet(
             title: "New task",
             name: Binding(
-                get: { creation.state.name }, set: { creation.setName($0) }
+                get: { creation.name }, set: { creation.setName($0) }
             ), actionTitle: "Create",
-            progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
-            canSubmit: state.canSubmit, error: state.error,
+            progressTitle: "Creating task...", isSubmitting: creation.isSubmitting,
+            canSubmit: creation.canSubmit, error: creation.error,
             cancel: creation.cancel, submit: creation.submit)
     }
 }

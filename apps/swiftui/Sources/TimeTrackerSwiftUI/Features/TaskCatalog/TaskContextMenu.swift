@@ -2,10 +2,10 @@ import SwiftUI
 import TrackerClient
 
 struct TaskContextMenu: View {
-    let creation: TaskCreationStore
     let taskID: String?
     var taskIsArchived = false
     var taskIsRunning = false
+    @Environment(TaskCreationStore.self) private var creation
     @Environment(TaskRenameStore.self) private var rename
     @Environment(TaskArchivingStore.self) private var archiving
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
