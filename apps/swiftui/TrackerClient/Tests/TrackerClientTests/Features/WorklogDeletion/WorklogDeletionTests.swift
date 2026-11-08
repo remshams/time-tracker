@@ -392,7 +392,7 @@ final class WorklogDeletionTests: XCTestCase {
 
     @MainActor
     func testClosedDialogKeepsItsContentUntilTheNextOpenAndSendsNothing() async throws {
-        let otherTasks = WorklogItem(
+        let otherTaskWorklog = WorklogItem(
             id: "other-task", taskId: secondTask.id,
             start: "2024-12-30T11:00:00.000000Z", end: "2024-12-30T12:00:00.000000Z")
         let fixture = Fixture()
@@ -402,7 +402,7 @@ final class WorklogDeletionTests: XCTestCase {
         let first = try await command(fixture)
         first.fail(BridgeFailure(message: "Rejected"))
         try await reloadTaskList(fixture)
-        try await finishHistory(fixture, rows: [precise, otherTasks])
+        try await finishHistory(fixture, rows: [precise, otherTaskWorklog])
 
         fixture.worklogDeletion.cancel()
 
@@ -414,17 +414,17 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.worklogDeletion.submit()
         XCTAssertFalse(fixture.worklogDeletion.isSubmitting)
 
-        fixture.worklogDeletion.open(worklogID: otherTasks.id)
+        fixture.worklogDeletion.open(worklogID: otherTaskWorklog.id)
 
         XCTAssertTrue(fixture.worklogDeletion.isPresented)
-        XCTAssertEqual(fixture.worklogDeletion.original, otherTasks)
+        XCTAssertEqual(fixture.worklogDeletion.original, otherTaskWorklog)
         XCTAssertEqual(fixture.worklogDeletion.taskName, secondTask.name)
         XCTAssertNil(fixture.worklogDeletion.error)
         XCTAssertTrue(fixture.worklogDeletion.canSubmit)
 
         fixture.worklogDeletion.submit()
-        let second = try await command(fixture, expected: otherTasks)
-        second.deleted(worklog: otherTasks, resources: resources)
+        let second = try await command(fixture, expected: otherTaskWorklog)
+        second.deleted(worklog: otherTaskWorklog, resources: resources)
         try await finishHistory(fixture, rows: [precise])
         XCTAssertFalse(fixture.worklogDeletion.isPresented)
     }
