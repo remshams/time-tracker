@@ -27,8 +27,9 @@ public final class TrackerMenuPresentationObserver {
         content = TrackerMenuContent(inputs, taskOrder: taskOrder)
         label = TrackerMenuLabelContent(inputs, showDailyTotal: showDailyTotal)
         values = TrackerMenuValues(inputs, content: content)
-        // The closure reads every input on each pass, so the observed values never narrow while the menu is
-        // open. The loop ends at the first change after the observer is released.
+        // The closure reads the same inputs whether or not the menu is open. A start or stop check skips a store
+        // only while an earlier condition already decides the result, and a change to that condition reads it again.
+        // The loop ends at the first change after the observer is released.
         Task { [weak self, sources] in
             for await inputs in Observations({ sources.read() }) {
                 guard let self else { return }
