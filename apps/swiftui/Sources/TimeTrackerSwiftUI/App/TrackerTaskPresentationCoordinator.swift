@@ -50,7 +50,7 @@ extension TrackerStore {
     fileprivate var presentationFlags: (editorIsPresented: Bool, hasTrackingError: Bool) {
         let editorIsPresented =
             creation.state.isPresented || taskRename.isPresented || correction.state.isPresented
-            || move.state.isPresented || deletion.state.isPresented || archiving.state.isPresented
+            || move.state.isPresented || deletion.state.isPresented || taskArchiving.isPresented
             || bulkArchiving.state.isPresented
         return (editorIsPresented, tracking.error != nil)
     }
@@ -108,10 +108,10 @@ struct TrackerDetailPresentation: View {
                     BulkTaskArchivingSheet(archiving: store.bulkArchiving)
                 }
                 EditorSheet(
-                    isPresented: { store.archiving.state.isPresented },
-                    cancel: store.archiving.cancel
+                    isPresented: { store.taskArchiving.isPresented },
+                    cancel: store.taskArchiving.cancel
                 ) {
-                    TaskArchivingSheet(archiving: store.archiving)
+                    TaskArchivingSheet()
                 }
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {

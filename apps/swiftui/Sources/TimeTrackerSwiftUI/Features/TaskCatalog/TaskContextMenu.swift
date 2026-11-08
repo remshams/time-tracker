@@ -3,11 +3,11 @@ import TrackerClient
 
 struct TaskContextMenu: View {
     let creation: TaskCreationStore
-    let archiving: TaskArchivingStore
     let taskID: String?
     var taskIsArchived = false
     var taskIsRunning = false
     @Environment(TaskRenameStore.self) private var rename
+    @Environment(TaskArchivingStore.self) private var archiving
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
