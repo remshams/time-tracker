@@ -20,7 +20,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testConfirmedCurrentStateAllowsStartAndStop() {
+    func testConfirmedCurrentStateAllowsStartAndStop() async {
         let stores = Stores()
 
         XCTAssertTrue(stores.availability.canSend)
@@ -29,7 +29,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testUnconfirmedStateBlocksStartAndStop() {
+    func testUnconfirmedStateBlocksStartAndStop() async {
         let stores = Stores()
         let unconfirmed = ConnectionStore(settings: .local)
         let availability = TrackingAvailability(
@@ -41,7 +41,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testStaleStateBlocksStartAndStopUntilConfirmedAgain() {
+    func testStaleStateBlocksStartAndStopUntilConfirmedAgain() async {
         let stores = Stores()
 
         stores.connection.recordFailure(BridgeFailure(message: "Tracker offline", kind: "unavailable"))
@@ -54,7 +54,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testSubmittingBlocksStartAndStopUntilItEnds() {
+    func testSubmittingBlocksStartAndStopUntilItEnds() async {
         let stores = Stores()
 
         stores.tracking.beginSubmitting()
@@ -67,7 +67,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testOnlyAKnownUnarchivedTaskThatIsNotRunningCanStart() {
+    func testOnlyAKnownUnarchivedTaskThatIsNotRunningCanStart() async {
         let stores = Stores()
 
         XCTAssertFalse(stores.availability.canStart(taskID: firstTask.id), "The running task can't start again.")
@@ -79,7 +79,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testStopNeedsARunningWorklog() {
+    func testStopNeedsARunningWorklog() async {
         let stores = Stores()
 
         stores.tracking.apply(nil, clock: FakeClock())
@@ -89,7 +89,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     }
 
     @MainActor
-    func testReadersObserveTheStoresBehindAChange() {
+    func testReadersObserveTheStoresBehindAChange() async {
         let stores = Stores()
         let availability = stores.availability
         let probe = ObservationProbe {
