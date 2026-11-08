@@ -6,6 +6,8 @@ public final class TrackerSession {
     public let sync: TrackerSync
     /// Starts and stops tracking and decides which of those requests are possible.
     public let trackingActions: TrackingActions
+    /// Views and the menu bar read whether tracking can start or stop here.
+    public let trackingAvailability: TrackingAvailability
     /// Views read the task list, tab and selection here; the sync and the session write them.
     public let taskCatalog = TaskCatalogStore()
     /// Views read the selected task's worklog pages and the history panel's state here; the store loads the pages
@@ -50,6 +52,7 @@ public final class TrackerSession {
         connection = ConnectionStore(settings: initialSettings)
         menuBar = MenuBarStore(repository: lastTrackedTasks, settings: initialSettings)
         dailyTotals.updateDay(at: clock.now)
+        trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         sync = TrackerSync(
             client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
