@@ -1,4 +1,5 @@
 import SwiftUI
+import TrackerClient
 
 struct TrackerApplicationMenus: Commands {
     let runtime: TrackerAppRuntime
@@ -7,7 +8,7 @@ struct TrackerApplicationMenus: Commands {
 
     init(runtime: TrackerAppRuntime) {
         self.runtime = runtime
-        creation = runtime.store.creation
+        creation = runtime.store.taskCreation
     }
 
     private var canCreateTask: Bool { creation.canOpen && !runtime.presentation.hasPresentation }

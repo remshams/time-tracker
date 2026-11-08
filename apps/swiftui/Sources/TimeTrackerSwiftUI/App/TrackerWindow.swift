@@ -134,13 +134,12 @@ struct TrackerWindow: View {
 #endif
 
 private struct TrackerSidebarToolbar: View {
-    private let creation: TaskCreationStore
+    @Environment(TaskCreationStore.self) private var creation
     private let bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     init(store: TrackerStore) {
-        creation = store.creation
         bulkArchiving = store.bulkArchiving
     }
 
