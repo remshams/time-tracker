@@ -143,8 +143,8 @@ final class TrackerStore {
     ) -> String? {
         session.menuCopyValue(action, taskID: taskID, connection: connection)
     }
-    func changeTab(_ tab: TaskTab) { session.changeTab(tab) }
-    func select(_ taskID: String?) { session.select(taskID) }
+    func changeTab(_ tab: TaskTab) { session.sync.changeTab(tab) }
+    func selectTask(_ taskID: String?) { session.sync.selectTask(taskID) }
     func refresh() { session.sync.refresh() }
     func retryHistory() { session.sync.retryHistory() }
     func loadOlder() { session.sync.loadOlder() }
