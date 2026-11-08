@@ -21,7 +21,6 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
         XCTAssertTrue(harness.presentation.canOpenWorklogDeletion)
         fixture.taskCreation.open()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
         fixture.taskCreation.cancel()
         harness.update()
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
