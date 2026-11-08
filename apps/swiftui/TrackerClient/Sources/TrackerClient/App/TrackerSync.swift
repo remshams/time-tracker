@@ -290,7 +290,6 @@ public final class TrackerSync {
         connection.recordFailure(failure)
         schedulePolling()
         history.showError(failure.localizedDescription)
-        publish()
     }
 
     /// Callers pass read failures, which the bridge never marks as uncertain.
