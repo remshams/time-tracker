@@ -82,8 +82,8 @@ final class TrackerStore {
     var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
 
     // Views read these through the observable presentation, so each view redraws only for values it reads.
-    var canStopTracking: Bool { presentation.canStopTracking }
-    func canStartTracking(taskID: String) -> Bool { presentation.canStartTracking(taskID: taskID) }
+    var canStopTracking: Bool { session.trackingAvailability.canStop }
+    func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {
         guard showDailyTotalInMenuBar != enabled else { return }
