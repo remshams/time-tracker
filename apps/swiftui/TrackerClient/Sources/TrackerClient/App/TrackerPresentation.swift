@@ -8,8 +8,6 @@ import Observation
 /// only the views that read the changed values.
 @Observable
 public final class TrackerPresentation: ChangeGuardedStore {
-    public private(set) var taskCreation: TaskCreationPresentation
-    public private(set) var canOpenTaskCreation: Bool
     public private(set) var archivableTaskIDs: Set<String>
     public private(set) var unarchivableTaskIDs: Set<String>
     public private(set) var bulkTaskArchiving: BulkTaskArchivingPresentation
@@ -26,8 +24,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var canOpenWorklogDeletion: Bool
 
     public init(session: TrackerSession) {
-        taskCreation = session.taskCreation
-        canOpenTaskCreation = session.canOpenTaskCreation
         archivableTaskIDs = Self.archivableTaskIDs(session)
         unarchivableTaskIDs = Self.unarchivableTaskIDs(session)
         bulkTaskArchiving = session.bulkTaskArchiving
@@ -45,8 +41,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
     }
 
     public func update(from session: TrackerSession) {
-        set(\.taskCreation, session.taskCreation)
-        set(\.canOpenTaskCreation, session.canOpenTaskCreation)
         set(\.archivableTaskIDs, Self.archivableTaskIDs(session))
         set(\.unarchivableTaskIDs, Self.unarchivableTaskIDs(session))
         set(\.bulkTaskArchiving, session.bulkTaskArchiving)

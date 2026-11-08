@@ -242,6 +242,16 @@ public final class TrackerSync {
         publish()
     }
 
+    /// Changes to the tab and selection of a task the tracker just created, and reloads the history once if either
+    /// changed. The reload before this call may have failed. The catalog then doesn't hold the task, so `created`
+    /// decides the tab and the selection stays unchanged.
+    func showTask(_ created: TaskItem) {
+        let confirmed = catalog.tasks.first { $0.id == created.id } ?? created
+        let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
+        let changedSelection = catalog.select(created.id)
+        if changedTab || changedSelection { reloadHistory() }
+    }
+
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable

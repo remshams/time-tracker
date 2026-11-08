@@ -496,7 +496,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(harness.presentation.worklogMoveSheetContent, visible)
         XCTAssertGreaterThan(moveChanges.count, 0)
         XCTAssertEqual(contentChanges.count, 0)
-        fixture.session.openTaskCreation()
+        fixture.taskCreation.open()
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
     }
 

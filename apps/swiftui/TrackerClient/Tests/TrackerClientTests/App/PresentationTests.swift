@@ -20,9 +20,9 @@ final class PresentationTests: XCTestCase {
         harness.update()
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
         XCTAssertTrue(harness.presentation.canOpenWorklogDeletion)
-        fixture.session.openTaskCreation()
+        fixture.taskCreation.open()
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
-        fixture.session.cancelTaskCreation()
+        fixture.taskCreation.cancel()
         harness.update()
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
     }
@@ -104,17 +104,20 @@ final class PresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let harness = PresentationHarness(session: fixture.session)
-        fixture.session.openTaskCreation()
-        let lists = harness.counter(PresentationReads.lists)
-        let controls = harness.counter(PresentationReads.controls)
-        let rename = harness.counter(PresentationReads.taskRename)
-        let creation = harness.recorder(PresentationReads.taskCreation) { harness.presentation.taskCreation.name }
+        fixture.taskCreation.open()
+        let lists = ObservationProbe { PresentationReads.lists(harness) }
+        let controls = ObservationProbe { PresentationReads.controls(harness) }
+        let rename = ObservationProbe { PresentationReads.taskRename(harness) }
+        let creation = ObservationProbe { PresentationReads.taskCreation(harness) }
 
-        for name in ["N", "Ne", "New"] { fixture.session.setTaskCreationName(name) }
-        XCTAssertEqual(creation.values, ["N", "Ne", "New"])
-        XCTAssertEqual(lists.count, 0)
-        XCTAssertEqual(controls.count, 0)
-        XCTAssertEqual(rename.count, 0)
+        for name in ["N", "Ne", "New"] {
+            fixture.taskCreation.setName(name)
+            XCTAssertTrue(creation.consume())
+            XCTAssertEqual(fixture.taskCreation.name, name)
+        }
+        XCTAssertFalse(lists.consume())
+        XCTAssertFalse(controls.consume())
+        XCTAssertFalse(rename.consume())
     }
 
     @MainActor

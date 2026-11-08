@@ -477,8 +477,8 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         try await acknowledgePause(fixture)
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Draft on the old connection")
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName("Draft on the old connection")
         let connecting = Task { await fixture.sync.connect(serverSettings) }
         let connect = try await fixture.client.next()
         XCTAssertEqual(connect.operation, .connect(serverSettings))
@@ -489,8 +489,8 @@ final class TrackingAutomationTests: XCTestCase {
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
         try await fixture.settled()
-        XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.taskCreation.name, "Draft on the old connection")
+        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertEqual(fixture.taskCreation.name, "Draft on the old connection")
         XCTAssertNil(fixture.trackingAutomation.statusText)
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertFalse(

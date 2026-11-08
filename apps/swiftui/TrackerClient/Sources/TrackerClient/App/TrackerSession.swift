@@ -28,11 +28,12 @@ public final class TrackerSession {
     public let taskRename: TaskRenameStore
     /// The task archive dialog.
     public let taskArchiving: TaskArchivingStore
+    /// The task creation dialog.
+    public let taskCreation: TaskCreationStore
 
     private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
-    private let creation = TaskCreationState()
     private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
@@ -69,13 +70,14 @@ public final class TrackerSession {
         taskArchiving = TaskArchivingStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, tracking: tracking,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+        taskCreation = TaskCreationStore(
+            client: client, clock: clock, connection: connection, showTask: sync.showTask(_:),
+            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
     }
 
     // The session's flows read these two; `TrackerPresentation` also reads `tasks`.
     public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
-    public var taskCreation: TaskCreationPresentation { creation.presentation }
-    public var canOpenTaskCreation: Bool { connection.confirmed }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
     public var canOpenWorklogCorrection: Bool { connection.confirmed }
     public var worklogMove: WorklogMovePresentation { move.presentation }
@@ -120,42 +122,6 @@ public final class TrackerSession {
                 bulkArchiving.failSubmission(writeFailure(error))
             }
             await sync.reloadAfterTaskWrite()
-        }
-    }
-
-    public func openTaskCreation() {
-        guard canOpenTaskCreation else { return }
-        creation.open()
-        sync.publish()
-    }
-
-    public func setTaskCreationName(_ name: String) {
-        creation.updateName(name)
-        sync.publish()
-    }
-
-    public func cancelTaskCreation() {
-        creation.cancel()
-        sync.publish()
-    }
-
-    public func submitTaskCreation() {
-        guard let name = creation.submit() else {
-            sync.publish()
-            return
-        }
-        let occurredAt = formatTimestamp(clock.now)
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let created = try await client.createTask(name: name, occurredAt: occurredAt).task
-                creation.reset()
-                await sync.reloadAfterTaskWrite { self.showCreatedTask(created) }
-            } catch {
-                creation.fail(writeFailure(error))
-                await sync.reloadAfterTaskWrite()
-            }
         }
     }
 
@@ -287,13 +253,6 @@ public final class TrackerSession {
             }
             sync.publish()
         }
-    }
-
-    private func showCreatedTask(_ created: TaskItem) {
-        let confirmed = task(withID: created.id) ?? created
-        let changedTab = taskCatalog.changeTab(confirmed.archived ? .archived : .active)
-        let changedSelection = taskCatalog.select(created.id)
-        if changedTab || changedSelection { sync.reloadHistory() }
     }
 
     private func loadMoveCandidates(_ search: WorklogMoveState.Search?) {

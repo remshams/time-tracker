@@ -67,6 +67,7 @@ final class PresentationHarness {
     var availability: TrackingAvailability { session.trackingAvailability }
     var taskRename: TaskRenameStore { session.taskRename }
     var taskArchiving: TaskArchivingStore { session.taskArchiving }
+    var taskCreation: TaskCreationStore { session.taskCreation }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -164,8 +165,11 @@ enum PresentationReads {
     static func timer(_ views: PresentationHarness) { _ = views.tracking.timerText }
 
     static func taskCreation(_ views: PresentationHarness) {
-        _ = views.presentation.taskCreation
-        _ = views.presentation.canOpenTaskCreation
+        _ = views.taskCreation.isPresented
+        _ = views.taskCreation.name
+        _ = views.taskCreation.isSubmitting
+        _ = views.taskCreation.error
+        _ = views.taskCreation.canOpen
     }
 
     static func taskRename(_ views: PresentationHarness) {
@@ -227,8 +231,6 @@ func assertMirrors(
         session.tracking.timerText,
         session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),
         file: file, line: line)
-    XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)
-    XCTAssertEqual(presentation.canOpenTaskCreation, session.canOpenTaskCreation, file: file, line: line)
     XCTAssertEqual(presentation.bulkTaskArchiving, session.bulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving, file: file, line: line)
     XCTAssertEqual(presentation.worklogCorrection, session.worklogCorrection, file: file, line: line)
