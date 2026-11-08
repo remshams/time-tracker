@@ -64,6 +64,7 @@ final class PresentationHarness {
     var tracking: TrackingStore { session.tracking }
     var dailyTotals: DailyTotalsStore { session.dailyTotals }
     var automation: TrackingAutomationStore { session.trackingAutomation }
+    var availability: TrackingAvailability { session.trackingAvailability }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -154,8 +155,8 @@ enum PresentationReads {
     }
 
     static func controls(_ views: PresentationHarness) {
-        _ = views.presentation.canStopTracking
-        _ = views.presentation.startableTaskIDs
+        _ = views.availability.canStop
+        for task in views.catalog.tasks { _ = views.availability.canStart(taskID: task.id) }
     }
 
     static func timer(_ views: PresentationHarness) { _ = views.tracking.timerText }
@@ -213,8 +214,6 @@ func assertMirrors(
     let explanation = totals.explanation(clock: session.clock)
     XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
     XCTAssertEqual(presentation.runningTaskName, session.runningTaskName, file: file, line: line)
-    let actions = session.trackingActions
-    XCTAssertEqual(presentation.canStopTracking, actions.canStopTracking, file: file, line: line)
     XCTAssertEqual(
         session.tracking.timerText,
         session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),
@@ -233,9 +232,6 @@ func assertMirrors(
     XCTAssertEqual(presentation.worklogDeletion, session.worklogDeletion, file: file, line: line)
     XCTAssertEqual(presentation.canOpenWorklogDeletion, session.canOpenWorklogDeletion, file: file, line: line)
     for task in session.tasks {
-        XCTAssertEqual(
-            presentation.canStartTracking(taskID: task.id), actions.canStartTracking(taskID: task.id),
-            file: file, line: line)
         XCTAssertEqual(
             presentation.canArchiveTask(taskID: task.id), session.canArchiveTask(taskID: task.id),
             file: file, line: line)
