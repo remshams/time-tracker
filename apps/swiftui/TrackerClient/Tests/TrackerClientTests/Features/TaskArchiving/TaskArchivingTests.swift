@@ -208,7 +208,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(fixture.taskArchiving.taskID, secondTask.id)
         XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.taskRename.canOpen)
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
@@ -444,13 +444,13 @@ final class TaskArchivingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
-        fixture.session.openWorklogCorrection(worklogID: "missing")
+        fixture.worklogCorrection.open(worklogID: "missing")
         let harness = PresentationHarness(session: fixture.session)
         let archive = ObservationProbe { PresentationReads.taskArchiving(harness) }
         let content = ObservationProbe { PresentationReads.content(harness) }
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(archive.consume())
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)

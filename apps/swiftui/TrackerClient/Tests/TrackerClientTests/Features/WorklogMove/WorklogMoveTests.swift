@@ -425,12 +425,12 @@ final class WorklogMoveTests: XCTestCase {
         fixture.worklogMove.cancel()
         XCTAssertTrue(fixture.worklogMove.isPresented)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
 
-        fixture.session.openWorklogCorrection(worklogID: precise.id)
-        fixture.session.setWorklogCorrectionStart(try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z")))
-        fixture.session.submitWorklogCorrection()
+        fixture.worklogCorrection.open(worklogID: precise.id)
+        fixture.worklogCorrection.setStart(try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z")))
+        fixture.worklogCorrection.submit()
         let correction = try await fixture.client.next()
         XCTAssertEqual(
             correction.operation,
@@ -446,13 +446,13 @@ final class WorklogMoveTests: XCTestCase {
         try await finishHistory(fixture, rows: [precise])
         XCTAssertFalse(fixture.worklogMove.isPresented)
         XCTAssertEqual(fixture.session.active, moved)
-        XCTAssertTrue(fixture.session.worklogCorrection.isSubmitting)
+        XCTAssertTrue(fixture.worklogCorrection.isSubmitting)
 
         let corrected = WorklogItem(
             id: precise.id, taskId: precise.taskId, start: "2024-12-30T08:00:00.000000Z", end: precise.end)
         correction.corrected(worklog: corrected, resources: afterMove)
         try await finishHistory(fixture, rows: [corrected])
-        XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
+        XCTAssertFalse(fixture.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
         XCTAssertEqual(moves(fixture), 1)
     }

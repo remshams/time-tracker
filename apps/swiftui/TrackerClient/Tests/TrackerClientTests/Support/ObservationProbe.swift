@@ -71,6 +71,7 @@ final class PresentationHarness {
     var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
     var worklogMove: WorklogMoveStore { session.worklogMove }
     var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
+    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -205,8 +206,16 @@ enum PresentationReads {
     }
 
     static func worklogCorrection(_ views: PresentationHarness) {
-        _ = views.presentation.worklogCorrection
-        _ = views.presentation.canOpenWorklogCorrection
+        _ = views.worklogCorrection.isPresented
+        _ = views.worklogCorrection.taskName
+        _ = views.worklogCorrection.start
+        _ = views.worklogCorrection.end
+        _ = views.worklogCorrection.timezoneIdentifier
+        _ = views.worklogCorrection.isSubmitting
+        _ = views.worklogCorrection.error
+        _ = views.worklogCorrection.canEdit
+        _ = views.worklogCorrection.canSubmit
+        _ = views.worklogCorrection.canOpen
     }
 
     static func worklogMove(_ views: PresentationHarness) {
@@ -251,17 +260,11 @@ func assertMirrors(
         session.tracking.timerText,
         session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),
         file: file, line: line)
-    XCTAssertEqual(presentation.worklogCorrection, session.worklogCorrection, file: file, line: line)
-    XCTAssertEqual(presentation.canOpenWorklogCorrection, session.canOpenWorklogCorrection, file: file, line: line)
     for task in session.tasks {
         XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
             totals.taskTotal(taskID: task.id).content?.text,
             session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
         XCTAssertEqual(totals.taskTotal(taskID: task.id).content?.explanation, explanation, file: file, line: line)
-    }
-    if session.worklogCorrection.isPresented {
-        XCTAssertEqual(
-            presentation.worklogCorrectionSheetContent, session.worklogCorrection, file: file, line: line)
     }
 }
