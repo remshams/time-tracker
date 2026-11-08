@@ -296,7 +296,7 @@ final class TaskRenameTests: XCTestCase {
         let rename = try await fixture.client.next()
         XCTAssertTrue(fixture.taskRename.isSubmitting)
         XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStop)

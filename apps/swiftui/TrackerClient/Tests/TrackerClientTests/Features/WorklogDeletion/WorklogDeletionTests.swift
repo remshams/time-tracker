@@ -92,12 +92,12 @@ final class WorklogDeletionTests: XCTestCase {
         try await open(fixture)
         fixture.worklogDeletion.cancel()
 
-        fixture.session.openWorklogCorrection(worklogID: precise.id)
+        fixture.worklogCorrection.open(worklogID: precise.id)
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         fixture.worklogDeletion.open(worklogID: oldWorklog.id)
 
-        XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
+        XCTAssertTrue(fixture.worklogCorrection.isPresented)
         XCTAssertTrue(fixture.taskArchiving.isPresented)
         XCTAssertTrue(fixture.worklogDeletion.isPresented)
         XCTAssertEqual(fixture.worklogDeletion.original, oldWorklog)
@@ -110,14 +110,14 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.sync.start()
         let opening = try await fixture.client.next()
         XCTAssertFalse(fixture.worklogDeletion.canOpen)
-        XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
         XCTAssertFalse(fixture.worklogMove.canOpen)
         opening.succeed(resources)
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [precise], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
     }
 
@@ -203,7 +203,7 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertTrue(fixture.worklogDeletion.isPresented)
         XCTAssertEqual(deletions(fixture), 1)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
         try await fixture.update("the poll result") { poll.succeed(running) }
 

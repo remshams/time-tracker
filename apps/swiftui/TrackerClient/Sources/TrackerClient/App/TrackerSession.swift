@@ -36,11 +36,11 @@ public final class TrackerSession {
     public let worklogMove: WorklogMoveStore
     /// The bulk archive dialog.
     public let bulkTaskArchiving: BulkTaskArchivingStore
+    /// The worklog correction dialog.
+    public let worklogCorrection: WorklogCorrectionStore
 
-    private let client: any TrackerClient
     // Tests compare the published store values with values computed from this clock.
     let clock: any TrackerClock
-    private let correction = WorklogCorrectionState()
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -49,7 +49,6 @@ public final class TrackerSession {
         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
-        self.client = client
         worklogHistory = WorklogHistoryStore(client: client)
         dailyTotals = DailyTotalsStore(calendar: calendar)
         self.clock = clock
@@ -86,69 +85,19 @@ public final class TrackerSession {
             client: client, clock: clock, connection: connection,
             recordPreviewFailure: sync.recordReadFailure,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+        worklogCorrection = WorklogCorrectionStore(
+            client: client, clock: clock, connection: connection, catalog: taskCatalog, history: worklogHistory,
+            tracking: tracking, reloadAfterWrite: sync.reloadAfterWorklogWrite)
     }
 
     // The session's flows read these two.
     public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
-    public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
-    public var canOpenWorklogCorrection: Bool { connection.confirmed }
 
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
     }
-
-    public func openWorklogCorrection(worklogID: String) {
-        guard canOpenWorklogCorrection, let worklog = worklogForEditor(worklogID) else { return }
-        correction.open(worklog, taskName: taskName(worklog.taskId))
-        sync.publish()
-    }
-
-    public func setWorklogCorrectionStart(_ date: Date) {
-        correction.updateStart(date)
-        sync.publish()
-    }
-
-    public func setWorklogCorrectionEnd(_ date: Date) {
-        correction.updateEnd(date)
-        sync.publish()
-    }
-
-    public func cancelWorklogCorrection() {
-        correction.cancel()
-        sync.publish()
-    }
-
-    public func submitWorklogCorrection() {
-        guard let request = correction.submit(at: clock.now) else {
-            sync.publish()
-            return
-        }
-        sync.publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try await client.correctWorklog(
-                    expected: request.expected, replacementStart: request.replacementStart,
-                    replacementEnd: request.replacementEnd, occurredAt: request.occurredAt)
-                correction.reset()
-            } catch {
-                correction.fail(writeFailure(error))
-            }
-            await sync.reloadAfterWorklogWrite()
-        }
-    }
-
-    private func task(withID id: String) -> TaskItem? { tasks.first { $0.id == id } }
-
-    private func taskName(_ id: String) -> String { task(withID: id)?.name ?? "Unknown task" }
-
-    private func worklogForEditor(_ id: String) -> WorklogItem? {
-        worklog(withID: id) ?? (active?.id == id ? active : nil)
-    }
-
-    private func worklog(withID id: String) -> WorklogItem? { worklogHistory.worklogs.first { $0.id == id } }
 }
 
 public extension TrackerMenuSources {

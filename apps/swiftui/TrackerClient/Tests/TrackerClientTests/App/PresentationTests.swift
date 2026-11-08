@@ -9,24 +9,23 @@ final class PresentationTests: XCTestCase {
         let harness = PresentationHarness(session: fixture.session)
         let bulk = harness.counter(PresentationReads.bulkTaskArchiving)
         let move = ObservationProbe { PresentationReads.worklogMove(harness) }
-        let correction = harness.counter(PresentationReads.worklogCorrection)
         let deletion = harness.counter(PresentationReads.worklogDeletion)
 
         harness.update()
-        XCTAssertEqual([bulk.count, correction.count, deletion.count], [0, 0, 0])
+        XCTAssertEqual([bulk.count, deletion.count], [0, 0])
         XCTAssertFalse(move.consume())
         XCTAssertFalse(harness.worklogDeletion.canOpen)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         harness.attach()
         harness.update()
-        XCTAssertEqual([bulk.count, correction.count, deletion.count], [1, 1, 1])
+        XCTAssertEqual([bulk.count, deletion.count], [1, 1])
         XCTAssertTrue(move.consume())
         XCTAssertTrue(harness.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
         fixture.taskCreation.open()
         fixture.taskCreation.cancel()
         harness.update()
-        XCTAssertEqual([bulk.count, correction.count, deletion.count], [1, 1, 1])
+        XCTAssertEqual([bulk.count, deletion.count], [1, 1])
         XCTAssertFalse(move.consume())
     }
 
@@ -248,46 +247,5 @@ final class PresentationTests: XCTestCase {
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
         XCTAssertEqual(harness.tracking.active, activeWorklog)
-    }
-
-    private struct EditorStep {
-        let name: String
-        let action: @MainActor () -> Void
-        let presents: @MainActor (TrackerPresentation) -> Bool
-        var reply: (@MainActor (FakeClient.Request) -> Void)?
-    }
-
-    @MainActor
-    func testEditorActionsUpdatePresentedValuesBeforeAnyReply() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        fixture.sync.retryHistory()
-        try await fixture.client.next().succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
-        try await fixture.settled()
-        let harness = PresentationHarness(session: fixture.session)
-        let session = fixture.session
-        let correctedEnd = try XCTUnwrap(parseTimestamp("2024-12-30T10:30:00.000Z"))
-        let steps = [
-            EditorStep(
-                name: "open correction", action: { session.openWorklogCorrection(worklogID: oldWorklog.id) },
-                presents: { $0.worklogCorrection.isPresented }),
-            EditorStep(
-                name: "change the correction end", action: { session.setWorklogCorrectionEnd(correctedEnd) },
-                presents: { $0.worklogCorrection.end == correctedEnd }),
-            EditorStep(
-                name: "cancel correction", action: { session.cancelWorklogCorrection() },
-                presents: { !$0.worklogCorrection.isPresented }),
-        ]
-
-        for step in steps {
-            step.action()
-            XCTAssertTrue(step.presents(harness.presentation), "The presentation must show: \(step.name).")
-            assertMirrors(harness.presentation, session)
-            if let reply = step.reply {
-                reply(try await fixture.client.next())
-                try await harness.settled(fixture)
-            }
-        }
     }
 }
