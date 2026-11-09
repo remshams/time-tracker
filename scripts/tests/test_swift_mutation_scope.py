@@ -430,7 +430,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertEqual(self.select()["status"], "review-required")
 
     def test_observation_support_selects_the_production_it_asserts(self):
-        self.write(scope.PACKAGE + scope.TESTS + "Support/ObservationProbe.swift", "func assertMirrors() {}\n")
+        self.write(scope.PACKAGE + scope.TESTS + "Support/ObservationProbe.swift", "func assertPublished() {}\n")
         self.commit("Change observation support")
 
         result = self.select()
