@@ -12,7 +12,7 @@ final class MenuHarness {
 
     init(_ fixture: Fixture, showDailyTotal: Bool, taskOrder: MenuTaskOrder = .newestFirst) {
         self.fixture = fixture
-        sources = TrackerMenuSources(session: fixture.session)
+        sources = fixture.features.menuSources
         observer = TrackerMenuPresentationObserver(
             sources: sources, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
     }
@@ -48,8 +48,8 @@ final class MenuHarness {
 }
 
 extension TrackerMenuInputs {
-    /// Reads the menu's inputs from the session's stores.
-    @MainActor static func current(_ session: TrackerSession) -> TrackerMenuInputs {
-        TrackerMenuSources(session: session).read()
+    /// Reads the menu's inputs from the features' stores.
+    @MainActor static func current(_ features: TrackerFeatures) -> TrackerMenuInputs {
+        features.menuSources.read()
     }
 }

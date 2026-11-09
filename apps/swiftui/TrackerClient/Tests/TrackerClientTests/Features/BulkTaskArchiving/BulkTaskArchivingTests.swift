@@ -78,14 +78,14 @@ final class BulkTaskArchivingTests: XCTestCase {
         try await archivedInactive(
             fixture, command, count: 1, resources: TaskListResources(tasks: [firstTask, archived], active: nil))
 
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived])
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived])
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertEqual(fixture.bulkTaskArchiving.archivedCount, 1)
         XCTAssertFalse(fixture.bulkTaskArchiving.hasPreview)
         XCTAssertTrue(fixture.bulkTaskArchiving.isPresented)
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(2)),
-            [.archiveInactive(preview), .refresh(fixture.session.connection.settings)])
+            [.archiveInactive(preview), .refresh(fixture.features.connection.settings)])
     }
 
     @MainActor
@@ -103,8 +103,8 @@ final class BulkTaskArchivingTests: XCTestCase {
             let request = try await fixture.client.next()
             try await failPreview(fixture, request, failure)
 
-            XCTAssertTrue(fixture.session.connection.stale, failure.message)
-            XCTAssertEqual(fixture.session.connection.message, failure.message)
+            XCTAssertTrue(fixture.features.connection.stale, failure.message)
+            XCTAssertEqual(fixture.features.connection.message, failure.message)
             XCTAssertEqual(fixture.bulkTaskArchiving.error, failure.message)
             XCTAssertFalse(fixture.bulkTaskArchiving.isLoading)
         }
@@ -116,7 +116,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
         try await fixture.start()
-        XCTAssertNil(fixture.session.taskCatalog.selectedTaskID)
+        XCTAssertNil(fixture.features.taskCatalog.selectedTaskID)
         fixture.bulkTaskArchiving.open()
         XCTAssertEqual(fixture.bulkTaskArchiving.daysText, "14")
         XCTAssertTrue(fixture.bulkTaskArchiving.isLoading)
@@ -176,7 +176,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertNil(fixture.bulkTaskArchiving.error)
         XCTAssertEqual(fixture.bulkTaskArchiving.tasks, [secondTask])
         XCTAssertTrue(fixture.bulkTaskArchiving.canSubmit)
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
     }
 
     @MainActor
@@ -321,8 +321,8 @@ final class BulkTaskArchivingTests: XCTestCase {
             XCTAssertTrue(fixture.bulkTaskArchiving.isPresented)
             try await archivedInactive(fixture, command, count: actualCount, resources: resources)
             XCTAssertEqual(fixture.bulkTaskArchiving.archivedCount, actualCount)
-            XCTAssertEqual(fixture.session.active, activeWorklog)
-            XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
+            XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
+            XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, firstTask.id)
             XCTAssertFalse(fixture.bulkTaskArchiving.canSubmit)
             XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
             XCTAssertEqual(
@@ -367,15 +367,15 @@ final class BulkTaskArchivingTests: XCTestCase {
         let startedHistory = try await fixture.client.next()
         XCTAssertEqual(startedHistory.operation, .history(task: firstTask.id, cursor: nil))
         try await fixture.update("the tracking history") { startedHistory.succeed(emptyPage) }
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertTrue(fixture.bulkTaskArchiving.isSubmitting)
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
         try await archivedInactive(
             fixture, command, count: 1,
             resources: TaskListResources(tasks: [firstTask, archived, archivedTask], active: activeWorklog))
         XCTAssertEqual(fixture.bulkTaskArchiving.archivedCount, 1)
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived, archivedTask])
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived, archivedTask])
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
     }
 
     @MainActor
@@ -403,7 +403,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Preview is outdated", kind: "conflict"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.bulkTaskArchiving.isSubmitting)
         try await fixture.update("the reloaded task list") {
             reload.succeed(resources)
@@ -414,7 +414,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertNil(fixture.bulkTaskArchiving.archivedCount)
         XCTAssertFalse(fixture.bulkTaskArchiving.canSubmit)
         XCTAssertTrue(fixture.bulkTaskArchiving.tasks.isEmpty)
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
         let count = fixture.client.operations.count
         fixture.bulkTaskArchiving.submit()
         XCTAssertEqual(fixture.client.operations.count, count)
@@ -436,7 +436,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         try await fixture.update("the reloaded task list") {
             reload.succeed(emptyTaskListResources)
         }
@@ -478,7 +478,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         connection.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
-        XCTAssertEqual(fixture.session.connection.settings, serverSettings)
+        XCTAssertEqual(fixture.features.connection.settings, serverSettings)
         XCTAssertTrue(fixture.bulkTaskArchiving.isPresented)
     }
 
@@ -616,8 +616,8 @@ final class BulkTaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await openPreview(fixture)
-        let sheet = ObservationProbe { ViewReads.bulkTaskArchiving(fixture.session) }
-        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let sheet = ObservationProbe { ViewReads.bulkTaskArchiving(fixture.features) }
+        let content = ObservationProbe { ViewReads.content(fixture.features) }
 
         fixture.bulkTaskArchiving.setDays("0")
 
@@ -629,7 +629,7 @@ final class BulkTaskArchivingTests: XCTestCase {
     func testAvailabilityNotifiesOnlyWhenItChanges() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let sheet = ObservationProbe { ViewReads.bulkTaskArchiving(fixture.session) }
+        let sheet = ObservationProbe { ViewReads.bulkTaskArchiving(fixture.features) }
         XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         XCTAssertTrue(sheet.consume())
@@ -650,7 +650,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         try await finishedLoading(fixture)
         XCTAssertFalse(fixture.bulkTaskArchiving.canSubmit)
         XCTAssertEqual(fixture.bulkTaskArchiving.error, "The tracker returned an invalid archive preview.")
-        XCTAssertTrue(fixture.session.connection.stale)
+        XCTAssertTrue(fixture.features.connection.stale)
         fixture.bulkTaskArchiving.refresh()
         let duplicate = try await fixture.client.next()
         XCTAssertEqual(duplicate.operation, .inactivePreview(days: 14, at: "2025-01-01T00:00:00.000Z"))
@@ -711,9 +711,9 @@ final class BulkTaskArchivingTests: XCTestCase {
         try await fixture.update("the failed reload") {
             reload.fail(BridgeFailure(message: "Offline", kind: "unavailable"))
         } until: {
-            fixture.session.connection.stale
+            fixture.features.connection.stale
         }
-        XCTAssertEqual(fixture.session.connection.message, "Offline")
+        XCTAssertEqual(fixture.features.connection.message, "Offline")
         XCTAssertEqual(
             fixture.bulkTaskArchiving.error, "Archive rejected Refresh the preview before trying again.")
         fixture.bulkTaskArchiving.refresh()

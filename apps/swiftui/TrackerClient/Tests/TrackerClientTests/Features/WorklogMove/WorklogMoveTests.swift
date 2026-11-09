@@ -57,7 +57,7 @@ final class WorklogMoveTests: XCTestCase {
         try await fixture.update("the reloaded history") {
             history.succeed(HistoryPage(worklogs: rows, nextCursor: nil, reset: false))
         } until: {
-            !fixture.session.worklogHistory.isLoading
+            !fixture.features.worklogHistory.isLoading
         }
     }
 
@@ -93,21 +93,21 @@ final class WorklogMoveTests: XCTestCase {
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
         command.moved(worklog: moved)
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.worklogMove.isPresented)
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log, oldWorklog])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log, oldWorklog])
         reload.succeed(resources)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log, oldWorklog])
-        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log, oldWorklog])
+        XCTAssertTrue(fixture.features.worklogHistory.isLoading)
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [oldWorklog])
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(3)),
             [
-                command.operation, .refresh(fixture.session.connection.settings),
+                command.operation, .refresh(fixture.features.connection.settings),
                 .history(task: firstTask.id, cursor: nil),
             ])
     }
@@ -123,13 +123,13 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: resources)
         let history = try await fixture.client.next()
         XCTAssertFalse(fixture.worklogMove.isPresented)
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
-        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.features.worklogHistory.isLoading)
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
-        XCTAssertTrue(fixture.session.worklogHistory.unavailable)
-        XCTAssertFalse(fixture.session.worklogHistory.isLoading)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.features.worklogHistory.unavailable)
+        XCTAssertFalse(fixture.features.worklogHistory.isLoading)
         XCTAssertEqual(moves(fixture), 1)
     }
 
@@ -151,14 +151,14 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [retained])
-        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "old-destination")
-        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [retained])
+        XCTAssertEqual(fixture.features.worklogHistory.nextCursor, "old-destination")
+        XCTAssertTrue(fixture.features.worklogHistory.isLoading)
         history.succeed(HistoryPage(worklogs: [moved, retained], nextCursor: "new-destination", reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [moved, retained])
-        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "new-destination")
-        XCTAssertTrue(fixture.session.worklogHistory.hasMore)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [moved, retained])
+        XCTAssertEqual(fixture.features.worklogHistory.nextCursor, "new-destination")
+        XCTAssertTrue(fixture.features.worklogHistory.hasMore)
     }
 
     @MainActor
@@ -166,15 +166,15 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
-        let elapsed = fixture.session.tracking.elapsed(clock: fixture.session.clock)
+        let elapsed = fixture.features.tracking.elapsed(clock: fixture.clock)
         fixture.worklogMove.submit()
         let command = try await fixture.client.next()
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         try await finishHistory(fixture)
-        XCTAssertEqual(fixture.session.active, moved)
-        XCTAssertEqual(fixture.session.tracking.elapsed(clock: fixture.session.clock), elapsed)
-        XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, secondTask.name)
+        XCTAssertEqual(fixture.features.tracking.active, moved)
+        XCTAssertEqual(fixture.features.tracking.elapsed(clock: fixture.clock), elapsed)
+        XCTAssertEqual(TrackerMenuInputs.current(fixture.features).runningTaskName, secondTask.name)
     }
 
     @MainActor
@@ -209,7 +209,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(fixture.worklogMove.selectedTaskID, secondTask.id)
         XCTAssertNil(fixture.worklogMove.error)
         XCTAssertTrue(fixture.worklogMove.canSubmit)
-        XCTAssertFalse(fixture.client.operations.dropFirst(2).contains(.refresh(fixture.session.connection.settings)))
+        XCTAssertFalse(fixture.client.operations.dropFirst(2).contains(.refresh(fixture.features.connection.settings)))
     }
 
     @MainActor
@@ -301,7 +301,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertNil(fixture.worklogMove.error)
         XCTAssertFalse(fixture.worklogMove.canSubmit)
         XCTAssertEqual(
-            fixture.client.operations.filter { $0 == .refresh(fixture.session.connection.settings) }.count, 0)
+            fixture.client.operations.filter { $0 == .refresh(fixture.features.connection.settings) }.count, 0)
     }
 
     @MainActor
@@ -313,21 +313,21 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "The destination task is archived.", kind: "validation"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.worklogMove.isSubmitting)
         XCTAssertEqual(fixture.worklogMove.error, "The destination task is archived.")
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
         reload.succeed(TaskListResources(tasks: [firstTask, archived], active: nil))
         try await finishHistory(fixture, rows: [log])
 
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived])
         XCTAssertTrue(fixture.worklogMove.isPresented)
         XCTAssertEqual(fixture.worklogMove.original, log)
         XCTAssertEqual(fixture.worklogMove.selectedTaskID, secondTask.id)
         XCTAssertEqual(fixture.worklogMove.error, "The destination task is archived.")
         XCTAssertTrue(fixture.worklogMove.canEdit)
         XCTAssertTrue(fixture.worklogMove.canSubmit)
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
 
         fixture.worklogMove.submit()
         XCTAssertNil(fixture.worklogMove.error)
@@ -346,7 +346,7 @@ final class WorklogMoveTests: XCTestCase {
             let command = try await fixture.client.next()
             command.fail(BridgeFailure(message: "Move response unavailable", kind: kind))
             let reload = try await fixture.client.next()
-            XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings), kind)
+            XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings), kind)
             reload.succeed(TaskListResources(tasks: [firstTask, secondTask], active: log))
             try await finishHistory(fixture)
 
@@ -366,17 +366,17 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         reload.succeed(resources)
         try await finishHistory(fixture)
 
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [])
         XCTAssertTrue(fixture.worklogMove.isPresented)
         XCTAssertEqual(fixture.worklogMove.original, log)
         XCTAssertEqual(
             fixture.worklogMove.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
         XCTAssertEqual(moves(fixture), 1)
     }
 
@@ -394,12 +394,12 @@ final class WorklogMoveTests: XCTestCase {
         history.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
 
-        XCTAssertTrue(fixture.session.connection.stale)
-        XCTAssertEqual(fixture.session.connection.statusText, "Unavailable")
+        XCTAssertTrue(fixture.features.connection.stale)
+        XCTAssertEqual(fixture.features.connection.statusText, "Unavailable")
         XCTAssertEqual(fixture.worklogMove.error, "Move rejected")
         XCTAssertEqual(fixture.worklogMove.original, log)
         XCTAssertTrue(fixture.worklogMove.canSubmit)
-        XCTAssertEqual(fixture.session.active, log)
+        XCTAssertEqual(fixture.features.tracking.active, log)
     }
 
     @MainActor
@@ -441,7 +441,7 @@ final class WorklogMoveTests: XCTestCase {
         move.moved(worklog: moved, resources: afterMove)
         try await finishHistory(fixture, rows: [precise])
         XCTAssertFalse(fixture.worklogMove.isPresented)
-        XCTAssertEqual(fixture.session.active, moved)
+        XCTAssertEqual(fixture.features.tracking.active, moved)
         XCTAssertTrue(fixture.worklogCorrection.isSubmitting)
 
         let corrected = WorklogItem(
@@ -449,7 +449,7 @@ final class WorklogMoveTests: XCTestCase {
         correction.corrected(worklog: corrected, resources: afterMove)
         try await finishHistory(fixture, rows: [corrected])
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [corrected])
         XCTAssertEqual(moves(fixture), 1)
     }
 
@@ -480,7 +480,7 @@ final class WorklogMoveTests: XCTestCase {
     func testAvailabilityNotifiesOnlyWhenItChanges() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let move = ObservationProbe { ViewReads.worklogMove(fixture.session) }
+        let move = ObservationProbe { ViewReads.worklogMove(fixture.features) }
         XCTAssertFalse(fixture.worklogMove.canOpen)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         XCTAssertTrue(move.consume())
@@ -495,8 +495,8 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         _ = try await open(fixture)
-        let content = ObservationProbe { ViewReads.content(fixture.session) }
-        let move = ObservationProbe { ViewReads.worklogMove(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.features) }
+        let move = ObservationProbe { ViewReads.worklogMove(fixture.features) }
         fixture.worklogMove.setQuery("second")
         let search = try await fixture.client.next()
         try await loadCandidates(fixture, search)
@@ -650,7 +650,7 @@ final class WorklogMoveTests: XCTestCase {
         history.succeed(HistoryPage(worklogs: [changed], nextCursor: nil, reset: false))
         try await fixture.settled()
 
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [changed])
         XCTAssertEqual(fixture.worklogMove.original, log)
         XCTAssertNil(fixture.worklogMove.error)
         XCTAssertTrue(fixture.worklogMove.canSubmit)
@@ -668,9 +668,9 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(
             worklog: moved,
             resources: TaskListResources(tasks: [firstTask, archived], active: nil))
-        try await fixture.waitUntil("the reloaded task list") { fixture.session.active == nil }
-        XCTAssertNil(fixture.session.active)
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived])
+        try await fixture.waitUntil("the reloaded task list") { fixture.features.tracking.active == nil }
+        XCTAssertNil(fixture.features.tracking.active)
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived])
         XCTAssertNil(fixture.worklogMove.error)
         XCTAssertFalse(fixture.worklogMove.isPresented)
     }
@@ -685,14 +685,14 @@ final class WorklogMoveTests: XCTestCase {
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         command.moved(worklog: moved)
         let refresh = try await fixture.client.next()
-        XCTAssertEqual(refresh.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(refresh.operation, .refresh(fixture.features.connection.settings))
         refresh.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable", requiresRefresh: true))
         try await finishHistory(fixture)
 
-        XCTAssertEqual(fixture.session.active, log)
+        XCTAssertEqual(fixture.features.tracking.active, log)
         XCTAssertFalse(fixture.worklogMove.isPresented)
         XCTAssertNil(fixture.worklogMove.error)
-        XCTAssertTrue(fixture.session.connection.stale)
+        XCTAssertTrue(fixture.features.connection.stale)
         XCTAssertEqual(moves(fixture), 1)
     }
 
@@ -719,12 +719,12 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: TaskListResources(tasks: tasks, active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: third.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [unrelated])
-        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "older-third")
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [unrelated])
+        XCTAssertEqual(fixture.features.worklogHistory.nextCursor, "older-third")
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, third.id)
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [unrelated])
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, third.id)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [unrelated])
     }
 
     @MainActor
@@ -782,7 +782,7 @@ final class WorklogMoveTests: XCTestCase {
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         try await finishHistory(fixture)
-        XCTAssertEqual(fixture.session.active, moved)
+        XCTAssertEqual(fixture.features.tracking.active, moved)
         XCTAssertFalse(fixture.worklogMove.isPresented)
     }
 

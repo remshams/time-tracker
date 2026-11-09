@@ -23,7 +23,7 @@ final class WorklogCorrectionTests: XCTestCase {
         return log
     }
 
-    /// Answers the history reload that follows a correction and waits for the session to settle.
+    /// Answers the history reload that follows a correction and waits for the sync to settle.
     @MainActor
     private func finishHistory(
         _ fixture: Fixture, task: String = firstTask.id, rows: [WorklogItem]
@@ -33,7 +33,7 @@ final class WorklogCorrectionTests: XCTestCase {
         try await fixture.update("the reloaded history") {
             history.succeed(HistoryPage(worklogs: rows, nextCursor: nil, reset: false))
         } until: {
-            !fixture.session.worklogHistory.isLoading
+            !fixture.features.worklogHistory.isLoading
         }
     }
 
@@ -156,15 +156,18 @@ final class WorklogCorrectionTests: XCTestCase {
         command.corrected(worklog: corrected, resources: resources)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: log.taskId, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log])
         history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
-        XCTAssertNil(fixture.session.worklogHistory.nextCursor)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [corrected])
+        XCTAssertNil(fixture.features.worklogHistory.nextCursor)
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(3)),
-            [command.operation, .refresh(fixture.session.connection.settings), .history(task: log.taskId, cursor: nil)])
+            [
+                command.operation, .refresh(fixture.features.connection.settings),
+                .history(task: log.taskId, cursor: nil),
+            ])
     }
 
     @MainActor
@@ -206,8 +209,8 @@ final class WorklogCorrectionTests: XCTestCase {
             id: activeWorklog.id, taskId: firstTask.id,
             start: "2024-12-31T23:58:00.000000Z", end: nil)
         command.corrected(worklog: corrected, resources: TaskListResources(tasks: [firstTask], active: corrected))
-        try await fixture.waitUntil("the corrected timer") { fixture.session.active == corrected }
-        XCTAssertEqual(fixture.session.tracking.elapsed(clock: fixture.session.clock), 120)
+        try await fixture.waitUntil("the corrected timer") { fixture.features.tracking.active == corrected }
+        XCTAssertEqual(fixture.features.tracking.elapsed(clock: fixture.clock), 120)
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
     }
 
@@ -340,7 +343,7 @@ final class WorklogCorrectionTests: XCTestCase {
             !fixture.taskCreation.isSubmitting
         }
         XCTAssertFalse(fixture.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.tasks, [firstTask, secondTask, created])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, secondTask, created])
     }
 
     @MainActor
@@ -354,7 +357,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "The worklog changed on another client.", kind: "worklog_changed"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.worklogCorrection.isSubmitting)
         XCTAssertEqual(fixture.worklogCorrection.error, "The worklog changed on another client.")
         reload.succeed(resources)
@@ -362,7 +365,7 @@ final class WorklogCorrectionTests: XCTestCase {
             id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
         try await finishHistory(fixture, rows: [changed])
 
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [changed])
         XCTAssertTrue(fixture.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.worklogCorrection.original, log)
         XCTAssertEqual(fixture.worklogCorrection.start, draft)
@@ -370,7 +373,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(fixture.worklogCorrection.error, "The worklog changed on another client.")
         XCTAssertTrue(fixture.worklogCorrection.canEdit)
         XCTAssertTrue(fixture.worklogCorrection.canSubmit)
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
 
         fixture.clock.now.addTimeInterval(90)
         fixture.worklogCorrection.submit()
@@ -396,7 +399,7 @@ final class WorklogCorrectionTests: XCTestCase {
             let command = try await fixture.client.next()
             command.fail(BridgeFailure(message: "Correction response unavailable", kind: kind))
             let reload = try await fixture.client.next()
-            XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings), kind)
+            XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings), kind)
             reload.succeed(resources)
             try await finishHistory(fixture, rows: [log])
 
@@ -417,18 +420,18 @@ final class WorklogCorrectionTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         reload.succeed(resources)
         let corrected = WorklogItem(id: log.id, taskId: log.taskId, start: "2024-12-30T08:00:00.000000Z", end: log.end)
         try await finishHistory(fixture, rows: [corrected])
 
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [corrected])
         XCTAssertTrue(fixture.worklogCorrection.isPresented)
         XCTAssertTrue(fixture.worklogCorrection.canEdit)
         XCTAssertEqual(
             fixture.worklogCorrection.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
         XCTAssertEqual(corrections(fixture), 1)
     }
 
@@ -449,8 +452,8 @@ final class WorklogCorrectionTests: XCTestCase {
         history.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
 
-        XCTAssertTrue(fixture.session.connection.stale)
-        XCTAssertEqual(fixture.session.connection.message, "Server offline")
+        XCTAssertTrue(fixture.features.connection.stale)
+        XCTAssertEqual(fixture.features.connection.message, "Server offline")
         XCTAssertEqual(fixture.worklogCorrection.error, "Overlap")
         XCTAssertEqual(fixture.worklogCorrection.start, draft)
         XCTAssertTrue(fixture.worklogCorrection.canSubmit)
@@ -491,7 +494,7 @@ final class WorklogCorrectionTests: XCTestCase {
         history.succeed(HistoryPage(worklogs: [changed], nextCursor: nil, reset: false))
         try await fixture.settled()
 
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [changed])
         XCTAssertEqual(fixture.worklogCorrection.original, log)
         XCTAssertEqual(fixture.worklogCorrection.start, draft)
         XCTAssertEqual(fixture.worklogCorrection.end, parseTimestamp(log.end))
@@ -505,7 +508,7 @@ final class WorklogCorrectionTests: XCTestCase {
         defer { fixture.cleanup() }
         _ = try await openCompleted(fixture)
         fixture.worklogCorrection.setStart(fixture.clock.now.addingTimeInterval(60))
-        let sheet = ObservationProbe { ViewReads.worklogCorrection(fixture.session) }
+        let sheet = ObservationProbe { ViewReads.worklogCorrection(fixture.features) }
         let requests = fixture.client.operations.count
 
         fixture.worklogCorrection.submit()
@@ -520,8 +523,8 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         _ = try await openCompleted(fixture)
-        let sheet = ObservationProbe { ViewReads.worklogCorrection(fixture.session) }
-        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let sheet = ObservationProbe { ViewReads.worklogCorrection(fixture.features) }
+        let content = ObservationProbe { ViewReads.content(fixture.features) }
         fixture.worklogCorrection.setStart(parseTimestamp("2024-12-30T08:00:00.000Z")!)
         XCTAssertTrue(sheet.consume())
         XCTAssertFalse(content.consume())
@@ -560,13 +563,13 @@ final class WorklogCorrectionTests: XCTestCase {
         let corrected = WorklogItem(id: log.id, taskId: log.taskId, start: "2024-12-30T08:00:00.000000Z", end: log.end)
         command.corrected(worklog: corrected, resources: resources)
         let history = try await fixture.client.next()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
-        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.features.worklogHistory.isLoading)
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
-        XCTAssertTrue(fixture.session.worklogHistory.unavailable)
-        XCTAssertFalse(fixture.session.worklogHistory.isLoading)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.features.worklogHistory.unavailable)
+        XCTAssertFalse(fixture.features.worklogHistory.isLoading)
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
     }
 
@@ -596,17 +599,17 @@ final class WorklogCorrectionTests: XCTestCase {
         command.corrected(worklog: corrected, resources: resources)
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .history(task: secondTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [other])
-        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "other-older")
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [other])
+        XCTAssertEqual(fixture.features.worklogHistory.nextCursor, "other-older")
         reload.succeed(HistoryPage(worklogs: [other], nextCursor: nil, reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [other])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [other])
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(4)),
             [
                 .history(task: secondTask.id, cursor: nil), command.operation,
-                .refresh(fixture.session.connection.settings),
+                .refresh(fixture.features.connection.settings),
                 .history(task: secondTask.id, cursor: nil),
             ])
     }

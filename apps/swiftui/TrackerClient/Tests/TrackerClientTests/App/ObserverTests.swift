@@ -31,7 +31,7 @@ final class ObserverTests: XCTestCase {
 
         fixture.advanceClock(by: 4)
         display.fire()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
     }
 
@@ -47,7 +47,7 @@ final class ObserverTests: XCTestCase {
         fixture.advanceClock(by: 4)
 
         fixture.sync.setWindowVisible(true)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
         XCTAssertNotNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         request.succeed(resources)
@@ -64,12 +64,12 @@ final class ObserverTests: XCTestCase {
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         fixture.sync.selectTask(secondTask.id)
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
         let selectedHistory = try await fixture.client.next()
         XCTAssertEqual(selectedHistory.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(HistoryPage(worklogs: [activeWorklog], nextCursor: nil, reset: false))
         selectedHistory.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [oldWorklog])
     }
 }

@@ -35,7 +35,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, task.name)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTask?.name, task.name)
         XCTAssertFalse(fixture.taskCreation.isPresented)
     }
 
@@ -59,6 +59,6 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskRename.isPresented)
         XCTAssertNil(fixture.taskRename.error)
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, task.name)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTask?.name, task.name)
     }
 }

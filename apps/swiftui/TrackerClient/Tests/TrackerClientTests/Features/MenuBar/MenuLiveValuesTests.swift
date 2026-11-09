@@ -100,7 +100,7 @@ final class MenuLiveValuesTests: XCTestCase {
             XCTAssertNil(observer.values.elapsedText)
             observer.menuClosed()
             XCTAssertEqual(observer.content.activeWorklogID, active?.id)
-            XCTAssertEqual(observer.values.elapsedText, active == nil ? nil : fixture.session.tracking.timerText)
+            XCTAssertEqual(observer.values.elapsedText, active == nil ? nil : fixture.features.tracking.timerText)
         }
     }
 
@@ -147,7 +147,7 @@ final class MenuLiveValuesTests: XCTestCase {
             "The connection changed. Reopen the menu to see the current tracker.")
         observer.menuClosed()
         XCTAssertEqual(observer.content.connectionSettings, serverSettings)
-        XCTAssertEqual(observer.values.elapsedText, fixture.session.tracking.timerText)
+        XCTAssertEqual(observer.values.elapsedText, fixture.features.tracking.timerText)
     }
 
     @MainActor

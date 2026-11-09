@@ -1,6 +1,8 @@
 import Foundation
 
-public final class TrackerSession {
+/// Creates the stores, `TrackerSync`, `TrackingActions` and the dialog stores, and passes each one what it uses.
+/// It holds them and has no methods: `TrackerStore` and the test fixture read them from here.
+public final class TrackerFeatures {
     /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
     /// change, changes the tab and task selection, reloads after dialog writes, and publishes the timer text, today's
     /// totals, the auto-pause status and the recorded errors.
@@ -21,8 +23,10 @@ public final class TrackerSession {
     public let tracking = TrackingStore()
     /// Views read today's status and task totals here; the sync writes them.
     public let dailyTotals: DailyTotalsStore
-    /// The menu bar reads the last tracked task here; the sync writes it.
+    /// The menu bar reads the last tracked task and its copy values here; the sync writes the task.
     public let menuBar: MenuBarStore
+    /// The stores the menu bar observes.
+    public let menuSources: TrackerMenuSources
     /// Views read the auto-pause preference and status here; the sync writes them.
     public let trackingAutomation: TrackingAutomationStore
     /// The task rename dialog.
@@ -40,9 +44,6 @@ public final class TrackerSession {
     /// The worklog correction dialog.
     public let worklogCorrection: WorklogCorrectionStore
 
-    // Tests compare the published store values with values computed from this clock.
-    let clock: any TrackerClock
-
     public init(
         client: any TrackerClient, clock: any TrackerClock,
         scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository,
@@ -52,13 +53,16 @@ public final class TrackerSession {
     ) {
         worklogHistory = WorklogHistoryStore(client: client)
         dailyTotals = DailyTotalsStore(calendar: calendar)
-        self.clock = clock
         trackingAutomation = TrackingAutomationStore(preferences: trackingPreferences.load())
-        let initialSettings = settings.load() ?? .local
-        connection = ConnectionStore(settings: initialSettings)
-        menuBar = MenuBarStore(repository: lastTrackedTasks, settings: initialSettings)
+        connection = ConnectionStore(settings: settings.load() ?? .local)
+        menuBar = MenuBarStore(
+            repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
+            dailyTotals: dailyTotals, clock: clock)
         dailyTotals.updateDay(at: clock.now)
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
+        menuSources = TrackerMenuSources(
+            catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
+            menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
         sync = TrackerSync(
             client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
@@ -89,24 +93,5 @@ public final class TrackerSession {
         worklogCorrection = WorklogCorrectionStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, history: worklogHistory,
             tracking: tracking, reloadAfterWrite: sync.reloadAfterWorklogWrite)
-    }
-
-    // The menu's copy actions and `dailyDuration` read these two.
-    public var tasks: [TaskItem] { taskCatalog.tasks }
-    public var active: WorklogItem? { tracking.active }
-
-    /// Computed from the clock on each read, so copying from the menu uses the current time.
-    func dailyDuration(taskID: String) -> TimeInterval? {
-        dailyTotals.duration(taskID: taskID, active: active, clock: clock)
-    }
-}
-
-public extension TrackerMenuSources {
-    /// Reads the menu's stores and tracking checks from the session.
-    init(session: TrackerSession) {
-        self.init(
-            catalog: session.taskCatalog, connection: session.connection, tracking: session.tracking,
-            dailyTotals: session.dailyTotals, menuBar: session.menuBar, automation: session.trackingAutomation,
-            availability: session.trackingAvailability)
     }
 }

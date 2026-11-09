@@ -59,7 +59,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         XCTAssertEqual(reloadedHistory.operation, .history(task: firstTask.id, cursor: nil))
         reloadedHistory.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.features.tracking.active)
         XCTAssertTrue(fixture.canStartSelectedTask)
         XCTAssertEqual(
             fixture.client.operations.filter {
@@ -118,7 +118,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.features) }
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
 
         fixture.scheduler.poll?.fire()
@@ -127,6 +127,6 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         try await fixture.settled()
 
         XCTAssertTrue(content.consume())
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, "Renamed task")
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTask?.name, "Renamed task")
     }
 }
