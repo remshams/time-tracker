@@ -6,6 +6,7 @@ import TrackerClient
 final class TrackerStatusItemController: NSObject {
     private let store: TrackerStore
     private let menu: TrackerMenuPresentationObserver
+    private let preferences: MenuBarPreferencesStore
     private var statusItem: NSStatusItem?
     private var subscriptions = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
@@ -16,9 +17,10 @@ final class TrackerStatusItemController: NSObject {
     private var taskRows: [String: MenuTaskRow] = [:]
     private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
-    init(store: TrackerStore, menu: TrackerMenuPresentationObserver) {
+    init(store: TrackerStore, menu: TrackerMenuPresentationObserver, preferences: MenuBarPreferencesStore) {
         self.store = store
         self.menu = menu
+        self.preferences = preferences
         super.init()
     }
 
@@ -44,14 +46,14 @@ final class TrackerStatusItemController: NSObject {
         }
         let registration = GlobalMenuShortcutRegistration { [weak self] in self?.toggleMenu() }
         shortcutRegistration = registration
-        store.registerMenuShortcut = { [weak registration] shortcut in
+        preferences.registerMenuShortcut = { [weak registration] shortcut in
             do {
                 try registration?.register(shortcut)
                 return nil
             } catch { return error.localizedDescription }
         }
-        do { try registration.register(store.menuShortcuts.openMenu) } catch {
-            store.reportMenuGlobalShortcutError(error.localizedDescription)
+        do { try registration.register(preferences.menuShortcuts.openMenu) } catch {
+            preferences.reportMenuGlobalShortcutError(error.localizedDescription)
         }
         DistributedNotificationCenter.default()
             .publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))
@@ -60,9 +62,9 @@ final class TrackerStatusItemController: NSObject {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     do {
-                        try self.shortcutRegistration?.register(self.store.menuShortcuts.openMenu)
-                        self.store.reportMenuGlobalShortcutError(nil)
-                    } catch { self.store.reportMenuGlobalShortcutError(error.localizedDescription) }
+                        try self.shortcutRegistration?.register(self.preferences.menuShortcuts.openMenu)
+                        self.preferences.reportMenuGlobalShortcutError(nil)
+                    } catch { self.preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
                 }
             }.store(in: &subscriptions)
         updateLabel()
@@ -129,9 +131,9 @@ final class TrackerStatusItemController: NSObject {
             store.menuClosed()
             do {
                 if try shortcutRegistration?.endMenuTracking() == true {
-                    store.reportMenuGlobalShortcutError(nil)
+                    preferences.reportMenuGlobalShortcutError(nil)
                 }
-            } catch { store.reportMenuGlobalShortcutError(error.localizedDescription) }
+            } catch { preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
         }
         // AppKit positions status-item menus below the menu bar, including their outer padding.
         statusItem.menu = menu
