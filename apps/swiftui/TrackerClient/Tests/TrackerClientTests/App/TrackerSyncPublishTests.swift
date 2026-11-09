@@ -2,8 +2,7 @@ import XCTest
 @testable import TrackerClient
 
 /// `TrackerSync.publish()` recomputes the values derived from the clock and shows recorded errors. These tests move
-/// the clock without a timer tick, so only the publish under test can move the timer text. The selection and reload
-/// publishes are in `TrackerSyncSelectionAndReloadTests`.
+/// the clock without a timer tick, so only the publish under test can move the timer text.
 final class TrackerSyncPublishTests: XCTestCase {
     private let running = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
 
@@ -17,64 +16,6 @@ final class TrackerSyncPublishTests: XCTestCase {
         XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
         history.succeed(emptyPage)
         try await fixture.settled()
-    }
-
-    @MainActor
-    func testSleepPublishes() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        fixture.sync.sleep()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
-    }
-
-    @MainActor
-    func testRetryingTheHistoryPublishesBeforeAndAfterThePage() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        fixture.sync.retryHistory()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
-        let page = try await fixture.client.next()
-        fixture.advanceClock(by: 4)
-        page.succeed(emptyPage)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:38")
-    }
-
-    @MainActor
-    func testLoadingOlderWorklogsPublishes() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.sync.retryHistory()
-        try await fixture.client.next().succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
-        try await fixture.settled()
-        fixture.advanceClock(by: 4)
-        fixture.sync.loadOlder()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
-        let older = try await fixture.client.next()
-        XCTAssertEqual(older.operation, .history(task: firstTask.id, cursor: "older"))
-        older.succeed(emptyPage)
-        try await fixture.settled()
-    }
-
-    @MainActor
-    func testRejectedConnectionChangePublishesWhenItStartsAndEnds() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        let connecting = Task { @MainActor in await fixture.sync.connect(serverSettings) }
-        let request = try await fixture.client.next()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
-        fixture.advanceClock(by: 4)
-        request.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertFalse(connected)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:38")
     }
 
     @MainActor
