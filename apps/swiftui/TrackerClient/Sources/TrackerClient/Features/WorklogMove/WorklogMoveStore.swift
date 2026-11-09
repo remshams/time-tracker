@@ -72,7 +72,7 @@ public final class WorklogMoveStore {
     public func moveSelection(by offset: Int) {
         guard canEdit, !isSearching, !candidates.isEmpty else { return }
         let index = candidates.firstIndex { $0.id == selectedTaskID } ?? 0
-        selectedTaskID = candidates[min(max(index + offset, 0), candidates.count - 1)].id
+        select(taskID: candidates[min(max(index + offset, 0), candidates.count - 1)].id)
     }
 
     public func cancel() {
