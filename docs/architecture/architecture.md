@@ -246,6 +246,12 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   function, which leaves the current connection unchanged.
   `WorklogHistoryStore` sends its own page requests and reports each failure
   to `TrackerSync`, which records connection failures.
+  User actions move from `TrackerSync` and `TrackingActions` onto the store of
+  the feature that owns them, step by step in
+  [issue #369](https://github.com/remshams/time-tracker/issues/369). A view reads
+  a moved action's store from the environment, and a package store reaches
+  `TrackerSync` only through a closure that `TrackerFeatures` passes
+  ([ADR 0035](adr/0035-put-user-actions-on-feature-stores.md)).
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
   serial
