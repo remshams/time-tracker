@@ -1,18 +1,18 @@
 import SwiftUI
+import TrackerClient
 
 struct SettingsView: View {
-    let store: TrackerStore
     @State private var connectionDraft: ConnectionDraftStore
 
-    init(store: TrackerStore) {
-        self.store = store
-        _connectionDraft = State(initialValue: ConnectionDraftStore(store: store))
+    init(connection: ConnectionStore, sync: TrackerSync, client: any TrackerClient) {
+        _connectionDraft = State(
+            initialValue: ConnectionDraftStore(connection: connection, sync: sync, client: client))
     }
 
     var body: some View {
         Form {
             ConnectionSettingsSection(draft: connectionDraft)
-            TrackingSettingsSection(store: store)
+            TrackingSettingsSection()
             MenuBarSettingsSection()
             MenuShortcutSettingsSection()
             ConnectionActionsSection(draft: connectionDraft)
@@ -20,6 +20,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 540)
-        .connectionDraftLifecycle(connectionDraft, store: store)
+        .connectionDraftLifecycle(connectionDraft)
     }
 }
