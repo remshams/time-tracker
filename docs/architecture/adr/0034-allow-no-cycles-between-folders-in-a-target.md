@@ -4,7 +4,7 @@
 
 Accepted. It partially supersedes the clauses of ADR 0026, ADR 0030, ADR 0032 and ADR 0033 listed under [Superseded clauses](#superseded-clauses). All other decisions in those records remain accepted.
 
-Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) for the `TrackingActions` example in the rule, for views and the status item using `TrackerSync` and `TrackingActions` after #362, and for views calling `changeTab(_:)` and `selectTask(_:)` on `TrackerSync`, and for the consequence that app features read `TrackerSync` and `TrackingActions`; all other decisions remain accepted.
+Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) for the `TrackingActions` example in the rule, for views and the status item using `TrackerSync` and `TrackingActions` after #362, for views calling `changeTab(_:)` and `selectTask(_:)` on `TrackerSync`, and for the consequence that app features read `TrackerSync` and `TrackingActions`; all other decisions remain accepted.
 
 ## Date
 
