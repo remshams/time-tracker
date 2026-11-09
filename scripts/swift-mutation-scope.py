@@ -146,7 +146,7 @@ TEST_PRODUCTION = {
     "Features/WorklogHistory/HistoryTests.swift": [
         FEATURES, SYNC, TRACKING_ACTIONS, HISTORY, TRACKING, CATALOG, CONNECTION,
     ],
-    "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY],
+    "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY, CATALOG, CONNECTION],
     "Features/WorklogMove/WorklogMoveTests.swift": [
         FEATURES, SYNC, TRACKING_ACTIONS, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
         MENU_SOURCES, DELETION,
