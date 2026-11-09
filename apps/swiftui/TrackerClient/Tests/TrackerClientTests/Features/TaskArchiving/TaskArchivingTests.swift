@@ -468,14 +468,11 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
         try await fixture.start(resources)
-        let harness = PresentationHarness(session: fixture.session)
-        let presentation = harness.presentation
-        let availability = harness.recorder(PresentationReads.taskArchiving) {
-            (
-                presentation.canArchiveTask(taskID: firstTask.id),
-                presentation.canArchiveTask(taskID: secondTask.id),
-                presentation.canUnarchiveTask(taskID: archivedTask.id)
-            )
+        let archiving = fixture.taskArchiving
+        let availability = ObservationProbe {
+            _ = archiving.canArchive(taskID: firstTask.id)
+            _ = archiving.canArchive(taskID: secondTask.id)
+            _ = archiving.canUnarchive(taskID: archivedTask.id)
         }
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
@@ -485,14 +482,14 @@ final class TaskArchivingTests: XCTestCase {
         try await fixture.settled()
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertEqual(fixture.taskArchiving.taskName, "")
-        XCTAssertTrue(availability.values.contains { !$0.0 && $0.1 && $0.2 })
-        let countAfterStart = availability.count
-        harness.attach()
-        harness.update()
-        XCTAssertEqual(availability.count, countAfterStart)
+        XCTAssertTrue(availability.consume())
+        XCTAssertFalse(archiving.canArchive(taskID: firstTask.id))
+        XCTAssertTrue(archiving.canArchive(taskID: secondTask.id))
+        XCTAssertTrue(archiving.canUnarchive(taskID: archivedTask.id))
         fixture.taskCreation.open()
         XCTAssertTrue(fixture.taskCreation.isPresented)
-        XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
+        XCTAssertFalse(availability.consume())
+        XCTAssertTrue(archiving.canArchive(taskID: secondTask.id))
     }
 
     @MainActor
