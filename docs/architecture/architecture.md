@@ -241,7 +241,8 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   test fixture create, creates and holds the stores, `TrackingAvailability`,
   `TrackerMenuSources`, `TrackerSync` and `TrackingActions`, and passes the
   dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
-  `reloadAfterWorklogWrite()` as their reload closures.
+  `reloadAfterWorklogWrite()` as their reload closures. `TaskCreationStore` also
+  gets `showTask(_:)` and `BulkTaskArchivingStore` gets `recordReadFailure(_:)`.
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
   `WorklogHistoryStore` sends its own page requests and reports each failure
