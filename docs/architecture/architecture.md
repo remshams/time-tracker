@@ -162,10 +162,7 @@ so review does.
 In the Swift app and package, folders in a target must not form a cycle, and
 `App/` counts as an ordinary folder. Review checks each target separately, and
 same-named feature folders in the two targets are separate nodes
-([ADR 0034](adr/0034-allow-no-cycles-between-folders-in-a-target.md)). The package
-has no cycle. The app target still has one through `App/`, which
-[#360](https://github.com/remshams/time-tracker/issues/360) to
-[#363](https://github.com/remshams/time-tracker/issues/363) remove. `Shared/` holds
+([ADR 0034](adr/0034-allow-no-cycles-between-folders-in-a-target.md)). `Shared/` holds
 helpers no feature owns and `Contracts/` holds protocols and wire models
 ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
 
@@ -240,7 +237,7 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingActions` starts and
   stops tracking after asking it; `TrackingActions` calls `TrackerSync` to reload
-  and publish, and the sync never calls it. `TrackerFeatures`, which `TrackerStore` and the
+  and publish, and the sync never calls it. `TrackerFeatures`, which `TrackerAppRuntime` and the
   test fixture create, creates and holds the stores, `TrackingAvailability`,
   `TrackerMenuSources`, `TrackerSync` and `TrackingActions`, and passes the
   dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
