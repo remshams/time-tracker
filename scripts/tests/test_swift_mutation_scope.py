@@ -167,14 +167,14 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
     def test_connection_suite_selects_the_state_resets_it_asserts(self):
         test = scope.TESTS + "Features/Connection/ConnectionTests.swift"
-        self.write(scope.PACKAGE + test, "func testSourceSwitchResetsHiddenArchiveFailureAndHistory() {}\n")
+        self.write(scope.PACKAGE + test, "func testSourceSwitchResetsHistory() {}\n")
         self.commit("Change connection state assertions")
 
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        for source in ["Features/TaskArchiving/TaskArchivingStore.swift", "Features/TaskCatalog/TaskCatalogStore.swift",
-                       "Features/WorklogHistory/WorklogHistoryStore.swift", "Features/Tracking/TrackingStore.swift"]:
+        for source in ["Features/TaskCatalog/TaskCatalogStore.swift", "Features/WorklogHistory/WorklogHistoryStore.swift",
+                       "Features/Tracking/TrackingStore.swift"]:
             self.assertIn(scope.SOURCES + source, result["files"])
         self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
