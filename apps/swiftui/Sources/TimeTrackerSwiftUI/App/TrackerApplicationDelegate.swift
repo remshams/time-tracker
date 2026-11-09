@@ -31,7 +31,7 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// Creates the feature objects, the menu observer, the menu bar settings and the lifecycle observer, and starts
-/// the sync. The scenes, the app menus, the status item and the presentation coordinator read the objects here.
+/// the sync. The scenes, the app menus, the status item and the presentation coordinator get the objects here.
 final class TrackerAppRuntime {
     let features: TrackerFeatures
     /// Settings tests a connection with this client.
