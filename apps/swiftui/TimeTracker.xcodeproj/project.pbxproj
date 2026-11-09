@@ -210,6 +210,7 @@
 			children = (
 				0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */,
 				A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */,
+				A10000000000000000000017 /* TrackerLaunchConfiguration.swift */,
 			);
 			path = System;
 			sourceTree = "<group>";
@@ -278,7 +279,6 @@
 				522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */,
 				323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */,
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
-				A10000000000000000000017 /* TrackerLaunchConfiguration.swift */,
 				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
 				9E054EA2B878A02189368B9D /* TrackerWindow.swift */,
 			);
