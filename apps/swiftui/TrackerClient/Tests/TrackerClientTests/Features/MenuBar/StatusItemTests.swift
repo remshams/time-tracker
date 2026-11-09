@@ -213,7 +213,7 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        let connecting = Task { await fixture.sync.connect(serverSettings) }
+        let connecting = Task { await fixture.features.connection.connect(serverSettings) }
         let connection = try await fixture.client.next()
         XCTAssertTrue(fixture.features.connection.changing)
         XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
@@ -239,14 +239,14 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture(lastTrackedTasks: repository)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        let failedSwitch = Task { await fixture.sync.connect(serverSettings) }
+        let failedSwitch = Task { await fixture.features.connection.connect(serverSettings) }
         let failedRequest = try await fixture.client.next()
         failedRequest.fail(BridgeFailure(message: "Unavailable server"))
         let failed = try await fixture.taskValue(failedSwitch)
         XCTAssertFalse(failed)
         XCTAssertEqual(fixture.features.menuBar.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(fixture.features.connection.settings, .local)
-        let switchServer = Task { await fixture.sync.connect(serverSettings) }
+        let switchServer = Task { await fixture.features.connection.connect(serverSettings) }
         let connect = try await fixture.client.next()
         connect.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let remoteHistory = try await fixture.client.next()

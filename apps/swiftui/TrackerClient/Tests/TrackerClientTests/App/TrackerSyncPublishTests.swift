@@ -24,7 +24,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         fixture.advanceClock(by: 4)
-        fixture.sync.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
     }
 

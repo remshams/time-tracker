@@ -5,9 +5,9 @@ import Observation
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
 /// connection change, and the reloads after dialog writes.
 ///
-/// `TrackerFeatures` creates the stores and passes them in. `TrackingActions`, the dialog stores' reload closures and
-/// the history store's read-failure closure call the package-internal methods below, for example to reload the task
-/// list or the history, record a failure and publish.
+/// `TrackerFeatures` creates the stores and passes them in. `TrackingActions` and the stores' closures call the
+/// package-internal methods below, for example to switch the connection, reload the task list or the history, record a
+/// failure and publish.
 ///
 /// It is observable only so that views can read it from the SwiftUI environment. Views only call its methods, and its
 /// state stays out of observation, so a view that reads it later can't track the timers and flags below.
@@ -25,7 +25,6 @@ public final class TrackerSync {
     private let menuBar: MenuBarStore
     private let automation: TrackingAutomationStore
     private let settingsRepository: any ConnectionSettingsRepository
-    private let trackingPreferences: any TrackingPreferencesRepository
     @ObservationIgnored private var displayTimer: (any TrackerCancellation)?
     @ObservationIgnored private var pollTimer: (any TrackerCancellation)?
     @ObservationIgnored private var rolloverTimer: (any TrackerCancellation)?
@@ -44,8 +43,7 @@ public final class TrackerSync {
         client: any TrackerClient, reports: (any ReportClient)?, clock: any TrackerClock,
         scheduler: any TrackerScheduler, catalog: TaskCatalogStore, history: WorklogHistoryStore,
         connection: ConnectionStore, tracking: TrackingStore, dailyTotals: DailyTotalsStore,
-        menuBar: MenuBarStore, automation: TrackingAutomationStore, settings: any ConnectionSettingsRepository,
-        trackingPreferences: any TrackingPreferencesRepository
+        menuBar: MenuBarStore, automation: TrackingAutomationStore, settings: any ConnectionSettingsRepository
     ) {
         self.client = client
         self.reports = reports
@@ -59,7 +57,6 @@ public final class TrackerSync {
         self.menuBar = menuBar
         self.automation = automation
         settingsRepository = settings
-        self.trackingPreferences = trackingPreferences
     }
 
     isolated deinit {
@@ -125,7 +122,9 @@ public final class TrackerSync {
         refresh()
     }
 
-    public func refresh() {
+    /// Reloads the task list now unless the sync hasn't started, sleeps or already refreshes. Polling, waking, the
+    /// timers and `ConnectionStore.refresh()` call it.
+    func refresh() {
         guard started, !sleeping, !refreshing else { return }
         refreshing = true
         cancelPolling()
@@ -136,30 +135,18 @@ public final class TrackerSync {
         }
     }
 
-    /// Switches to `settings`, saves them and loads their task list and today's totals. Returns false when
-    /// another change is running or the tracker rejects the settings; the current connection then stays.
-    public func connect(_ settings: ConnectionSettings) async -> Bool {
-        guard !connection.changing else { return false }
-        connection.beginChange()
-        defer { connection.endChange() }
-        do {
-            let normalized = try settings.normalized()
-            finishConnection(try await client.connect(normalized), settings: normalized)
-        } catch {
-            connection.rejectChange(error)
-            return false
-        }
+    /// Opens `settings`, which are already normalized, resets the stores for them, saves them and loads their task
+    /// list and today's totals. Throws when the tracker rejects the settings. `ConnectionStore.connect(_:)` calls it
+    /// while it marks the change as running.
+    func switchConnection(to settings: ConnectionSettings) async throws {
+        finishConnection(try await client.connect(settings), settings: settings)
         await loadReport()
         schedulePolling()
-        return true
     }
 
-    /// Turns the screen-lock auto-pause on or off and saves the preference. Turning it on while the screen is
-    /// locked pauses the running timer.
-    public func setPauseOnScreenLock(_ enabled: Bool) {
-        guard automation.setEnabled(enabled) else { return }
-        trackingPreferences.save(TrackingPreferences(pauseOnScreenLock: enabled))
-        if enabled && automation.locked { pauseTracking(at: clock.now) }
+    /// Pauses the running timer when the auto-pause was just turned on while the screen is locked, and publishes.
+    func pauseOnScreenLockChanged() {
+        if automation.enabled && automation.locked { pauseTracking(at: clock.now) }
         publish()
     }
 

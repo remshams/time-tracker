@@ -34,10 +34,10 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertEqual(fixture.client.operations.count, 2)
-        fixture.sync.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertFalse(fixture.client.hasPendingRequests)
-        fixture.sync.setPauseOnScreenLock(true)
-        fixture.sync.setPauseOnScreenLock(false)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(false)
         XCTAssertEqual(
             fixture.preferences.writes, [TrackingPreferences(pauseOnScreenLock: true), TrackingPreferences()])
         XCTAssertNil(fixture.trackingAutomation.statusText)
@@ -68,7 +68,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.start(running)
         try await acknowledgePause(fixture)
         XCTAssertEqual(fixture.trackingAutomation.statusText, "Paused while screen is locked")
-        fixture.sync.setPauseOnScreenLock(false)
+        fixture.trackingAutomation.setPauseOnScreenLock(false)
         XCTAssertNil(fixture.trackingAutomation.statusText)
     }
 
@@ -159,7 +159,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
 
-        fixture.sync.setPauseOnScreenLock(false)
+        fixture.trackingAutomation.setPauseOnScreenLock(false)
         fixture.sync.refresh()
         let next = try await fixture.client.next()
         XCTAssertEqual(next.operation, .refresh(.local), "Disabling the preference must not pause tracking.")
@@ -190,7 +190,8 @@ final class TrackingAutomationTests: XCTestCase {
     }
 
     func testCancelledPendingPauseCannotGrantResumeAfterUnlock() {
-        let store = TrackingAutomationStore(preferences: TrackingPreferences(pauseOnScreenLock: true))
+        let store = TrackingAutomationStore(
+            repository: MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: true)))
         XCTAssertTrue(store.lock())
         XCTAssertTrue(store.beginPause())
         XCTAssertNil(store.unlock(at: Date(timeIntervalSince1970: 90)))
@@ -200,7 +201,8 @@ final class TrackingAutomationTests: XCTestCase {
     }
 
     func testRelockingDuringPauseKeepsTheLatestUnlockTime() {
-        let store = TrackingAutomationStore(preferences: TrackingPreferences(pauseOnScreenLock: true))
+        let store = TrackingAutomationStore(
+            repository: MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: true)))
         XCTAssertTrue(store.lock())
         XCTAssertTrue(store.beginPause())
         XCTAssertNil(store.unlock(at: Date(timeIntervalSince1970: 90)))
@@ -257,7 +259,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.start(running)
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
-        fixture.sync.setPauseOnScreenLock(false)
+        fixture.trackingAutomation.setPauseOnScreenLock(false)
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
         pause.paused(idle)
         try await finishHistory(fixture)
@@ -276,7 +278,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.start(running)
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         fixture.clock.now.addTimeInterval(10)
-        fixture.sync.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
         let pause = try await fixture.client.next()
         XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: formatTimestamp(fixture.clock.now)))
         pause.paused(idle)
@@ -428,7 +430,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(emptyTaskListResources)
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
-        fixture.sync.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertEqual(fixture.client.operations, [.open(.local)])
     }
@@ -489,10 +491,10 @@ final class TrackingAutomationTests: XCTestCase {
         try await acknowledgePause(fixture)
         fixture.taskCreation.open()
         fixture.taskCreation.setName("Draft on the old connection")
-        let connecting = Task { await fixture.sync.connect(serverSettings) }
+        let connecting = Task { await fixture.features.connection.connect(serverSettings) }
         let connect = try await fixture.client.next()
         XCTAssertEqual(connect.operation, .connect(serverSettings))
-        let secondConnect = try await fixture.taskValue(Task { await fixture.sync.connect(.local) })
+        let secondConnect = try await fixture.taskValue(Task { await fixture.features.connection.connect(.local) })
         XCTAssertFalse(secondConnect)
         connect.succeed(idle)
         try await finishHistory(fixture)
@@ -515,11 +517,11 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.start(running)
         let content = ObservationProbe { ViewReads.content(fixture.features) }
 
-        fixture.sync.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertTrue(content.consume())
         XCTAssertTrue(fixture.trackingAutomation.enabled)
 
-        fixture.sync.setPauseOnScreenLock(true)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertFalse(content.consume(), "Repeating the preference must not redraw the window.")
     }
 

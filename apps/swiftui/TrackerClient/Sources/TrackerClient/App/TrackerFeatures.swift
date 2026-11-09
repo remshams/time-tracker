@@ -16,7 +16,7 @@ public final class TrackerFeatures {
     /// Views read the selected task's worklog pages and the history panel's state here, retry and load older pages;
     /// the store loads the first page when the sync or a selection change asks it to.
     public let worklogHistory: WorklogHistoryStore
-    /// Views read the connection settings and status here; the sync writes them.
+    /// Views read the connection settings and status here, connect and retry; the sync writes the settings and status.
     public let connection: ConnectionStore
     /// Views read the running worklog, the tracking error and the timer text here; the sync and `trackingActions`
     /// write them.
@@ -27,7 +27,8 @@ public final class TrackerFeatures {
     public let menuBar: MenuBarStore
     /// The stores the menu bar observes.
     public let menuSources: TrackerMenuSources
-    /// Views read the auto-pause preference and status here; the sync writes them.
+    /// Views read the auto-pause preference and status here and turn the auto-pause on or off; the sync writes the
+    /// status.
     public let trackingAutomation: TrackingAutomationStore
     /// The task rename dialog.
     public let taskRename: TaskRenameStore
@@ -52,7 +53,7 @@ public final class TrackerFeatures {
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
         dailyTotals = DailyTotalsStore(calendar: calendar)
-        trackingAutomation = TrackingAutomationStore(preferences: trackingPreferences.load())
+        trackingAutomation = TrackingAutomationStore(repository: trackingPreferences)
         connection = ConnectionStore(settings: settings.load() ?? .local)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
         menuBar = MenuBarStore(
@@ -66,13 +67,16 @@ public final class TrackerFeatures {
         sync = TrackerSync(
             client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
-            menuBar: menuBar, automation: trackingAutomation, settings: settings,
-            trackingPreferences: trackingPreferences)
+            menuBar: menuBar, automation: trackingAutomation, settings: settings)
         // The history needs the catalog and the sync needs the history, so these closures are set once both exist.
         // The captures are weak because the history holds the catalog and the sync holds the history.
         taskCatalog.reloadHistory = { [weak worklogHistory] in worklogHistory?.reload() }
         // A page changes nothing that the sync publishes, so recovering the connection is enough.
         worklogHistory.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
+        // The sync holds the connection and auto-pause stores, so these captures are weak too.
+        connection.switchConnection = { [weak sync] settings in try await sync?.switchConnection(to: settings) }
+        connection.refreshTaskList = { [weak sync] in sync?.refresh() }
+        trackingAutomation.pauseOnScreenLockChanged = { [weak sync] in sync?.pauseOnScreenLockChanged() }
         trackingActions = TrackingActions(
             client: client, clock: clock, sync: sync, catalog: taskCatalog, availability: trackingAvailability,
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
