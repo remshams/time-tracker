@@ -82,6 +82,11 @@ final class OpenDialogUITests: TrackerUITestCase {
             MenuEntry(
                 name: "The task context menu", target: taskRow(task).coordinate(withNormalizedOffset: center),
                 open: { $0.rightClick() }, item: "Edit name"),
+            // The list's empty area below the rows has its own menu without a task.
+            MenuEntry(
+                name: "The task list menu",
+                target: element("task-sidebar.list").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)),
+                open: { $0.rightClick() }, item: "New task"),
             MenuEntry(
                 name: "The worklog context menu",
                 target: row.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
