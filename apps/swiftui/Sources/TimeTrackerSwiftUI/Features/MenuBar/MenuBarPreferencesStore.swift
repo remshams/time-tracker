@@ -2,7 +2,7 @@ import Observation
 import TrackerClient
 
 /// Owns the menu bar settings: the daily total, the task order and the keyboard shortcuts with their errors.
-/// It reads the saved order and daily total from the menu observer, which `TrackerStore` seeds from the same defaults.
+/// It reads the saved order and daily total from the menu observer, which the app seeds from the same defaults.
 @Observable
 final class MenuBarPreferencesStore {
     private let preferences: UserDefaultsMenuBarPreferences
