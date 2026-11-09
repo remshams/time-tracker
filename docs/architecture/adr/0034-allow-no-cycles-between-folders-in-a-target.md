@@ -53,7 +53,7 @@ This record replaces these clauses:
 - ADR 0032, "Reloads and selection": "Views call the last two through `TrackerStore`." After #362, views call `changeTab(_:)` and `selectTask(_:)` on `TrackerSync`.
 - ADR 0032, "Views": "The coordinator and the app menus read them through `TrackerStore` properties that point at `features`. `TrackerStore` otherwise keeps its Mac settings and forwarders." After #363, they read the feature objects directly. The menu settings move to `Features/MenuBar` in #360, and #363 deletes `TrackerStore` with its forwarders.
 - ADR 0026: "Make `TrackerStore`, `ConnectionDraftStore`, and `TrackerTaskPresentationCoordinator` observable." This no longer applies to `TrackerStore` after #363. The other two stay observable.
-- ADR 0033, Context: "Features can't call `TrackerSync`". This holds only for package features that `App/` creates, such as the dialog stores.
+- ADR 0033, Context: "Features can't call `TrackerSync`". A package feature can't call `TrackerSync` when that forms a cycle. `TrackerFeatures` in `App/` creates every package store, so this holds for all of them, including the dialog stores.
 
 ## Consequences
 
