@@ -7,7 +7,6 @@ final class TrackerStore {
     private let session: TrackerSession
     // Connection tests go straight to the worker; they don't touch the session's state.
     private let worker: TrackerWorker
-    private let presentation: TrackerPresentation
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
     private(set) var menuTaskOrder: MenuTaskOrder
@@ -40,13 +39,8 @@ final class TrackerStore {
             trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
-        presentation = TrackerPresentation(session: session)
         menu = TrackerMenuPresentationObserver(
             sources: TrackerMenuSources(session: session), showDailyTotal: showDailyTotal, taskOrder: taskOrder)
-        session.sync.onChange = { [weak self] in
-            guard let self else { return }
-            presentation.update(from: session)
-        }
         session.sync.setMenuBarClockEnabled(showDailyTotal)
         lifecycle = MacLifecycleObserver(sync: session.sync)
         lifecycle?.start()
