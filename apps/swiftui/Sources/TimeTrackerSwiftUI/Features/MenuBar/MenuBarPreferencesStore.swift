@@ -1,8 +1,8 @@
-import Foundation
 import Observation
 import TrackerClient
 
 /// Owns the menu bar settings: the daily total, the task order and the keyboard shortcuts with their errors.
+/// It reads the saved order and daily total from the menu observer, which `TrackerStore` seeds from the same defaults.
 @Observable
 final class MenuBarPreferencesStore {
     private let preferences: UserDefaultsMenuBarPreferences
@@ -27,9 +27,10 @@ final class MenuBarPreferencesStore {
         self.keyboardPreferences = keyboardPreferences
         self.menu = menu
         self.sync = sync
-        showDailyTotalInMenuBar = preferences.load()
-        menuTaskOrder = preferences.loadTaskOrder()
+        showDailyTotalInMenuBar = menu.showDailyTotal
+        menuTaskOrder = menu.taskOrder
         menuShortcuts = keyboardPreferences.load()
+        sync.setMenuBarClockEnabled(menu.showDailyTotal)
     }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {
@@ -57,25 +58,20 @@ final class MenuBarPreferencesStore {
 
     private func setMenuShortcuts(_ candidate: MenuKeyboardShortcuts, retryGlobal: Bool = false) {
         if let error = candidate.validationError {
-            reportMenuShortcutError(error)
+            menuShortcutValidationError = error
             return
         }
-        let changesGlobal = retryGlobal || candidate.openMenu != menuShortcuts.openMenu
-        if changesGlobal {
-            if let error = registerMenuShortcut?(candidate.openMenu) {
-                reportMenuShortcutError(error)
-                return
-            }
+        // A failed global registration retries even when the user records the same shortcut again.
+        let changesGlobal =
+            retryGlobal || menuGlobalShortcutError != nil || candidate.openMenu != menuShortcuts.openMenu
+        if changesGlobal, let error = registerMenuShortcut?(candidate.openMenu) {
+            menuShortcutValidationError = error
+            return
         }
         menuShortcuts = candidate
         menuShortcutValidationError = nil
         if changesGlobal { menuGlobalShortcutError = nil }
         keyboardPreferences.save(candidate)
-    }
-
-    private func reportMenuShortcutError(_ message: String?) {
-        guard menuShortcutValidationError != message else { return }
-        menuShortcutValidationError = message
     }
 
     func reportMenuGlobalShortcutError(_ message: String?) {
