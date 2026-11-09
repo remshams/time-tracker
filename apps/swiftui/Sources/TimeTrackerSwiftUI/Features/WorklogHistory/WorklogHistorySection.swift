@@ -43,7 +43,6 @@ struct WorklogHistorySection: View {
 
 /// Shows the history panel's message, with a retry button when the history failed to load.
 struct WorklogHistoryError: View {
-    @Environment(TrackerSync.self) private var sync
     @Environment(WorklogHistoryStore.self) private var history
 
     var body: some View {
@@ -58,7 +57,7 @@ struct WorklogHistoryError: View {
                 }
                 .foregroundStyle(.primary)
                 if history.unavailable {
-                    Button("Retry") { sync.retryHistory() }
+                    Button("Retry") { history.reload() }
                         .accessibilityIdentifier("worklog-history.retry")
                 }
             }
@@ -82,12 +81,11 @@ private struct WorklogHistoryHeading: View {
 }
 
 private struct HistoryPaginationButton: View {
-    @Environment(TrackerSync.self) private var sync
     @Environment(WorklogHistoryStore.self) private var history
     @Environment(ConnectionStore.self) private var connection
 
     var body: some View {
-        Button("Load older worklogs") { sync.loadOlder() }
+        Button("Load older worklogs") { history.loadOlder() }
             .accessibilityIdentifier("worklog-history.load-older")
             .disabled(connection.stale || history.isLoading)
     }

@@ -2,18 +2,17 @@ import SwiftUI
 import TrackerClient
 
 struct TrackerSidebar: View {
-    @Environment(TrackerSync.self) private var sync
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
     @Environment(ConnectionStore.self) private var connection
     @Environment(DailyTotalsStore.self) private var dailyTotals
 
     private var tabBinding: Binding<TaskTab> {
-        Binding(get: { catalog.tab }, set: { sync.changeTab($0) })
+        Binding(get: { catalog.tab }, set: { catalog.changeTab($0) })
     }
 
     private var selectionBinding: Binding<String?> {
-        Binding(get: { catalog.selectedTaskID }, set: { sync.selectTask($0) })
+        Binding(get: { catalog.selectedTaskID }, set: { catalog.select($0) })
     }
 
     var body: some View {
