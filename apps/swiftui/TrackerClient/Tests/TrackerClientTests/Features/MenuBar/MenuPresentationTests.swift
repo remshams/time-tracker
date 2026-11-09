@@ -46,9 +46,8 @@ final class MenuPresentationTests: XCTestCase {
         var valueChanges = 0
         observer.onLabelChange = { labelChanges += 1 }
         observer.onValuesChange = { valueChanges += 1 }
-        let window = PresentationHarness(session: fixture.session)
-        let windowTicks = window.counter(PresentationReads.timer)
-        let windowControls = window.counter(PresentationReads.controls)
+        let windowTimer = ObservationProbe { ViewReads.timer(fixture.session) }
+        let windowControls = ObservationProbe { ViewReads.controls(fixture.session) }
         observer.menuOpened()
         let originalContent = observer.content
         let originalLabel = observer.label
@@ -57,6 +56,7 @@ final class MenuPresentationTests: XCTestCase {
             fixture.clock.now.addTimeInterval(60)
             fixture.clock.uptime += 60
             display.fire()
+            XCTAssertTrue(windowTimer.consume(), "Freezing a menu must not freeze the window's clock.")
             try await menu.settled()
             let totals = fixture.session.dailyTotals
             XCTAssertEqual(observer.values.elapsedText, fixture.session.tracking.timerText)
@@ -83,8 +83,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 0)
         XCTAssertGreaterThanOrEqual(valueChanges, 3)
-        XCTAssertEqual(windowTicks.count, 3, "Freezing a menu must not freeze the window's clock.")
-        XCTAssertEqual(windowControls.count, 0, "Background polls must keep the window's controls stable.")
+        XCTAssertFalse(windowControls.consume(), "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
         observer.menuClosed()
         XCTAssertNotEqual(observer.content, originalContent)

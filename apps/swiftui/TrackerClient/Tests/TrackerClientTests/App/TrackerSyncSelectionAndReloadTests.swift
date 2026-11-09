@@ -2,33 +2,35 @@ import XCTest
 @testable import TrackerClient
 
 final class TrackerSyncSelectionAndReloadTests: XCTestCase {
-    private let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
-
     @MainActor
     func testTaskWriteReloadRunsThenAfterTheTaskListArrivesAndPublishesAroundIt() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         // The closure type a task dialog store declares.
         let reload: @MainActor (_ then: () -> Void) async -> Void = fixture.sync.reloadAfterTaskWrite(then:)
-        var events: [String] = []
         var tasksInThen: [TaskItem] = []
-        fixture.sync.onChange = { events.append("publish") }
+        var timerInThen: String?
+        fixture.advanceClock(by: 4)
 
         let finished = Task { @MainActor in
             await reload {
-                events.append("then")
                 tasksInThen = fixture.session.tasks
+                timerInThen = fixture.session.tracking.timerText
+                fixture.advanceClock(by: 4)
             }
         }
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertEqual(events, ["publish"], "The write result must show before the task list reloads.")
-        refresh.succeed(resources)
+        XCTAssertEqual(
+            fixture.session.tracking.timerText, "00:00:34", "The write result must show before the task list reloads.")
+        fixture.advanceClock(by: 4)
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         try await fixture.taskValue(finished)
 
         XCTAssertEqual(tasksInThen, [firstTask, secondTask])
-        XCTAssertEqual(events, ["publish", "publish", "then", "publish"])
+        XCTAssertEqual(timerInThen, "00:00:38", "The reloaded task list must show before `then` runs.")
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:42", "What `then` changed must show afterwards.")
         XCTAssertFalse(fixture.client.hasPendingRequests, "A task write must not reload an unchanged history.")
     }
 
@@ -36,21 +38,23 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
     func testWorklogWriteReloadRefreshesTheTaskListThenTheHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(resources)
+        let running = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        try await fixture.start(running)
         // The closure type a worklog dialog store declares.
         let reload: @MainActor () async -> Void = fixture.sync.reloadAfterWorklogWrite
-        var publishes = 0
-        fixture.sync.onChange = { publishes += 1 }
+        fixture.advanceClock(by: 4)
 
         let finished = Task { @MainActor in await reload() }
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertEqual(publishes, 1, "The write result must show before the task list reloads.")
-        refresh.succeed(resources)
+        XCTAssertEqual(
+            fixture.session.tracking.timerText, "00:00:34", "The write result must show before the task list reloads.")
+        fixture.advanceClock(by: 4)
+        refresh.succeed(running)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         try await fixture.taskValue(finished)
-        XCTAssertEqual(publishes, 3)
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:38", "The reloaded task list must show.")
         history.succeed(emptyPage)
         try await fixture.settled()
     }
@@ -59,25 +63,58 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
     func testChangingTheTabOrTaskLoadsTheHistoryAndPublishes() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
-        var publishes = 0
-        fixture.sync.onChange = { publishes += 1 }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
 
+        fixture.advanceClock(by: 4)
         fixture.sync.selectTask(secondTask.id)
         XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
-        XCTAssertEqual(publishes, 1)
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
         let selected = try await fixture.client.next()
         XCTAssertEqual(selected.operation, .history(task: secondTask.id, cursor: nil))
         selected.succeed(emptyPage)
         try await fixture.settled()
 
-        publishes = 0
+        fixture.advanceClock(by: 4)
         fixture.sync.changeTab(.archived)
         XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
-        XCTAssertEqual(publishes, 1)
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:38")
         let changed = try await fixture.client.next()
         XCTAssertEqual(changed.operation, .history(task: archivedTask.id, cursor: nil))
         changed.succeed(emptyPage)
+        try await fixture.settled()
+    }
+
+    @MainActor
+    func testNavigationUpdatesTheListsAndTheHistory() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
+        let lists = ObservationProbe { ViewReads.lists(fixture.session) }
+        let catalog = fixture.session.taskCatalog
+        let worklogHistory = fixture.session.worklogHistory
+
+        fixture.sync.selectTask(secondTask.id)
+        let history = try await fixture.client.next()
+        XCTAssertTrue(worklogHistory.isLoading)
+        XCTAssertTrue(lists.consume())
+        history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
+        try await fixture.settled()
+        XCTAssertEqual(catalog.selectedTask, secondTask)
+        XCTAssertEqual(worklogHistory.worklogs, [oldWorklog])
+        XCTAssertTrue(worklogHistory.hasMore)
+        XCTAssertTrue(lists.consume())
+
+        fixture.sync.changeTab(.archived)
+        XCTAssertEqual(catalog.tab, .archived)
+        XCTAssertEqual(catalog.visibleTasks, [archivedTask])
+        XCTAssertEqual(catalog.selectedTask, archivedTask)
+        XCTAssertTrue(lists.consume())
+        try await fixture.client.next().succeed(emptyPage)
+        try await fixture.settled()
+        fixture.sync.changeTab(.active)
+        XCTAssertEqual(catalog.selectedTask, secondTask)
+        XCTAssertTrue(lists.consume())
+        try await fixture.client.next().succeed(emptyPage)
         try await fixture.settled()
     }
 
@@ -107,14 +144,13 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
     func testKeepingTheTabOrTaskSendsNothingAndDoesNotPublish() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(resources)
-        var publishes = 0
-        fixture.sync.onChange = { publishes += 1 }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
+        fixture.advanceClock(by: 4)
 
         fixture.sync.selectTask(firstTask.id)
         fixture.sync.changeTab(.active)
 
-        XCTAssertEqual(publishes, 0)
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30", "Only a publish moves the timer text.")
         XCTAssertFalse(fixture.client.hasPendingRequests)
     }
 }

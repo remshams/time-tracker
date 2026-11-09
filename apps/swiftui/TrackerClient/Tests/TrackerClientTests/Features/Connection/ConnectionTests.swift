@@ -260,13 +260,59 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        let harness = PresentationHarness(session: fixture.session)
-        XCTAssertTrue(harness.availability.canStart(taskID: firstTask.id))
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
 
         fixture.scheduler.poll?.fire()
         try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
-        try await harness.settled(fixture)
-        XCTAssertFalse(harness.availability.canStart(taskID: firstTask.id))
+        try await fixture.settled()
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: firstTask.id))
+    }
+
+    @MainActor
+    func testStartupFailureUpdatesTheConnectionStatus() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+
+        fixture.sync.start()
+        let open = try await fixture.client.next()
+        open.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.connection.statusText, "Unavailable")
+        XCTAssertEqual(fixture.session.connection.message, "Server offline")
+        XCTAssertTrue(fixture.session.connection.stale)
+    }
+
+    @MainActor
+    func testFailuresAndConnectionChangesUpdateTheStores() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        let connection = fixture.session.connection
+
+        fixture.sync.selectTask(secondTask.id)
+        let history = try await fixture.client.next()
+        history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertNotNil(fixture.session.worklogHistory.error)
+        XCTAssertTrue(fixture.session.worklogHistory.unavailable)
+
+        let connecting = Task { await fixture.sync.connect(serverSettings) }
+        let request = try await fixture.client.next()
+        XCTAssertTrue(connection.changing)
+        request.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        _ = try await fixture.taskValue(connecting)
+        try await fixture.settled()
+        XCTAssertFalse(connection.changing)
+        XCTAssertNotNil(connection.message)
+
+        let connected = Task { await fixture.sync.connect(serverSettings) }
+        let accepted = try await fixture.client.next()
+        accepted.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        try await fixture.client.next().succeed(emptyPage)
+        let didConnect = try await fixture.taskValue(connected)
+        XCTAssertTrue(didConnect)
+        try await fixture.settled()
+        XCTAssertEqual(connection.settings, serverSettings)
     }
 
     @MainActor

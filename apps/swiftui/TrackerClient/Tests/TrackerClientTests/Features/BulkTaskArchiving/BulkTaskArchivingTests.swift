@@ -15,13 +15,9 @@ final class BulkTaskArchivingTests: XCTestCase {
         return preview
     }
 
-    /// A preview doesn't publish, so `Fixture.update` can't wait for it.
     @MainActor
     private func finishedLoading(_ fixture: Fixture) async throws {
-        let finished = Task { @MainActor in
-            while fixture.bulkTaskArchiving.isLoading && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.waitUntil("the preview") { !fixture.bulkTaskArchiving.isLoading }
     }
 
     /// Answers the latest preview request and waits until the store applies the result.
@@ -620,14 +616,27 @@ final class BulkTaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await openPreview(fixture)
-        let harness = PresentationHarness(session: fixture.session)
-        let sheet = ObservationProbe { PresentationReads.bulkTaskArchiving(harness) }
-        let content = ObservationProbe { PresentationReads.content(harness) }
+        let sheet = ObservationProbe { ViewReads.bulkTaskArchiving(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
 
         fixture.bulkTaskArchiving.setDays("0")
 
         XCTAssertTrue(sheet.consume())
         XCTAssertFalse(content.consume())
+    }
+
+    @MainActor
+    func testAvailabilityNotifiesOnlyWhenItChanges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let sheet = ObservationProbe { ViewReads.bulkTaskArchiving(fixture.session) }
+        XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        XCTAssertTrue(sheet.consume())
+        XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.cancel()
+        XCTAssertFalse(sheet.consume())
     }
 
     @MainActor

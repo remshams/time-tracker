@@ -324,8 +324,7 @@ final class TaskRenameTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        let harness = PresentationHarness(session: fixture.session)
-        let content = ObservationProbe { PresentationReads.content(harness) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
         fixture.taskRename.open(taskID: firstTask.id)
         fixture.taskRename.setName("Valid\u{0000}suffix")
         fixture.taskRename.submit()
@@ -468,9 +467,8 @@ final class TaskRenameTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        let harness = PresentationHarness(session: fixture.session)
-        let rename = ObservationProbe { PresentationReads.taskRename(harness) }
-        let content = ObservationProbe { PresentationReads.content(harness) }
+        let rename = ObservationProbe { ViewReads.taskRename(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
         fixture.taskCreation.open()
         fixture.taskCreation.cancel()
         XCTAssertFalse(rename.consume())

@@ -94,15 +94,14 @@ final class TaskArchivingTests: XCTestCase {
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         fixture.taskArchiving.submit()
         let command = try await fixture.client.next()
-        let harness = PresentationHarness(session: fixture.session)
         command.complete(.success(.task(TaskCommandResult(task: archived(secondTask)))))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertFalse(harness.taskArchiving.isPresented, "The dialog must close before the reload.")
-        XCTAssertFalse(harness.taskArchiving.isSubmitting)
+        XCTAssertFalse(fixture.taskArchiving.isPresented, "The dialog must close before the reload.")
+        XCTAssertFalse(fixture.taskArchiving.isSubmitting)
         reload.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
-        try await harness.settled(fixture)
-        XCTAssertEqual(harness.catalog.visibleTasks, [firstTask])
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.taskCatalog.visibleTasks, [firstTask])
     }
 
     @MainActor
@@ -445,9 +444,8 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
         fixture.worklogCorrection.open(worklogID: "missing")
-        let harness = PresentationHarness(session: fixture.session)
-        let archive = ObservationProbe { PresentationReads.taskArchiving(harness) }
-        let content = ObservationProbe { PresentationReads.content(harness) }
+        let archive = ObservationProbe { ViewReads.taskArchiving(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(archive.consume())
         XCTAssertTrue(fixture.worklogCorrection.canOpen)

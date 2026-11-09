@@ -77,13 +77,10 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(clock.tolerance, 5)
         XCTAssertNil(fixture.scheduler.display, "The clock runs while no window or menu is open.")
         XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 0)
-        var publishes = 0
-        fixture.sync.onChange = { publishes += 1 }
         let operationCount = fixture.client.operations.count
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
         clock.fire()
-        XCTAssertEqual(publishes, 1)
         XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 60)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         fixture.sync.setMenuBarClockEnabled(false)

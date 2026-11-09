@@ -505,8 +505,7 @@ final class WorklogCorrectionTests: XCTestCase {
         defer { fixture.cleanup() }
         _ = try await openCompleted(fixture)
         fixture.worklogCorrection.setStart(fixture.clock.now.addingTimeInterval(60))
-        let harness = PresentationHarness(session: fixture.session)
-        let sheet = ObservationProbe { PresentationReads.worklogCorrection(harness) }
+        let sheet = ObservationProbe { ViewReads.worklogCorrection(fixture.session) }
         let requests = fixture.client.operations.count
 
         fixture.worklogCorrection.submit()
@@ -521,9 +520,8 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         _ = try await openCompleted(fixture)
-        let harness = PresentationHarness(session: fixture.session)
-        let sheet = ObservationProbe { PresentationReads.worklogCorrection(harness) }
-        let content = ObservationProbe { PresentationReads.content(harness) }
+        let sheet = ObservationProbe { ViewReads.worklogCorrection(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
         fixture.worklogCorrection.setStart(parseTimestamp("2024-12-30T08:00:00.000Z")!)
         XCTAssertTrue(sheet.consume())
         XCTAssertFalse(content.consume())

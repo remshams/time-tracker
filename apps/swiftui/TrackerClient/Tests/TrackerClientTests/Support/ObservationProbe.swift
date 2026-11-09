@@ -36,85 +36,6 @@ final class ObservationProbe {
     }
 }
 
-/// Records a value after each presentation update that changed the tracked values.
-@MainActor
-final class ObservationRecorder<Value> {
-    private let probe: ObservationProbe
-    private let value: @MainActor () -> Value
-    private(set) var values: [Value] = []
-    var count: Int { values.count }
-
-    init(track: @escaping @MainActor () -> Void, value: @escaping @MainActor () -> Value) {
-        probe = ObservationProbe(track)
-        self.value = value
-    }
-
-    func sample() {
-        if probe.consume() { values.append(value()) }
-    }
-}
-
-/// Updates a presentation after each session change and checks that it mirrors the session.
-@MainActor
-final class PresentationHarness {
-    let presentation: TrackerPresentation
-    var catalog: TaskCatalogStore { session.taskCatalog }
-    var history: WorklogHistoryStore { session.worklogHistory }
-    var connection: ConnectionStore { session.connection }
-    var tracking: TrackingStore { session.tracking }
-    var dailyTotals: DailyTotalsStore { session.dailyTotals }
-    var automation: TrackingAutomationStore { session.trackingAutomation }
-    var availability: TrackingAvailability { session.trackingAvailability }
-    var taskRename: TaskRenameStore { session.taskRename }
-    var taskArchiving: TaskArchivingStore { session.taskArchiving }
-    var taskCreation: TaskCreationStore { session.taskCreation }
-    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
-    var worklogMove: WorklogMoveStore { session.worklogMove }
-    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
-    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }
-    private let session: TrackerSession
-    private var samplers: [@MainActor () -> Void] = []
-
-    init(session: TrackerSession) {
-        self.session = session
-        presentation = TrackerPresentation(session: session)
-        attach()
-    }
-
-    /// Restores the session change handler after a fixture helper replaced it.
-    func attach() { session.sync.onChange = { [weak self] in self?.update() } }
-
-    func update() {
-        presentation.update(from: session)
-        assertMirrors(presentation, session)
-        for sample in samplers { sample() }
-    }
-
-    /// Counts the updates that changed the values read by `track`.
-    func counter(_ track: @escaping @MainActor (PresentationHarness) -> Void) -> ObservationRecorder<Void> {
-        recorder(track) { () }
-    }
-
-    /// Records `value` after each update that changed the values read by `track`.
-    func recorder<Value>(
-        _ track: @escaping @MainActor (PresentationHarness) -> Void, value: @escaping @MainActor () -> Value
-    ) -> ObservationRecorder<Value> {
-        let recorder = ObservationRecorder(track: { [weak self] in if let self { track(self) } }, value: value)
-        samplers.append { recorder.sample() }
-        return recorder
-    }
-}
-
-extension PresentationHarness {
-    /// Waits for the session to finish its operation without replacing the presentation's change handler.
-    func settled(_ fixture: Fixture) async throws {
-        let finished = Task { @MainActor in
-            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
-    }
-}
-
 /// Collects which task total labels changed.
 @MainActor
 final class TaskTotalProbes {
@@ -131,121 +52,126 @@ final class TaskTotalProbes {
     func changed() -> Set<String> { Set(probes.filter { $0.value.consume() }.keys) }
 }
 
+/// Reads the values the window's views read, so a probe sees the changes that would redraw them.
 @MainActor
-enum PresentationReads {
+enum ViewReads {
     /// Reads the values the task list and worklog list display.
-    static func lists(_ views: PresentationHarness) {
-        _ = views.catalog.visibleTasks
-        _ = views.catalog.selectedTaskID
-        _ = views.catalog.selectedTask
-        _ = views.catalog.tab
-        _ = views.tracking.active
-        _ = views.connection.stale
-        _ = views.dailyTotals.status
-        _ = views.history.worklogs
-        _ = views.history.hasMore
-        _ = views.history.isLoading
-        _ = views.history.error
-        _ = views.history.unavailable
-        _ = views.automation.statusText
+    static func lists(_ session: TrackerSession) {
+        _ = session.taskCatalog.visibleTasks
+        _ = session.taskCatalog.selectedTaskID
+        _ = session.taskCatalog.selectedTask
+        _ = session.taskCatalog.tab
+        _ = session.tracking.active
+        _ = session.connection.stale
+        _ = session.dailyTotals.status
+        _ = session.worklogHistory.worklogs
+        _ = session.worklogHistory.hasMore
+        _ = session.worklogHistory.isLoading
+        _ = session.worklogHistory.error
+        _ = session.worklogHistory.unavailable
+        _ = session.trackingAutomation.statusText
     }
 
     /// Reads every window value outside the request controls, timer, totals, and feature sheets.
-    static func content(_ views: PresentationHarness) {
-        lists(views)
-        _ = views.tracking.error
-        _ = views.connection.settings
-        _ = views.connection.statusText
-        _ = views.connection.message
-        _ = views.connection.changing
-        _ = views.automation.enabled
+    static func content(_ session: TrackerSession) {
+        lists(session)
+        _ = session.tracking.error
+        _ = session.connection.settings
+        _ = session.connection.statusText
+        _ = session.connection.message
+        _ = session.connection.changing
+        _ = session.trackingAutomation.enabled
     }
 
-    static func controls(_ views: PresentationHarness) {
-        _ = views.availability.canStop
-        for task in views.catalog.tasks { _ = views.availability.canStart(taskID: task.id) }
+    static func controls(_ session: TrackerSession) {
+        _ = session.trackingAvailability.canStop
+        for task in session.taskCatalog.tasks { _ = session.trackingAvailability.canStart(taskID: task.id) }
     }
 
-    static func timer(_ views: PresentationHarness) { _ = views.tracking.timerText }
+    static func timer(_ session: TrackerSession) { _ = session.tracking.timerText }
 
-    static func taskCreation(_ views: PresentationHarness) {
-        _ = views.taskCreation.isPresented
-        _ = views.taskCreation.name
-        _ = views.taskCreation.isSubmitting
-        _ = views.taskCreation.error
-        _ = views.taskCreation.canOpen
+    static func taskCreation(_ session: TrackerSession) {
+        let store = session.taskCreation
+        _ = store.isPresented
+        _ = store.name
+        _ = store.isSubmitting
+        _ = store.error
+        _ = store.canOpen
     }
 
-    static func taskRename(_ views: PresentationHarness) {
-        _ = views.taskRename.isPresented
-        _ = views.taskRename.originalName
-        _ = views.taskRename.name
-        _ = views.taskRename.isSubmitting
-        _ = views.taskRename.error
-        _ = views.taskRename.canOpen
+    static func taskRename(_ session: TrackerSession) {
+        let store = session.taskRename
+        _ = store.isPresented
+        _ = store.originalName
+        _ = store.name
+        _ = store.isSubmitting
+        _ = store.error
+        _ = store.canOpen
     }
 
-    static func taskArchiving(_ views: PresentationHarness) {
-        _ = views.taskArchiving.isPresented
-        _ = views.taskArchiving.taskName
-        _ = views.taskArchiving.action
-        _ = views.taskArchiving.isSubmitting
-        _ = views.taskArchiving.error
+    static func taskArchiving(_ session: TrackerSession) {
+        let store = session.taskArchiving
+        _ = store.isPresented
+        _ = store.taskName
+        _ = store.action
+        _ = store.isSubmitting
+        _ = store.error
     }
 
-    static func bulkTaskArchiving(_ views: PresentationHarness) {
-        _ = views.bulkTaskArchiving.isPresented
-        _ = views.bulkTaskArchiving.daysText
-        _ = views.bulkTaskArchiving.isLoading
-        _ = views.bulkTaskArchiving.isSubmitting
-        _ = views.bulkTaskArchiving.hasPreview
-        _ = views.bulkTaskArchiving.tasks
-        _ = views.bulkTaskArchiving.error
-        _ = views.bulkTaskArchiving.archivedCount
-        _ = views.bulkTaskArchiving.canOpen
+    static func bulkTaskArchiving(_ session: TrackerSession) {
+        let store = session.bulkTaskArchiving
+        _ = store.isPresented
+        _ = store.daysText
+        _ = store.isLoading
+        _ = store.isSubmitting
+        _ = store.hasPreview
+        _ = store.tasks
+        _ = store.error
+        _ = store.archivedCount
+        _ = store.canOpen
     }
 
-    static func worklogCorrection(_ views: PresentationHarness) {
-        _ = views.worklogCorrection.isPresented
-        _ = views.worklogCorrection.taskName
-        _ = views.worklogCorrection.start
-        _ = views.worklogCorrection.end
-        _ = views.worklogCorrection.timezone
-        _ = views.worklogCorrection.isSubmitting
-        _ = views.worklogCorrection.error
-        _ = views.worklogCorrection.canOpen
+    static func worklogCorrection(_ session: TrackerSession) {
+        let store = session.worklogCorrection
+        _ = store.isPresented
+        _ = store.taskName
+        _ = store.start
+        _ = store.end
+        _ = store.timezone
+        _ = store.isSubmitting
+        _ = store.error
+        _ = store.canOpen
     }
 
-    static func worklogMove(_ views: PresentationHarness) {
-        _ = views.worklogMove.isPresented
-        _ = views.worklogMove.original
-        _ = views.worklogMove.sourceTaskName
-        _ = views.worklogMove.query
-        _ = views.worklogMove.candidates
-        _ = views.worklogMove.selectedTaskID
-        _ = views.worklogMove.isSearching
-        _ = views.worklogMove.isSubmitting
-        _ = views.worklogMove.error
-        _ = views.worklogMove.canOpen
+    static func worklogMove(_ session: TrackerSession) {
+        let store = session.worklogMove
+        _ = store.isPresented
+        _ = store.original
+        _ = store.sourceTaskName
+        _ = store.query
+        _ = store.candidates
+        _ = store.selectedTaskID
+        _ = store.isSearching
+        _ = store.isSubmitting
+        _ = store.error
+        _ = store.canOpen
     }
 
-    static func worklogDeletion(_ views: PresentationHarness) {
-        _ = views.worklogDeletion.isPresented
-        _ = views.worklogDeletion.taskName
-        _ = views.worklogDeletion.original
-        _ = views.worklogDeletion.isSubmitting
-        _ = views.worklogDeletion.error
-        _ = views.worklogDeletion.canOpen
+    static func worklogDeletion(_ session: TrackerSession) {
+        let store = session.worklogDeletion
+        _ = store.isPresented
+        _ = store.taskName
+        _ = store.original
+        _ = store.isSubmitting
+        _ = store.error
+        _ = store.canOpen
     }
 }
 
-/// Checks that every presentation value equals the session value it copies, and that publishing updated the
-/// tracking store's timer text, the auto-pause status and the daily totals store's values.
+/// Checks that the last publish updated the tracking store's timer text, the auto-pause status and the daily totals
+/// store's values. Call it only while the clock hasn't moved since that publish.
 @MainActor
-func assertMirrors(
-    _ presentation: TrackerPresentation, _ session: TrackerSession,
-    file: StaticString = #filePath, line: UInt = #line
-) {
+func assertPublished(_ session: TrackerSession, file: StaticString = #filePath, line: UInt = #line) {
     let automation = session.trackingAutomation
     XCTAssertEqual(automation.statusText, automation.pausedStatusText, file: file, line: line)
     let totals = session.dailyTotals
