@@ -25,15 +25,14 @@ final class TrackerStore {
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
         let savedPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
-        let showDailyTotal = savedPreferences.load()
-        let menu = TrackerMenuPresentationObserver(
-            sources: features.menuSources, showDailyTotal: showDailyTotal, taskOrder: savedPreferences.loadTaskOrder())
-        self.menu = menu
+        menu = TrackerMenuPresentationObserver(
+            sources: features.menuSources, showDailyTotal: savedPreferences.load(),
+            taskOrder: savedPreferences.loadTaskOrder())
+        // The store turns the menu bar clock on or off for the saved setting.
         menuBarPreferences = MenuBarPreferencesStore(
             preferences: savedPreferences,
             keyboardPreferences: UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults),
             menu: menu, sync: features.sync)
-        features.sync.setMenuBarClockEnabled(showDailyTotal)
         lifecycle = MacLifecycleObserver(sync: features.sync)
         lifecycle?.start()
         features.sync.start()
