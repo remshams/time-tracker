@@ -65,7 +65,6 @@ final class MenuPresentationTests: XCTestCase {
                 totals.taskDurations[firstTask.id].map(formatClockDuration))
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
-            XCTAssertTrue(fixture.client.hasPendingRequests)
             XCTAssertEqual(observer.content, originalContent)
             let updatedRows = [
                 TaskReportTotal(

@@ -434,7 +434,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testNewDayDuringEmptyStartupLoadsItsReportAndMovesTheRollover() async throws {
+    func testNewDayDuringEmptyStartupLoadsItsReportAndSchedulesTheRolloverForIt() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         fixture.sync.start()
@@ -447,7 +447,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertNil(fixture.totalsError)
         XCTAssertTrue(fixture.session.tasks.isEmpty)
         let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
-        XCTAssertEqual(rollover.delay, 86_400, "The accepted task list must move the rollover to the new day's end.")
+        XCTAssertEqual(rollover.delay, 86_400, "The accepted task list must schedule the rollover for the new day's end.")
         assertPublished(fixture.session)
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
         try await fixture.settled()

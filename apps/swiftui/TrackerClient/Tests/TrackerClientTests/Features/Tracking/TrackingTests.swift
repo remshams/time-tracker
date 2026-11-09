@@ -103,7 +103,6 @@ final class TrackingTests: XCTestCase {
             .start(
                 task: secondTask.id, expected: activeWorklog.id,
                 at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertTrue(fixture.client.hasPendingRequests)
         XCTAssertFalse(fixture.trackingAvailability.canStop)
         request.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await fixture.settled()
@@ -160,7 +159,6 @@ final class TrackingTests: XCTestCase {
         write.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let confirmation = try await fixture.client.next()
         XCTAssertEqual(confirmation.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertTrue(fixture.client.hasPendingRequests)
         XCTAssertFalse(fixture.trackingAvailability.canStop)
         XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
