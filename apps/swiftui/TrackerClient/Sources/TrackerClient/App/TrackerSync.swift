@@ -4,12 +4,10 @@ import Foundation
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
 /// connection change, the tab and task selection, and the reloads after dialog writes.
 ///
-/// `TrackerSession` creates the stores and passes them in. Its flows and `TrackingActions` call the
-/// package-internal methods below, for example to reload the task list or the history, record a failure and
-/// publish.
+/// `TrackerSession` creates the stores and passes them in. `TrackingActions` and the dialog stores' reload closures
+/// call the package-internal methods below, for example to reload the task list or the history, record a failure
+/// and publish.
 public final class TrackerSync {
-    public var onChange: (() -> Void)?
-
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
     private let clock: any TrackerClock
@@ -234,12 +232,11 @@ public final class TrackerSync {
         publish()
     }
 
-    /// Publishes the write result, reloads the task list and the history, and publishes again.
+    /// Publishes the write result, then reloads the task list, which publishes, and the history.
     func reloadAfterWorklogWrite() async {
         publish()
         await reloadTaskList()
         reloadHistory()
-        publish()
     }
 
     /// Changes to the tab and selection of a task the tracker just created, and reloads the history once if either
@@ -328,7 +325,6 @@ public final class TrackerSync {
         tracking.publish(clock: clock, confirmed: connection.confirmed)
         automation.publish()
         dailyTotals.publish(tasks: catalog.tasks, active: tracking.active, clock: clock)
-        onChange?()
     }
 
     /// Publishes each history page or failure and recovers the connection when the failure calls for it.
