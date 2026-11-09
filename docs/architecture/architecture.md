@@ -136,7 +136,7 @@ title: Applications
 ---
 flowchart TD
     mac["TimeTrackerSwiftUI<br>apps/swiftui/Sources/TimeTrackerSwiftUI<br>Scenes, views, AppKit integration, TrackerWorker"]:::module
-    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerSession, TrackerSync and TrackingActions"]:::module
+    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerFeatures, TrackerSync and TrackingActions"]:::module
     bridge["tracker-swift-bridge<br>apps/swiftui/bridge<br>C ABI, JSON results, Tokio runtime"]:::module
     tui["tracker-tui<br>apps/tui<br>The tt event loop, screens, rendering"]:::module
     cli["tracker-cli<br>apps/cli<br>The tt-cli commands, JSON, exit codes"]:::module
@@ -207,8 +207,8 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   carry the reviewed values. Create (`tt_bridge_create_task_at`), restore
   (`tt_bridge_unarchive_task_at`) and bulk archive
   (`tt_bridge_archive_inactive_tasks_at`) carry none.
-- [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift):
-  feature state, `TrackerSession`, `TrackerSync` and `TrackingActions` behind injected client,
+- [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerFeatures.swift):
+  feature state, `TrackerFeatures`, `TrackerSync` and `TrackingActions` behind injected client,
   report, clock, scheduler and settings interfaces. Each action sends its request right away; each feature
   disables only its own controls while a request runs
   ([ADR 0026](adr/0026-use-swift-observation-for-native-presentation.md),
@@ -232,8 +232,9 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingActions` starts and
   stops tracking after asking it; `TrackingActions` calls `TrackerSync` to reload
-  and publish, and the sync never calls it. The session creates the stores,
-  `TrackingAvailability`, `TrackerSync` and `TrackingActions`, and passes the
+  and publish, and the sync never calls it. `TrackerFeatures`, which `TrackerStore` and the
+  test fixture create, creates and holds the stores, `TrackingAvailability`,
+  `TrackerMenuSources`, `TrackerSync` and `TrackingActions`, and passes the
   dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
   `reloadAfterWorklogWrite()` as their reload closures.
   Settings checks a connection with the stateless `testConnectionSettings`
