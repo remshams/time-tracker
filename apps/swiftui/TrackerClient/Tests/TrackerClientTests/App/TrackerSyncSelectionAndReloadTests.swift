@@ -14,7 +14,7 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
 
         let finished = Task { @MainActor in
             await reload {
-                tasksInThen = fixture.features.tasks
+                tasksInThen = fixture.features.taskCatalog.tasks
                 timerInThen = fixture.features.tracking.timerText
             }
         }
