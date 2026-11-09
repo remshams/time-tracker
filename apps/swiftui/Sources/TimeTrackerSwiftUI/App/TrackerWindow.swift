@@ -6,7 +6,6 @@ import TrackerClient
 
 struct TrackerWindow: View {
     let runtime: TrackerAppRuntime
-    private let store: TrackerStore
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @Environment(TaskCatalogStore.self) private var catalog
@@ -15,7 +14,6 @@ struct TrackerWindow: View {
 
     init(runtime: TrackerAppRuntime) {
         self.runtime = runtime
-        store = runtime.store
         presentation = runtime.presentation
     }
 
@@ -43,10 +41,10 @@ struct TrackerWindow: View {
                     }
                 }
         } detail: {
-            TrackerDetailPresentation(store: store)
+            TrackerDetailPresentation()
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
-                        TrackerTaskToolbar(store: store)
+                        TrackerTaskToolbar(availability: runtime.features.trackingAvailability)
                     }
                 }
         }
@@ -172,7 +170,8 @@ private struct TrackerSidebarToolbar: View {
 }
 
 private struct TrackerTaskToolbar: View {
-    let store: TrackerStore
+    let availability: TrackingAvailability
+    @Environment(TrackingActions.self) private var trackingActions
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskArchivingStore.self) private var archiving
     @Environment(TaskRenameStore.self) private var rename
@@ -218,14 +217,14 @@ private struct TrackerTaskToolbar: View {
                 let isRunning = tracking.active?.taskId == task.id
                 let canTrack =
                     isRunning
-                    ? store.canStopTracking
-                    : store.canStartTracking(taskID: task.id)
+                    ? availability.canStop
+                    : availability.canStart(taskID: task.id)
                 Button {
                     guard canTrack else { return }
                     if let active = tracking.active, active.taskId == task.id {
-                        store.stopTracking(worklogID: active.id)
+                        trackingActions.stopTracking(worklogID: active.id)
                     } else {
-                        store.startTracking(taskID: task.id)
+                        trackingActions.startTracking(taskID: task.id)
                     }
                 } label: {
                     Label(

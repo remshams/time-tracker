@@ -8,7 +8,7 @@ struct TrackerApplicationMenus: Commands {
 
     init(runtime: TrackerAppRuntime) {
         self.runtime = runtime
-        creation = runtime.store.taskCreation
+        creation = runtime.features.taskCreation
     }
 
     private var canCreateTask: Bool { creation.canOpen && !runtime.presentation.hasPresentation }
