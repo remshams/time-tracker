@@ -6,7 +6,7 @@ Accepted. It partially supersedes the clauses of ADR 0026 and ADR 0030 listed un
 
 Partially superseded by [ADR 0033](0033-report-bulk-archive-preview-failures-through-a-closure.md); all other decisions remain accepted.
 
-Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for the reasons given for the reload closures and against the first rejected alternative, which still hold, for views calling `changeTab(_:)` and `selectTask(_:)` through `TrackerStore`, and for the coordinator and app menus reading the dialog stores through `TrackerStore`, which keeps its Mac settings and forwarders; all other decisions remain accepted.
+Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for the reasons given for the reload closures and against the first rejected alternative, though both decisions stay, for views calling `changeTab(_:)` and `selectTask(_:)` through `TrackerStore`, and for the coordinator and app menus reading the dialog stores through `TrackerStore`, which keeps its Mac settings and forwarders; all other decisions remain accepted.
 
 ## Date
 
