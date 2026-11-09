@@ -70,7 +70,7 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let initial = try await fixture.client.next()
         initial.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "old-source", reset: false))
         try await fixture.settled()
@@ -93,7 +93,7 @@ final class ConnectionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(resources)
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let previousHistory = try await fixture.client.next()
         previousHistory.succeed(emptyPage)
         try await fixture.settled()
@@ -155,7 +155,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await fixture.settled()
@@ -183,7 +183,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
@@ -288,7 +288,7 @@ final class ConnectionTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let connection = fixture.features.connection
 
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
         try await fixture.settled()

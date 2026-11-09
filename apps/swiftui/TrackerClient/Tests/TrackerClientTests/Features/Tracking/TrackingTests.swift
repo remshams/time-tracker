@@ -75,13 +75,13 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, firstTask.id)
         XCTAssertFalse(fixture.canStartSelectedTask)
 
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let selected = try await fixture.client.next()
         selected.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertTrue(fixture.canStartSelectedTask)
 
-        fixture.sync.changeTab(.archived)
+        fixture.features.taskCatalog.changeTab(.archived)
         let archived = try await fixture.client.next()
         archived.succeed(emptyPage)
         try await fixture.settled()

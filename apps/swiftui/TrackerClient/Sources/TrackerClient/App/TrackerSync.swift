@@ -3,7 +3,7 @@ import Observation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
-/// connection change, the tab and task selection, and the reloads after dialog writes.
+/// connection change, and the reloads after dialog writes.
 ///
 /// `TrackerFeatures` creates the stores and passes them in. `TrackingActions` and the dialog stores' reload closures
 /// call the package-internal methods below, for example to reload the task list or the history, record a failure
@@ -136,26 +136,6 @@ public final class TrackerSync {
         }
     }
 
-    public func retryHistory() {
-        guard started else { return }
-        reloadHistory()
-    }
-
-    public func loadOlder() {
-        guard !connection.stale else { return }
-        history.loadMore(failed: historyFailed)
-    }
-
-    public func changeTab(_ newTab: TaskTab) {
-        guard catalog.changeTab(newTab) else { return }
-        reloadHistory()
-    }
-
-    public func selectTask(_ taskID: String?) {
-        guard catalog.select(taskID) else { return }
-        reloadHistory()
-    }
-
     /// Switches to `settings`, saves them and loads their task list and today's totals. Returns false when
     /// another change is running or the tracker rejects the settings; the current connection then stays.
     public func connect(_ settings: ConnectionSettings) async -> Bool {
@@ -231,7 +211,7 @@ public final class TrackerSync {
     /// Reloads the task list, then the history.
     func reloadAfterWorklogWrite() async {
         await reloadTaskList()
-        reloadHistory()
+        history.reload()
     }
 
     /// Changes to the tab and selection of a task the tracker just created, and reloads the history once if either
@@ -239,9 +219,9 @@ public final class TrackerSync {
     /// decides the tab, and that tab restores its remembered selection or its first task.
     func showTask(_ created: TaskItem) {
         let confirmed = catalog.tasks.first { $0.id == created.id } ?? created
-        let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
-        let changedSelection = catalog.select(created.id)
-        if changedTab || changedSelection { reloadHistory() }
+        let changedTab = catalog.switchTab(to: confirmed.archived ? .archived : .active)
+        let changedSelection = catalog.switchSelection(to: created.id)
+        if changedTab || changedSelection { history.reload() }
     }
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
@@ -256,7 +236,7 @@ public final class TrackerSync {
         let selectionChanged = catalog.apply(
             resources.catalog.value, previousActive: previousActive, active: tracking.active)
         if selectionChanged || retryFailedHistory {
-            reloadHistory()
+            history.reload()
         } else if !history.unavailable {
             history.clearError()
         }
@@ -281,11 +261,6 @@ public final class TrackerSync {
             recordReadFailure(error)
             publish()
         }
-    }
-
-    /// Asks the history store for the selected task's first page.
-    private func reloadHistory() {
-        history.reload(selectedTaskID: catalog.selectedTaskID, failed: historyFailed)
     }
 
     private func recordConnectionFailure(_ failure: Error) {
@@ -320,11 +295,6 @@ public final class TrackerSync {
         tracking.publish(clock: clock, confirmed: connection.confirmed)
         automation.publish()
         dailyTotals.publish(tasks: catalog.tasks, active: tracking.active, clock: clock)
-    }
-
-    /// Recovers the connection when a history failure calls for it. A page changes nothing that `publish` shows.
-    private var historyFailed: @MainActor (Error) -> Void {
-        { [weak self] failure in self?.recordReadFailure(failure) }
     }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {

@@ -3,10 +3,10 @@ import Observation
 
 /// Holds the selected task's worklog pages and the history panel's loading and error state.
 ///
-/// Views read the properties. `TrackerSync` asks the store to reload the selected task or load more, and the
-/// store sends those page requests itself. Each property is assigned only when its value changes, so an
-/// unchanged poll redraws nothing and loading another page leaves the "Load older" button alone unless more
-/// pages appear or run out.
+/// Views read the properties, retry the selected task's first page and load older pages. `TrackerSync` and the task
+/// catalog's selection changes ask the store to reload, and the store sends those page requests itself. Each property
+/// is assigned only when its value changes, so an unchanged poll redraws nothing and loading another page leaves the
+/// "Load older" button alone unless more pages appear or run out.
 @Observable
 public final class WorklogHistoryStore: ChangeGuardedStore {
     public private(set) var worklogs: [WorklogItem] = []
@@ -19,22 +19,37 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
     // Only the page requests read the cursor and the requested task, so views don't observe them.
     @ObservationIgnored private(set) var nextCursor: String?
     @ObservationIgnored private var taskID: String?
+    /// Receives a failed page request's error, so that `TrackerSync` can recover the connection. It isn't called for a
+    /// failure whose task is no longer selected. `TrackerFeatures` sets it once, after it creates `TrackerSync`, which
+    /// needs this store.
+    @ObservationIgnored var recordReadFailure: @MainActor (Error) -> Void = { _ in }
     private let client: any TrackerClient
+    private let catalog: TaskCatalogStore
+    private let connection: ConnectionStore
 
-    init(client: any TrackerClient) { self.client = client }
-
-    /// Starts over with the selected task's first page. Requests are never cancelled: `failed` receives the error
-    /// after a failure, and isn't called for a failure whose task is no longer selected.
-    func reload(selectedTaskID: String?, failed: @escaping @MainActor (Error) -> Void) {
-        request(selectedTaskID: selectedTaskID)
-        guard let selectedTaskID else { return }
-        load(taskID: selectedTaskID, cursor: nil, failed: failed)
+    init(client: any TrackerClient, catalog: TaskCatalogStore, connection: ConnectionStore) {
+        self.client = client
+        self.catalog = catalog
+        self.connection = connection
     }
 
-    /// Requests the page after the loaded ones. Does nothing when a page is loading or none is left.
-    func loadMore(failed: @escaping @MainActor (Error) -> Void) {
-        guard !isLoading, let taskID, let nextCursor else { return }
-        load(taskID: taskID, cursor: nextCursor, failed: failed)
+    /// Starts over with the selected task's first page.
+    public func reload() {
+        reload(selectedTaskID: catalog.selectedTaskID)
+    }
+
+    /// Requests the page after the loaded ones. Does nothing while the connection is stale, a page is loading or none
+    /// is left.
+    public func loadOlder() {
+        guard !connection.stale, !isLoading, let taskID, let nextCursor else { return }
+        load(taskID: taskID, cursor: nextCursor)
+    }
+
+    /// Starts over with `selectedTaskID`'s first page. Requests are never cancelled.
+    func reload(selectedTaskID: String?) {
+        request(selectedTaskID: selectedTaskID)
+        guard let selectedTaskID else { return }
+        load(taskID: selectedTaskID, cursor: nil)
     }
 
     func request(selectedTaskID: String?) {
@@ -74,7 +89,7 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
         set(\.error, nil)
     }
 
-    private func load(taskID requested: String, cursor: String?, failed: @escaping @MainActor (Error) -> Void) {
+    private func load(taskID requested: String, cursor: String?) {
         beginLoading()
         Task { [weak self] in
             guard let self else { return }
@@ -86,7 +101,7 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
             } catch {
                 guard requested == taskID else { return }
                 fail(error)
-                failed(error)
+                recordReadFailure(error)
             }
         }
     }

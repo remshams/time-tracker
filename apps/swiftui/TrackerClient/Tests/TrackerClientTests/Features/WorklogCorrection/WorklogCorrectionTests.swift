@@ -15,7 +15,7 @@ final class WorklogCorrectionTests: XCTestCase {
     ) async throws -> WorklogItem {
         let log = worklog ?? preciseLog
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [log], nextCursor: "older", reset: false))
         try await fixture.settled()
@@ -51,9 +51,12 @@ final class WorklogCorrectionTests: XCTestCase {
         let client = FakeClient()
         let tracking = TrackingStore()
         tracking.apply(activeWorklog, clock: clock)
+        let connection = ConnectionStore(settings: .local)
+        let catalog = TaskCatalogStore()
         let correction = WorklogCorrectionStore(
-            client: client, clock: clock, connection: ConnectionStore(settings: .local), catalog: TaskCatalogStore(),
-            history: WorklogHistoryStore(client: client), tracking: tracking, reloadAfterWrite: {})
+            client: client, clock: clock, connection: connection, catalog: catalog,
+            history: WorklogHistoryStore(client: client, catalog: catalog, connection: connection), tracking: tracking,
+            reloadAfterWrite: {})
         XCTAssertFalse(correction.canOpen)
         correction.open(worklogID: activeWorklog.id)
         XCTAssertFalse(correction.isPresented)
@@ -464,7 +467,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [preciseLog], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -487,7 +490,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let log = try await openCompleted(fixture)
         let draft = try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z"))
         fixture.worklogCorrection.setStart(draft)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let changed = WorklogItem(
             id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
         let history = try await fixture.client.next()
@@ -578,7 +581,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let other = WorklogItem(
             id: "other-log", taskId: secondTask.id,
             start: log.start, end: log.end)

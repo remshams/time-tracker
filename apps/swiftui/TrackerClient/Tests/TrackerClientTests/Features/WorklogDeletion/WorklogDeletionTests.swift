@@ -15,7 +15,7 @@ final class WorklogDeletionTests: XCTestCase {
     @MainActor
     private func open(_ fixture: Fixture, rows: [WorklogItem]? = nil) async throws {
         try await fixture.start(resources)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: rows ?? [precise, oldWorklog], nextCursor: "older", reset: false))
         try await fixture.settled()
@@ -66,7 +66,7 @@ final class WorklogDeletionTests: XCTestCase {
         defer { fixture.cleanup() }
         let running = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(running)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: [activeWorklog, oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -166,7 +166,7 @@ final class WorklogDeletionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let selected = try await fixture.client.next()
         XCTAssertEqual(selected.operation, .history(task: secondTask.id, cursor: nil))
         selected.succeed(emptyPage)
@@ -185,7 +185,7 @@ final class WorklogDeletionTests: XCTestCase {
         defer { fixture.cleanup() }
         let running = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(running)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: [activeWorklog, precise], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -227,7 +227,7 @@ final class WorklogDeletionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let updated = try await fixture.client.next()
         updated.succeed(HistoryPage(worklogs: [changed, oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -451,7 +451,7 @@ final class WorklogDeletionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(resources)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: [orphan], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -465,11 +465,12 @@ final class WorklogDeletionTests: XCTestCase {
     @MainActor
     func testUnconfirmedConnectionKeepsTheDialogClosedEvenWithALoadedWorklog() async throws {
         let client = FakeClient()
-        let history = WorklogHistoryStore(client: client)
+        let connection = ConnectionStore(settings: .local)
+        let catalog = TaskCatalogStore()
+        let history = WorklogHistoryStore(client: client, catalog: catalog, connection: connection)
         history.accept(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false), cursor: nil)
         let deletion = WorklogDeletionStore(
-            client: client, connection: ConnectionStore(settings: .local), catalog: TaskCatalogStore(),
-            history: history, reloadAfterWrite: {})
+            client: client, connection: connection, catalog: catalog, history: history, reloadAfterWrite: {})
         XCTAssertFalse(deletion.canOpen)
 
         deletion.open(worklogID: oldWorklog.id)
@@ -504,7 +505,7 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.worklogDeletion.cancel()
         XCTAssertTrue(sheet.consume())
 
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: [precise, oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
