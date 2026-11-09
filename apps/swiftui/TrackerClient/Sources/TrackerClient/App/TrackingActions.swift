@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Starts and stops tracking from the window and the menu bar. `TrackingAvailability` decides which of those
 /// requests are possible right now.
@@ -6,6 +7,10 @@ import Foundation
 /// `TrackerFeatures` creates it with the stores and `TrackerSync`. After each request it asks the sync
 /// to cancel a pending auto-resume, reload the task list, record a failure and publish. The sync never calls
 /// back into this class.
+///
+/// It is observable only so that views can read it from the SwiftUI environment. It stores only constants, so views
+/// observe nothing on it.
+@Observable
 public final class TrackingActions {
     private let client: any TrackerClient
     private let clock: any TrackerClock
