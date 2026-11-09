@@ -2,7 +2,6 @@ import SwiftUI
 import TrackerClient
 
 struct TaskDetails: View {
-    let store: TrackerStore
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
     @Environment(TrackingAutomationStore.self) private var automation
@@ -50,10 +49,10 @@ struct TaskDetails: View {
                 .accessibilityIdentifier("task-details.task.\(task.id)")
 
                 Divider()
-                WorklogHistorySection(store: store)
+                WorklogHistorySection()
             } else {
                 VStack(alignment: .leading, spacing: 16) {
-                    WorklogHistoryError(store: store)
+                    WorklogHistoryError()
                     Label("Select a task", systemImage: "checklist")
                         .font(.title3)
                         .foregroundStyle(.secondary)
