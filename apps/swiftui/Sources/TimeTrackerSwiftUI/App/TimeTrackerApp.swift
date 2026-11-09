@@ -33,12 +33,13 @@ struct TimeTrackerApp: App {
         Window("Settings", id: TrackerSceneID.settings) {
             SettingsView(
                 connection: delegate.runtime.store.connection, sync: delegate.runtime.store.sync,
-                client: delegate.runtime.store.client)
-                .environment(delegate.runtime.store.sync)
-                .environment(delegate.runtime.store.connection)
-                .environment(delegate.runtime.store.trackingAutomation)
-                .environment(delegate.runtime.store.menuBarPreferences)
-                .frame(height: 680)
+                client: delegate.runtime.store.client
+            )
+            .environment(delegate.runtime.store.sync)
+            .environment(delegate.runtime.store.connection)
+            .environment(delegate.runtime.store.trackingAutomation)
+            .environment(delegate.runtime.store.menuBarPreferences)
+            .frame(height: 680)
         }
         .defaultSize(width: 540, height: 680)
         .windowResizability(.contentSize)
