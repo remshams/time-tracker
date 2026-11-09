@@ -162,7 +162,7 @@ final class StatusItemTests: XCTestCase {
             let count = fixture.client.operations.count
             XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .openMenu)
             XCTAssertEqual(fixture.client.operations.count, count)
-            let label = TrackerMenuLabelContent(.current(fixture.features), showDailyTotal: false)
+            let label = TrackerMenuLabelContent(fixture.features.menuSources.read(), showDailyTotal: false)
             XCTAssertEqual(label.indicator.taskID, remembered)
             XCTAssertEqual(label.indicator.symbol, "circle")
             if remembered == nil { XCTAssertEqual(label.help, "No task tracked yet") }
@@ -183,7 +183,7 @@ final class StatusItemTests: XCTestCase {
         XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         try await fixture.start(TaskListResources(tasks: [renamed], active: nil))
-        let label = TrackerMenuLabelContent(.current(fixture.features), showDailyTotal: false)
+        let label = TrackerMenuLabelContent(fixture.features.menuSources.read(), showDailyTotal: false)
         XCTAssertEqual(label.help, "Stopped. Last tracked: Renamed task")
         XCTAssertEqual(label.indicator.color, TaskColor.forTaskID(firstTask.id))
         XCTAssertEqual(fixture.trackingActions.menuPrimaryAction, .start(taskID: firstTask.id))
@@ -199,7 +199,7 @@ final class StatusItemTests: XCTestCase {
         refresh.fail(BridgeFailure(message: "Offline"))
         try await fixture.settled()
         XCTAssertEqual(fixture.trackingActions.performMenuPrimaryAction(), .disabled)
-        let label = TrackerMenuLabelContent(.current(fixture.features), showDailyTotal: false)
+        let label = TrackerMenuLabelContent(fixture.features.menuSources.read(), showDailyTotal: false)
         XCTAssertEqual(label.indicator.symbol, "circle")
         XCTAssertEqual(label.help, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(fixture.features.menuBar.lastTrackedTaskID, firstTask.id)
