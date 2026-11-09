@@ -62,6 +62,16 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertNil(fixture.trackingAutomation.statusText)
     }
 
+    func testTurningThePreferenceOffClearsTheShownPausedStatus() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        try await acknowledgePause(fixture)
+        XCTAssertEqual(fixture.trackingAutomation.statusText, "Paused while screen is locked")
+        fixture.sync.setPauseOnScreenLock(false)
+        XCTAssertNil(fixture.trackingAutomation.statusText)
+    }
+
     func testIdleLockNeverStartsTrackingOnUnlock() async throws {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
