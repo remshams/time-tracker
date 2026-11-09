@@ -4,9 +4,8 @@ import TrackerClient
 struct SettingsView: View {
     @State private var connectionDraft: ConnectionDraftStore
 
-    init(connection: ConnectionStore, sync: TrackerSync, client: any TrackerClient) {
-        _connectionDraft = State(
-            initialValue: ConnectionDraftStore(connection: connection, sync: sync, client: client))
+    init(connection: ConnectionStore, client: any TrackerClient) {
+        _connectionDraft = State(initialValue: ConnectionDraftStore(connection: connection, client: client))
     }
 
     var body: some View {

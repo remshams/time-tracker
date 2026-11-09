@@ -6,7 +6,6 @@ import TrackerClient
 @Observable
 final class ConnectionDraftStore {
     private let connection: ConnectionStore
-    private let sync: TrackerSync
     // Connection tests go straight to the client; they don't touch the stores.
     private let client: any TrackerClient
 
@@ -15,9 +14,8 @@ final class ConnectionDraftStore {
     private(set) var resultMessage: String?
     private(set) var resultSucceeded = false
 
-    init(connection: ConnectionStore, sync: TrackerSync, client: any TrackerClient) {
+    init(connection: ConnectionStore, client: any TrackerClient) {
         self.connection = connection
-        self.sync = sync
         self.client = client
         settings = connection.settings
     }
@@ -58,7 +56,7 @@ final class ConnectionDraftStore {
         operationPending = true
         resultMessage = nil
         Task {
-            let succeeded = await self.sync.connect(settings)
+            let succeeded = await self.connection.connect(settings)
             self.resultSucceeded = succeeded
             self.resultMessage =
                 self.resultSucceeded
