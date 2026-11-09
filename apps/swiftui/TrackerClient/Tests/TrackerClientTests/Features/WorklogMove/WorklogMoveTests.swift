@@ -579,6 +579,22 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
+    func testKeyboardSelectionClearsTheWriteError() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        _ = try await open(fixture)
+        fixture.worklogMove.submit()
+        let command = try await fixture.client.next()
+        command.fail(BridgeFailure(message: "Move rejected", kind: "conflict"))
+        let reload = try await fixture.client.next()
+        reload.succeed(resources)
+        try await finishHistory(fixture)
+        XCTAssertEqual(fixture.worklogMove.error, "Move rejected")
+        fixture.worklogMove.moveSelection(by: 1)
+        XCTAssertNil(fixture.worklogMove.error)
+    }
+
+    @MainActor
     func testSelectionUsesWorkerRankingAndClampsKeyboardNavigation() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
