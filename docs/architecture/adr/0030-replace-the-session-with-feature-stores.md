@@ -6,7 +6,7 @@ Accepted. It partially supersedes the clauses of ADR 0026 listed under [Supersed
 
 Partially superseded by [ADR 0032](0032-move-the-dialogs-into-feature-stores.md) for the removal of `publish()`, passive stores, follow-ups only in `App/`, stored derived values in dialog stores, plain row values and the kept sheet content; all other decisions remain accepted.
 
-Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for "Only `App/` composes features at runtime" and the matching parts of "Feature dependencies"; all other decisions remain accepted.
+Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for three clauses of "Feature dependencies": "Only `App/` composes features at runtime", the no-cycle rule for Swift folders, and the sentence that `docs/architecture/architecture.md` doesn't list the rule; all other decisions remain accepted.
 
 ## Date
 
