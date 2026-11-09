@@ -36,7 +36,7 @@ struct TrackerWindow: View {
 
     private var content: some View {
         TrackerSplitLayout(columnVisibility: $columnVisibility) {
-            TrackerSidebar(store: store)
+            TrackerSidebar()
                 .toolbar {
                     ToolbarItemGroup(placement: .automatic) {
                         TrackerSidebarToolbar()

@@ -70,7 +70,7 @@ struct TrackerDetailPresentation: View {
     }
 
     var body: some View {
-        TaskDetails(store: store)
+        TaskDetails()
             .background {
                 EditorSheet(
                     isPresented: { store.taskCreation.isPresented },
