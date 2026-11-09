@@ -219,7 +219,7 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   text from `TrackingStore`, today's status and task totals from
   `DailyTotalsStore`, the auto-pause preference and status from
   `TrackingAutomationStore`, whether tracking can start or stop from
-  `TrackingAvailability`, and the other session values from `TrackerPresentation`
+  `TrackingAvailability`, and each dialog's state from its own feature store
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
   bar observer reads these stores, the last tracked task from `MenuBarStore` and
   the start and stop checks from `TrackingAvailability` through one
@@ -233,9 +233,9 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   decide which tracking requests are possible. `TrackingActions` starts and
   stops tracking after asking it; `TrackingActions` calls `TrackerSync` to reload
   and publish, and the sync never calls it. The session creates the stores,
-  `TrackingAvailability`, `TrackerSync` and `TrackingActions`; its editor flows
-  call `reloadAfterTaskWrite(then:)` or `reloadAfterWorklogWrite()` on
-  `TrackerSync` and publish.
+  `TrackingAvailability`, `TrackerSync` and `TrackingActions`, and passes the
+  dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
+  `reloadAfterWorklogWrite()` as their reload closures.
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
   `WorklogHistoryStore` sends its own page requests and reports each page or
