@@ -3,8 +3,9 @@ import Observation
 
 /// Holds the screen-lock auto-pause preference, its status and its bookkeeping for the whole app.
 ///
-/// Views read `enabled` and `statusText`; `TrackerSync` writes them. Each observed property is assigned only
-/// when its value changes. The status text changes only when `TrackerSync` publishes.
+/// Views read `enabled` and `statusText` and turn the auto-pause on or off; `TrackerSync` writes the status text. Each
+/// observed property is assigned only when its value changes. The status text changes only when `TrackerSync`
+/// publishes.
 @Observable
 public final class TrackingAutomationStore: ChangeGuardedStore {
     struct Resume {
@@ -21,8 +22,25 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
     @ObservationIgnored private var isPausing = false
     @ObservationIgnored private var pauseMayResume = false
     @ObservationIgnored private var unlockedAt: Date?
+    /// Pauses the running timer if the screen is locked and the auto-pause is on, and publishes. `TrackerFeatures`
+    /// sets it once, after it creates `TrackerSync`, which needs this store.
+    @ObservationIgnored var pauseOnScreenLockChanged: @MainActor () -> Void = {}
+    private let repository: any TrackingPreferencesRepository
 
-    init(preferences: TrackingPreferences) { enabled = preferences.pauseOnScreenLock }
+    init(repository: any TrackingPreferencesRepository) {
+        self.repository = repository
+        enabled = repository.load().pauseOnScreenLock
+    }
+
+    /// Turns the screen-lock auto-pause on or off and saves the preference. Turning it on while the screen is
+    /// locked pauses the running timer.
+    public func setPauseOnScreenLock(_ enabled: Bool) {
+        guard self.enabled != enabled else { return }
+        set(\.enabled, enabled)
+        cancel()
+        repository.save(TrackingPreferences(pauseOnScreenLock: enabled))
+        pauseOnScreenLockChanged()
+    }
 
     /// The status text that the next publish shows.
     var pausedStatusText: String? {
@@ -31,13 +49,6 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
 
     /// Shows the current status text. `TrackerSync` calls this each time it publishes.
     func publish() { set(\.statusText, pausedStatusText) }
-
-    func setEnabled(_ enabled: Bool) -> Bool {
-        guard self.enabled != enabled else { return false }
-        set(\.enabled, enabled)
-        cancel()
-        return true
-    }
 
     /// Returns false when the screen was already locked.
     func lock() -> Bool {
