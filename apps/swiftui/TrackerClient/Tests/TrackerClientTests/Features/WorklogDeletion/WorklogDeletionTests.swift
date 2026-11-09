@@ -481,12 +481,25 @@ final class WorklogDeletionTests: XCTestCase {
     // MARK: - Redraws
 
     @MainActor
+    func testAvailabilityNotifiesOnlyWhenItChanges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let sheet = ObservationProbe { ViewReads.worklogDeletion(fixture.session) }
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        XCTAssertTrue(sheet.consume())
+        XCTAssertTrue(fixture.worklogDeletion.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.cancel()
+        XCTAssertFalse(sheet.consume())
+    }
+
+    @MainActor
     func testOnlyDialogChangesRedrawTheSheet() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
-        let harness = PresentationHarness(session: fixture.session)
-        let sheet = ObservationProbe { PresentationReads.worklogDeletion(harness) }
+        let sheet = ObservationProbe { ViewReads.worklogDeletion(fixture.session) }
 
         fixture.worklogDeletion.cancel()
         XCTAssertTrue(sheet.consume())

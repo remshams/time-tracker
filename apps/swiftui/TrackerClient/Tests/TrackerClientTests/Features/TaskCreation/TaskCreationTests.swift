@@ -376,9 +376,8 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        let harness = PresentationHarness(session: fixture.session)
-        let creation = ObservationProbe { PresentationReads.taskCreation(harness) }
-        let content = ObservationProbe { PresentationReads.content(harness) }
+        let creation = ObservationProbe { ViewReads.taskCreation(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
         fixture.taskCreation.open()
         XCTAssertTrue(creation.consume())
         fixture.taskCreation.setName("Draft")
@@ -388,6 +387,27 @@ final class TaskCreationTests: XCTestCase {
         fixture.taskCreation.cancel()
         XCTAssertTrue(creation.consume())
         XCTAssertFalse(content.consume())
+    }
+
+    @MainActor
+    func testDraftEditsNotifyOnlyTheirSheet() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
+        fixture.taskCreation.open()
+        let lists = ObservationProbe { ViewReads.lists(fixture.session) }
+        let controls = ObservationProbe { ViewReads.controls(fixture.session) }
+        let rename = ObservationProbe { ViewReads.taskRename(fixture.session) }
+        let creation = ObservationProbe { ViewReads.taskCreation(fixture.session) }
+
+        for name in ["N", "Ne", "New"] {
+            fixture.taskCreation.setName(name)
+            XCTAssertTrue(creation.consume())
+            XCTAssertEqual(fixture.taskCreation.name, name)
+        }
+        XCTAssertFalse(lists.consume())
+        XCTAssertFalse(controls.consume())
+        XCTAssertFalse(rename.consume())
     }
 
     @MainActor
@@ -459,8 +479,7 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.start()
         fixture.taskCreation.open()
         fixture.taskCreation.setName("Valid\u{0000}suffix")
-        let harness = PresentationHarness(session: fixture.session)
-        let creation = ObservationProbe { PresentationReads.taskCreation(harness) }
+        let creation = ObservationProbe { ViewReads.taskCreation(fixture.session) }
         fixture.taskCreation.submit()
         XCTAssertEqual(fixture.taskCreation.error, "Task names must not contain control characters.")
         XCTAssertEqual(fixture.taskCreation.name, "Valid\u{0000}suffix")

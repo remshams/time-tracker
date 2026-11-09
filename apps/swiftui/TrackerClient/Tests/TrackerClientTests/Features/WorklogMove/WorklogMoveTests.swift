@@ -30,13 +30,9 @@ final class WorklogMoveTests: XCTestCase {
         return log
     }
 
-    /// A search result doesn't publish, so this waits on the store instead of `Fixture.update`.
     @MainActor
     private func searchFinished(_ fixture: Fixture) async throws {
-        let finished = Task { @MainActor in
-            while fixture.worklogMove.isSearching && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.waitUntil("the search result") { !fixture.worklogMove.isSearching }
     }
 
     /// Answers a candidate search and waits until the store shows the result.
@@ -481,13 +477,26 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
+    func testAvailabilityNotifiesOnlyWhenItChanges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let move = ObservationProbe { ViewReads.worklogMove(fixture.session) }
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        XCTAssertTrue(move.consume())
+        XCTAssertTrue(fixture.worklogMove.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.cancel()
+        XCTAssertFalse(move.consume())
+    }
+
+    @MainActor
     func testCandidateChangesDoNotRedrawHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         _ = try await open(fixture)
-        let harness = PresentationHarness(session: fixture.session)
-        let content = ObservationProbe { PresentationReads.content(harness) }
-        let move = ObservationProbe { PresentationReads.worklogMove(harness) }
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let move = ObservationProbe { ViewReads.worklogMove(fixture.session) }
         fixture.worklogMove.setQuery("second")
         let search = try await fixture.client.next()
         try await loadCandidates(fixture, search)

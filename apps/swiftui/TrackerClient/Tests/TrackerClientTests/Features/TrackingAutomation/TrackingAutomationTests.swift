@@ -499,4 +499,53 @@ final class TrackingAutomationTests: XCTestCase {
             })
     }
 
+    func testChangingThePreferenceNotifiesTheWindowOnce() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
+
+        fixture.sync.setPauseOnScreenLock(true)
+        XCTAssertTrue(content.consume())
+        XCTAssertTrue(fixture.trackingAutomation.enabled)
+
+        fixture.sync.setPauseOnScreenLock(true)
+        XCTAssertFalse(content.consume(), "Repeating the preference must not redraw the window.")
+    }
+
+    func testTrackingErrorsAndAutomaticPauseUpdateTheStores() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        let tracking = fixture.session.tracking
+
+        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        let write = try await fixture.client.next()
+        write.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
+        let confirmation = try await fixture.client.next()
+        confirmation.succeed(running)
+        try await fixture.settled()
+        XCTAssertEqual(
+            tracking.error, "Could not confirm the change. Check the reloaded data before trying again. Response lost")
+        fixture.trackingActions.dismissTrackingError()
+        XCTAssertNil(tracking.error)
+
+        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        let pause = try await fixture.client.next()
+        pause.paused(idle)
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.trackingAutomation.statusText, "Paused while screen is locked")
+        XCTAssertNil(tracking.active)
+
+        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        XCTAssertNil(fixture.trackingAutomation.statusText, "Unlocking must clear the status before the resume.")
+        let resume = try await fixture.client.next()
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(fixture.clock.now)))
+        resume.succeed(running)
+        try await fixture.client.next().succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(tracking.active, activeWorklog)
+    }
 }

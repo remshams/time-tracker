@@ -144,6 +144,8 @@ final class FakeClient: TrackerClient, ReportClient {
     private var deliveringReplies = 0
     private var closed = false
     var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }
+    /// Whether a request has its reply but the code that sent the request hasn't resumed yet.
+    var hasReplyInFlight: Bool { deliveringReplies > outstanding.count }
     private var commandPublication: TaskListResources?
     private var waiters: [(id: UUID, expectation: XCTestExpectation)] = []
     private var outstanding: [UUID: CheckedContinuation<Reply, Error>] = [:]
@@ -446,7 +448,6 @@ final class Fixture {
     }
 
     func cleanup() {
-        sync.onChange = nil
         sync.sleep()
         client.close()
     }
@@ -502,46 +503,40 @@ final class Fixture {
         return try completedResult.get()
     }
 
-    /// Runs `action`, then waits for the next session update that satisfies `condition`.
+    /// Moves the clock without a timer tick, so only a publish can show the new elapsed time.
+    func advanceClock(by seconds: TimeInterval) {
+        clock.now.addTimeInterval(seconds)
+        clock.uptime += seconds
+    }
+
+    /// Runs `action`, normally a reply to a request, waits until the app has handled that reply and `condition`
+    /// holds, then lets any task the reply started send its first request.
+    ///
+    /// Waiting for the reply first means a condition that was already true can't end the wait early.
     func update(
         _ description: String, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line,
-        after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }
+        after action: () -> Void, until condition: @MainActor () -> Bool = { true }
     ) async throws {
-        let expectation = XCTestExpectation(description: description)
-        sync.onChange = { [weak sync = session.sync] in
-            if condition() {
-                sync?.onChange = nil
-                expectation.fulfill()
-            }
-        }
         action()
-        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
-        sync.onChange = nil
-        guard result == .completed else {
-            cleanup()
-            throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")
+        try await waitUntil(description, timeout: timeout, file: file, line: line) {
+            !client.hasReplyInFlight && condition()
         }
+        await Task.yield()
     }
 
     func waitUntil(
         _ description: String, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line,
-        _ condition: @escaping @MainActor () -> Bool
+        _ condition: @MainActor () -> Bool
     ) async throws {
-        if condition() { return }
-        let expectation = XCTestExpectation(description: description)
-        sync.onChange = { [weak sync = session.sync] in
-            if condition() {
-                sync?.onChange = nil
-                expectation.fulfill()
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else {
+                cleanup()
+                throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")
             }
-        }
-        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
-        sync.onChange = nil
-        guard result == .completed else {
-            cleanup()
-            throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")
+            await Task.yield()
         }
     }
 }

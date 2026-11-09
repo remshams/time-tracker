@@ -7,20 +7,17 @@ final class HistoryPresentationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        let harness = PresentationHarness(session: fixture.session)
-        let content = harness.counter(PresentationReads.content)
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
 
         fixture.sync.selectTask(secondTask.id)
         let request = try await fixture.client.next()
-        let changesWhileWaiting = content.count
-        XCTAssertTrue(harness.history.isLoading)
+        XCTAssertTrue(content.consume())
+        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         request.succeed(emptyPage)
-        try await harness.settled(fixture)
+        try await fixture.settled()
         XCTAssertFalse(fixture.client.hasPendingRequests)
-        XCTAssertFalse(harness.history.isLoading)
-        XCTAssertGreaterThan(
-            content.count, changesWhileWaiting,
-            "Completing an empty history read must replace the loading presentation.")
+        XCTAssertFalse(fixture.session.worklogHistory.isLoading)
+        XCTAssertTrue(content.consume(), "Completing an empty history read must replace the loading presentation.")
     }
 
 }

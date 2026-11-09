@@ -112,4 +112,21 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         poll.succeed(emptyTaskListResources)
         try await fixture.settled()
     }
+
+    @MainActor
+    func testPollWithAChangedTaskNameNotifiesTheWindow() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
+
+        fixture.scheduler.poll?.fire()
+        let refresh = try await fixture.client.next()
+        refresh.succeed(TaskListResources(tasks: [renamed], active: activeWorklog))
+        try await fixture.settled()
+
+        XCTAssertTrue(content.consume())
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTask?.name, "Renamed task")
+    }
 }

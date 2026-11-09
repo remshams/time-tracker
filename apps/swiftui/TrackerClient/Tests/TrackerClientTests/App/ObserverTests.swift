@@ -21,25 +21,22 @@ final class ObserverTests: XCTestCase {
     }
 
     @MainActor
-    func testVisibleStartupStartsDisplayTimerAndTickNotifiesWithoutFetchingData() async throws {
+    func testVisibleStartupStartsDisplayTimerAndTickUpdatesTheTimerWithoutFetchingData() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.sync.setWindowVisible(true)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
-        var observedTimerText: String?
-        fixture.sync.onChange = { observedTimerText = fixture.session.tracking.timerText }
 
-        fixture.clock.now.addTimeInterval(4)
-        fixture.clock.uptime += 4
+        fixture.advanceClock(by: 4)
         display.fire()
-        XCTAssertEqual(observedTimerText, "00:00:34")
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
     }
 
     @MainActor
-    func testShowingWindowDuringRefreshNotifiesUpdatedTimeAndSchedulesDisplay() async throws {
+    func testShowingWindowDuringRefreshUpdatesTheTimeAndSchedulesDisplay() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
@@ -47,47 +44,33 @@ final class ObserverTests: XCTestCase {
         fixture.sync.refresh()
         let request = try await fixture.client.next()
         let operationCount = fixture.client.operations.count
-        fixture.clock.now.addTimeInterval(4)
-        fixture.clock.uptime += 4
-        var observedTimerText: String?
-        var observedBusy: Bool?
-        var observedDisplayScheduled: Bool?
-        fixture.sync.onChange = {
-            observedTimerText = fixture.session.tracking.timerText
-            observedBusy = fixture.client.hasPendingRequests
-            observedDisplayScheduled = fixture.scheduler.display != nil
-        }
+        fixture.advanceClock(by: 4)
 
         fixture.sync.setWindowVisible(true)
-        XCTAssertEqual(observedTimerText, "00:00:34")
-        XCTAssertEqual(observedBusy, true)
-        XCTAssertEqual(observedDisplayScheduled, true)
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertTrue(fixture.client.hasPendingRequests)
+        XCTAssertNotNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         request.succeed(resources)
         try await fixture.settled()
     }
 
     @MainActor
-    func testResourceObserverCanChooseTaskWhileInitialHistoryIsInFlight() async throws {
+    func testChoosingATaskWhileInitialHistoryIsInFlightLoadsItsHistoryAndDropsTheOlderPage() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        var choseTask = false
-        fixture.sync.onChange = {
-            guard !choseTask, fixture.session.tasks.contains(secondTask) else { return }
-            choseTask = true
-            fixture.sync.selectTask(secondTask.id)
-        }
         fixture.sync.start()
         let open = try await fixture.client.next()
         open.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
-        XCTAssertTrue(choseTask)
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        history.succeed(emptyPage)
+        fixture.sync.selectTask(secondTask.id)
+        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
         let selectedHistory = try await fixture.client.next()
         XCTAssertEqual(selectedHistory.operation, .history(task: secondTask.id, cursor: nil))
-        selectedHistory.succeed(emptyPage)
+        history.succeed(HistoryPage(worklogs: [activeWorklog], nextCursor: nil, reset: false))
+        selectedHistory.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
     }
 }

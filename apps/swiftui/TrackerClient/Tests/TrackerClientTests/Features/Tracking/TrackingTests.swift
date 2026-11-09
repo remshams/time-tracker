@@ -328,6 +328,74 @@ final class TrackingTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tracking.error, "Start rejected again")
     }
+
+    @MainActor
+    func testClockTicksUpdateOnlyElapsedTextWithoutInvalidatingLists() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        fixture.sync.setWindowVisible(true)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let controls = ObservationProbe { ViewReads.controls(fixture.session) }
+        let timer = ObservationProbe { ViewReads.timer(fixture.session) }
+        let display = try XCTUnwrap(fixture.scheduler.display)
+        let operationCount = fixture.client.operations.count
+
+        for expected in ["00:00:31", "00:00:32", "00:00:33"] {
+            fixture.advanceClock(by: 1)
+            display.fire()
+            XCTAssertTrue(timer.consume())
+            XCTAssertEqual(fixture.session.tracking.timerText, expected)
+        }
+        XCTAssertFalse(content.consume())
+        XCTAssertFalse(controls.consume())
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+        display.fire()
+        XCTAssertFalse(timer.consume(), "Repeating the same formatted second must not redraw the timer.")
+    }
+
+    @MainActor
+    func testUnchangedServerPollsDoNotInvalidateControlsOrLists() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
+        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let controls = ObservationProbe { ViewReads.controls(fixture.session) }
+        let timer = ObservationProbe { ViewReads.timer(fixture.session) }
+
+        for _ in 0..<3 {
+            fixture.scheduler.poll?.fire()
+            let refresh = try await fixture.client.next()
+            XCTAssertTrue(fixture.client.hasPendingRequests)
+            XCTAssertTrue(fixture.trackingAvailability.canStop)
+            refresh.succeed(resources)
+            try await fixture.settled()
+            XCTAssertTrue(fixture.trackingAvailability.canStop)
+        }
+        XCTAssertFalse(content.consume())
+        XCTAssertFalse(timer.consume())
+        XCTAssertFalse(controls.consume())
+    }
+
+    @MainActor
+    func testStartingATimerUpdatesTheControls() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
+        let controls = ObservationProbe { ViewReads.controls(fixture.session) }
+
+        XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
+        fixture.trackingActions.startTracking(taskID: firstTask.id)
+        XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: firstTask.id))
+        let start = try await fixture.client.next()
+        start.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
+        try await fixture.client.next().succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tracking.active, activeWorklog)
+        XCTAssertTrue(fixture.trackingAvailability.canStop)
+        XCTAssertTrue(controls.consume())
+    }
 }
 
 /// Reports which tracking properties changed, in declaration order, as views reading each one would see them.
