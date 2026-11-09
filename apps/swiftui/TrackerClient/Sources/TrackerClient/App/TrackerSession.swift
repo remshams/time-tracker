@@ -8,7 +8,7 @@ public final class TrackerSession {
     public let trackingActions: TrackingActions
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
-    /// Views read the task list, tab and selection here; the sync and the session write them.
+    /// Views read the task list, tab and selection here; the sync writes them.
     public let taskCatalog = TaskCatalogStore()
     /// Views read the selected task's worklog pages and the history panel's state here; the store loads the pages
     /// when the sync asks it to.
