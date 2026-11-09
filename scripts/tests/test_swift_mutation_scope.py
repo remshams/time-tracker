@@ -153,7 +153,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "focused")
         self.assertIn(scope.SOURCES + "Features/WorklogMove/WorklogMoveStore.swift", result["files"])
-        self.assertIn(scope.SOURCES + scope.SESSION, result["files"])
+        self.assertIn(scope.SOURCES + scope.FEATURES, result["files"])
         self.assertIn(scope.SOURCES + scope.TIMESTAMP, result["files"])
         self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
