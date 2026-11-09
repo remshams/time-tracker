@@ -33,9 +33,12 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
         self.connection = connection
     }
 
-    /// Starts over with the selected task's first page.
+    /// Starts over with the selected task's first page. Requests are never cancelled.
     public func reload() {
-        reload(selectedTaskID: catalog.selectedTaskID)
+        let selectedTaskID = catalog.selectedTaskID
+        request(selectedTaskID: selectedTaskID)
+        guard let selectedTaskID else { return }
+        load(taskID: selectedTaskID, cursor: nil)
     }
 
     /// Requests the page after the loaded ones. Does nothing while the connection is stale, a page is loading or none
@@ -43,13 +46,6 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
     public func loadOlder() {
         guard !connection.stale, !isLoading, let taskID, let nextCursor else { return }
         load(taskID: taskID, cursor: nextCursor)
-    }
-
-    /// Starts over with `selectedTaskID`'s first page. Requests are never cancelled.
-    func reload(selectedTaskID: String?) {
-        request(selectedTaskID: selectedTaskID)
-        guard let selectedTaskID else { return }
-        load(taskID: selectedTaskID, cursor: nil)
     }
 
     func request(selectedTaskID: String?) {
