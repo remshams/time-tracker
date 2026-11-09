@@ -47,7 +47,7 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
     case "$2" in
         core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests DailyTotalsUITests ServerDailyTotalsUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
         editing) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogDeletionUITests ServerWorklogDeletionUITests) ;;
-        server) suites=(ConnectionUITests ServerRecoveryUITests SettingsUITests MenuSourceUITests AppearanceUITests) ;;
+        server) suites=(ConnectionUITests ServerRecoveryUITests SettingsUITests MenuSourceUITests AppearanceUITests OpenDialogUITests) ;;
         mac) suites=(MenuBarUITests ServerMenuBarUITests LifecycleUITests ServerLifecycleUITests) ;;
         *) echo "Unknown native UI group: $2" >&2; exit 2 ;;
     esac

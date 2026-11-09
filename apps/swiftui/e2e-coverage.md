@@ -72,6 +72,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 20 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
 | 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
+| 23 | One dialog at a time: the task context menu, the worklog row context menu and the worklog actions menu open normally, and open no second dialog behind an open sheet or the tracking failure alert | [OpenDialogUITests](Tests/UITests/App/OpenDialogUITests.swift) |
 
 ## Dedicated-Mac acceptance
 
