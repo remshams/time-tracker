@@ -5,9 +5,9 @@ import Observation
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
 /// connection change, and the reloads after dialog writes.
 ///
-/// `TrackerFeatures` creates the stores and passes them in. `TrackingActions` and the dialog stores' reload closures
-/// call the package-internal methods below, for example to reload the task list or the history, record a failure
-/// and publish.
+/// `TrackerFeatures` creates the stores and passes them in. `TrackingActions`, the dialog stores' reload closures and
+/// the history store's read-failure closure call the package-internal methods below, for example to reload the task
+/// list or the history, record a failure and publish.
 ///
 /// It is observable only so that views can read it from the SwiftUI environment. Views only call its methods, and its
 /// state stays out of observation, so a view that reads it later can't track the timers and flags below.
