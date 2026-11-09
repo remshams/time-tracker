@@ -13,8 +13,8 @@ struct SettingsView: View {
         Form {
             ConnectionSettingsSection(draft: connectionDraft)
             TrackingSettingsSection(store: store)
-            MenuBarSettingsSection(store: store)
-            MenuShortcutSettingsSection(store: store)
+            MenuBarSettingsSection()
+            MenuShortcutSettingsSection()
             ConnectionActionsSection(draft: connectionDraft)
             CurrentConnectionSection()
         }
