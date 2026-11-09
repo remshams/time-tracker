@@ -53,6 +53,7 @@
 		A10000000000000000000002 /* BulkTaskArchivingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* BulkTaskArchivingUITests.swift */; };
 		A10000000000000000000016 /* TrackerLaunchConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* TrackerLaunchConfiguration.swift */; };
 		1A13A052F3063EBDBA27692F /* AppearanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137A7C97C1839F4E6C2A6E40 /* AppearanceUITests.swift */; };
+		9F3C51D27A8E40B6C1D2E3F4 /* OpenDialogUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7E20A4D93C4F18A5B6C7D8 /* OpenDialogUITests.swift */; };
 		0D694B9EF8FBF418AB521656 /* BulkTaskArchivingExtendedUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8589769E4C630266AB665B68 /* BulkTaskArchivingExtendedUITests.swift */; };
 		2E1C3B615EF46A91BBACD2E0 /* ConnectionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB98ACECEF86AC2D63D3024B /* ConnectionUITests.swift */; };
 		C1F5437125ED0BF88495580F /* DailyTotalsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F4D86C8DEA14E66839CCC6 /* DailyTotalsUITests.swift */; };
@@ -150,6 +151,7 @@
 		A10000000000000000000005 /* TimeTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimeTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000017 /* TrackerLaunchConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerLaunchConfiguration.swift; sourceTree = "<group>"; };
 		137A7C97C1839F4E6C2A6E40 /* AppearanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceUITests.swift; sourceTree = "<group>"; };
+		6B7E20A4D93C4F18A5B6C7D8 /* OpenDialogUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenDialogUITests.swift; sourceTree = "<group>"; };
 		8589769E4C630266AB665B68 /* BulkTaskArchivingExtendedUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingExtendedUITests.swift; sourceTree = "<group>"; };
 		BB98ACECEF86AC2D63D3024B /* ConnectionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionUITests.swift; sourceTree = "<group>"; };
 		20F4D86C8DEA14E66839CCC6 /* DailyTotalsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTotalsUITests.swift; sourceTree = "<group>"; };
@@ -600,6 +602,7 @@
 			isa = PBXGroup;
 			children = (
 				137A7C97C1839F4E6C2A6E40 /* AppearanceUITests.swift */,
+				6B7E20A4D93C4F18A5B6C7D8 /* OpenDialogUITests.swift */,
 				A1E1D3AE09E3B5919EB933E6 /* SmokeUITests.swift */,
 			);
 			path = App;
@@ -785,6 +788,7 @@
 				A10000000000000000000001 /* ArchiveFixture.swift in Sources */,
 				A10000000000000000000002 /* BulkTaskArchivingUITests.swift in Sources */,
 				1A13A052F3063EBDBA27692F /* AppearanceUITests.swift in Sources */,
+				9F3C51D27A8E40B6C1D2E3F4 /* OpenDialogUITests.swift in Sources */,
 				0D694B9EF8FBF418AB521656 /* BulkTaskArchivingExtendedUITests.swift in Sources */,
 				2E1C3B615EF46A91BBACD2E0 /* ConnectionUITests.swift in Sources */,
 				C1F5437125ED0BF88495580F /* DailyTotalsUITests.swift in Sources */,
