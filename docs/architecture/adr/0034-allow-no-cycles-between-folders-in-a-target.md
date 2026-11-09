@@ -22,7 +22,7 @@ The macOS app doesn't follow that. `App/` depends on feature folders, and `Featu
 - `App/` counts as an ordinary folder. A feature may use something in `App/` when that creates no cycle.
 - Each of `App/`, `Shared/` and `Contracts/` is one node in the check, and so is each folder under `Features/` or `Infrastructure/`.
 - Review checks each target separately. The package can't see the app, so a dependency from the app into the package can't complete a cycle. Same-named feature folders in the two targets are separate nodes. The app's `Features/Tracking` may use the package's `App/TrackingActions`, even though the package's `App/` depends on the package's `Features/Tracking`.
-- The rule covers Swift only. The Rust crates and the TUI keep the rule in `AGENTS.md`.
+- The rule covers Swift only. The Rust crates keep the rule in `AGENTS.md`.
 
 ### Checking the rule
 
@@ -51,9 +51,9 @@ This record replaces these clauses:
 - ADR 0032: "Features don't depend on `App/`, so a dialog store can't call `TrackerSync`." Dialog stores keep their closures because of the cycle described under Consequences.
 - ADR 0032, rejected alternatives: "The first breaks the rule that only `App/` composes features". The first alternative still fails, because it would form that same cycle.
 - ADR 0032, "Reloads and selection": "Views call the last two through `TrackerStore`." After #362, views call `changeTab(_:)` and `selectTask(_:)` on `TrackerSync`.
-- ADR 0032, "Views": "The coordinator and the app menus read them through `TrackerStore` properties that point at `features`. `TrackerStore` otherwise keeps its Mac settings and forwarders." After #363, they read the feature objects directly, and `TrackerStore` with its settings and forwarders is gone. The menu settings move to `Features/MenuBar` in #360.
+- ADR 0032, "Views": "The coordinator and the app menus read them through `TrackerStore` properties that point at `features`. `TrackerStore` otherwise keeps its Mac settings and forwarders." After #363, they read the feature objects directly. The menu settings move to `Features/MenuBar` in #360, and #363 deletes `TrackerStore` with its forwarders.
 - ADR 0026: "Make `TrackerStore`, `ConnectionDraftStore`, and `TrackerTaskPresentationCoordinator` observable." This no longer applies to `TrackerStore` after #363. The other two stay observable.
-- ADR 0033, Context: "Features can't call `TrackerSync`". This holds only for package features that `App/` creates, such as the dialog stores. ADR 0033's decision stays.
+- ADR 0033, Context: "Features can't call `TrackerSync`". This holds only for package features that `App/` creates, such as the dialog stores.
 
 ## Consequences
 
@@ -61,6 +61,6 @@ Dialog stores keep their reload closures. A dialog store that called `TrackerSyn
 
 A feature in the app target can read `TrackerSync` and `TrackingActions` from the package without creating a cycle, so the forwarders in `TrackerStore` have no reason to stay.
 
-A folder that `App/` depends on can't use `App/` in the same target. `App/` depends on most features, so in practice few features can use it.
+`App/` depends on most features in its target, so few of them can use `App/` without forming a cycle.
 
 A reviewer has to follow a new dependency through the folders of its target, and can't only look for imports of `App/`. A reviewer can still miss a cycle.

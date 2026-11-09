@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Partially superseded by [ADR 0030](0030-replace-the-session-with-feature-stores.md) for `TrackerPresentation` as the view state, the session and its `onChange`, the action facades, and the macOS 14 package platform, and by [ADR 0032](0032-move-the-dialogs-into-feature-stores.md) for the kept sheet content, and by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for making `TrackerStore` observable; all other decisions remain accepted.
+Accepted. Partially superseded by [ADR 0030](0030-replace-the-session-with-feature-stores.md) for `TrackerPresentation` as the view state, the session and its `onChange`, the action facades, and the macOS 14 package platform, by [ADR 0032](0032-move-the-dialogs-into-feature-stores.md) for the kept sheet content, and by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for making `TrackerStore` observable; all other decisions remain accepted.
 
 ## Date
 
