@@ -395,10 +395,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         let report = try await fixture.client.next()
         let updatedRows = resources.catalog.value.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: 600_000) }
         report.succeed(TaskListTotalsRefresh(taskList: resources, rows: updatedRows))
-        let finished = Task { @MainActor in
-            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.settled()
         for task in resources.catalog.value {
             XCTAssertEqual(fixture.durationText(taskID: task.id), "00:00:00")
         }
@@ -423,10 +420,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             fixture.scheduler.poll?.fire()
             let report = try await fixture.client.next()
             report.fail(BridgeFailure(message: message))
-            let finished = Task { @MainActor in
-                while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-            }
-            try await fixture.taskValue(finished)
+            try await fixture.settled()
             observedErrors.append(fixture.totalsError)
             observedStatuses.append(fixture.session.dailyTotals.status)
             observedTexts.append(fixture.session.dailyTotals.taskTotal(taskID: firstTask.id).content?.text ?? "")
@@ -440,7 +434,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testSessionPublishesNewDayDuringEmptyStartupBeforeReportBecomesAvailable() async throws {
+    func testNewDayDuringEmptyStartupLoadsItsReportAndMovesTheRollover() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         fixture.sync.start()
@@ -452,6 +446,8 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertEqual(fixture.session.dailyTotals.status, .loading, "The new day's report is loading.")
         XCTAssertNil(fixture.totalsError)
         XCTAssertTrue(fixture.session.tasks.isEmpty)
+        let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        XCTAssertEqual(rollover.delay, 86_400, "The accepted task list must move the rollover to the new day's end.")
         assertPublished(fixture.session)
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
         try await fixture.settled()
@@ -589,7 +585,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testReportPublishesNewActiveTrackingTogetherWithItsMatchingTotals() async throws {
+    func testReportAppliesNewActiveTrackingWithItsMatchingTotals() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         let tasks = [firstTask, secondTask]
@@ -603,10 +599,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: tasks, active: newActive),
                 rows: [total(firstTask, 10), total(secondTask, 77)]))
-        let finished = Task { @MainActor in
-            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.settled()
         XCTAssertEqual(fixture.session.active, newActive)
         XCTAssertEqual(fixture.session.dailyDuration(taskID: secondTask.id), 77)
     }
@@ -644,8 +637,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         let count = fixture.client.operations.count
         var changedTotals: [Set<String>] = []
         for _ in 0..<3 {
-            fixture.clock.now.addTimeInterval(1)
-            fixture.clock.uptime += 1
+            fixture.advanceClock(by: 1)
             fixture.scheduler.display?.fire()
             changedTotals.append(totals.changed())
             assertPublished(fixture.session)
@@ -799,8 +791,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             report.fail(BridgeFailure(message: "Report incompatible", kind: "protocol"))
             try await fixture.settled()
             let operationCount = fixture.client.operations.count
-            fixture.clock.now.addTimeInterval(86_400)
-            fixture.clock.uptime += 86_400
+            fixture.advanceClock(by: 86_400)
             if useDisplayTimer { display.fire() } else { rollover.fire() }
             XCTAssertEqual(fixture.totalsDayStart, fixture.clock.now)
             XCTAssertEqual(fixture.client.operations.count, operationCount)
@@ -954,19 +945,13 @@ final class DailyTotalsSessionTests: XCTestCase {
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 4)]))
-        let finished = Task { @MainActor in
-            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.settled()
         XCTAssertFalse(content.consume())
         XCTAssertEqual(totals.changed(), [])
         fixture.scheduler.poll?.fire()
         let failed = try await fixture.client.next()
         failed.fail(BridgeFailure(message: "Totals unavailable"))
-        let failureFinished = Task { @MainActor in
-            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(failureFinished)
+        try await fixture.settled()
         XCTAssertTrue(content.consume())
         XCTAssertEqual(totals.changed(), Set([firstTask.id]))
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4)

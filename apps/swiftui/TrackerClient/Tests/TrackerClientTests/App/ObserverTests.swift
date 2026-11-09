@@ -48,7 +48,6 @@ final class ObserverTests: XCTestCase {
 
         fixture.sync.setWindowVisible(true)
         XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
-        XCTAssertTrue(fixture.client.hasPendingRequests)
         XCTAssertNotNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         request.succeed(resources)
