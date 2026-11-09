@@ -238,8 +238,8 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   `reloadAfterWorklogWrite()` as their reload closures.
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
-  `WorklogHistoryStore` sends its own page requests and reports each page or
-  failure to `TrackerSync`, which records connection failures.
+  `WorklogHistoryStore` sends its own page requests and reports each failure
+  to `TrackerSync`, which records connection failures.
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
   serial
