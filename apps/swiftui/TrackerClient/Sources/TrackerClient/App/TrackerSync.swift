@@ -107,7 +107,6 @@ public final class TrackerSync {
         guard started else { return }
         sleeping = true
         cancelTimers()
-        publish()
     }
 
     public func wake() {
@@ -135,24 +134,21 @@ public final class TrackerSync {
     public func retryHistory() {
         guard started else { return }
         reloadHistory()
-        publish()
     }
 
     public func loadOlder() {
-        guard !connection.stale, history.loadMore(finished: historyPageFinished) else { return }
-        publish()
+        guard !connection.stale else { return }
+        _ = history.loadMore(finished: historyPageFinished)
     }
 
     public func changeTab(_ newTab: TaskTab) {
         guard catalog.changeTab(newTab) else { return }
         reloadHistory()
-        publish()
     }
 
     public func selectTask(_ taskID: String?) {
         guard catalog.select(taskID) else { return }
         reloadHistory()
-        publish()
     }
 
     /// Switches to `settings`, saves them and loads their task list and today's totals. Returns false when
@@ -160,11 +156,7 @@ public final class TrackerSync {
     public func connect(_ settings: ConnectionSettings) async -> Bool {
         guard !connection.changing else { return false }
         connection.beginChange()
-        publish()
-        defer {
-            connection.endChange()
-            publish()
-        }
+        defer { connection.endChange() }
         do {
             let normalized = try settings.normalized()
             finishConnection(try await client.connect(normalized), settings: normalized)
@@ -210,7 +202,8 @@ public final class TrackerSync {
         tracking.recordError(writeFailure(error).localizedDescription)
     }
 
-    /// Reloads the task list and, with a report client, today's totals.
+    /// Reloads the task list and, with a report client, today's totals. Publishes on every path, which also shows a
+    /// failure recorded before this call.
     func reloadTaskList() async {
         dailyTotals.updateDay(at: clock.now)
         if reports == nil || !connection.confirmed || connection.stale {
@@ -224,17 +217,14 @@ public final class TrackerSync {
         await loadReport()
     }
 
-    /// Publishes the write result, reloads the task list, runs `then` and publishes again.
+    /// Reloads the task list, then runs `then`, which changes only the tab, the selection or the history.
     func reloadAfterTaskWrite(then: () -> Void = {}) async {
-        publish()
         await reloadTaskList()
         then()
-        publish()
     }
 
-    /// Publishes the write result, then reloads the task list, which publishes, and the history.
+    /// Reloads the task list, then the history.
     func reloadAfterWorklogWrite() async {
-        publish()
         await reloadTaskList()
         reloadHistory()
     }
@@ -327,12 +317,10 @@ public final class TrackerSync {
         dailyTotals.publish(tasks: catalog.tasks, active: tracking.active, clock: clock)
     }
 
-    /// Publishes each history page or failure and recovers the connection when the failure calls for it.
+    /// Recovers the connection when a history failure calls for it. A page changes nothing that `publish` shows.
     private var historyPageFinished: @MainActor (Error?) -> Void {
         { [weak self] failure in
-            guard let self else { return }
-            if let failure { recordReadFailure(failure) }
-            publish()
+            if let failure { self?.recordReadFailure(failure) }
         }
     }
 
