@@ -77,7 +77,7 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
-        let lists = ObservationProbe { ViewReads.lists(fixture.session) }
+        let lists = ObservationProbe { ViewReads.lists(fixture.features) }
         let catalog = fixture.features.taskCatalog
         let worklogHistory = fixture.features.worklogHistory
 
