@@ -189,120 +189,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    (
-        "#338 waits for conditions now that TrackerSync.onChange is gone",
-        (
-            (
-                "    /// Runs `action`, then waits for the next session update that satisfies `condition`.\n"
-                "    func update(\n"
-                "        _ description: String, timeout: TimeInterval = 0.5,\n"
-                "        file: StaticString = #filePath, line: UInt = #line,\n"
-                "        after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }\n"
-                "    ) async throws {\n"
-                "        let expectation = XCTestExpectation(description: description)\n"
-                "        sync.onChange = { [weak sync = session.sync] in\n"
-                "            if condition() {\n"
-                "                sync?.onChange = nil\n"
-                "                expectation.fulfill()\n"
-                "            }\n"
-                "        }\n"
-                "        action()\n"
-                "        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)\n"
-                "        sync.onChange = nil\n"
-                "        guard result == .completed else {\n"
-                "            cleanup()\n"
-                "            throw TestTimeout(description: \"Timed out waiting for \\(description) at \\(file):\\(line)\")\n"
-                "        }\n"
-                "    }\n"
-                "\n"
-                "    func waitUntil(\n"
-                "        _ description: String, timeout: TimeInterval = 0.5,\n"
-                "        file: StaticString = #filePath, line: UInt = #line,\n"
-                "        _ condition: @escaping @MainActor () -> Bool\n"
-                "    ) async throws {\n"
-                "        if condition() { return }\n"
-                "        let expectation = XCTestExpectation(description: description)\n"
-                "        sync.onChange = { [weak sync = session.sync] in\n"
-                "            if condition() {\n"
-                "                sync?.onChange = nil\n"
-                "                expectation.fulfill()\n"
-                "            }\n"
-                "        }\n"
-                "        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)\n"
-                "        sync.onChange = nil\n"
-                "        guard result == .completed else {\n"
-                "            cleanup()\n"
-                "            throw TestTimeout(description: \"Timed out waiting for \\(description) at \\(file):\\(line)\")\n"
-                "        }\n"
-                "    }\n"
-                "}\n"
-                "\n",
-                "    /// Moves the clock without a timer tick, so only a publish can show the new elapsed time.\n"
-                "    func advanceClock(by seconds: TimeInterval) {\n"
-                "        clock.now.addTimeInterval(seconds)\n"
-                "        clock.uptime += seconds\n"
-                "    }\n"
-                "\n"
-                "    /// Runs `action`, normally a reply to a request, waits until the app has handled that reply and `condition`\n"
-                "    /// holds, then lets any task the reply started send its first request.\n"
-                "    ///\n"
-                "    /// Waiting for the reply first means a condition that was already true can't end the wait early.\n"
-                "    func update(\n"
-                "        _ description: String, file: StaticString = #filePath, line: UInt = #line,\n"
-                "        after action: () -> Void, until condition: @MainActor () -> Bool = { true }\n"
-                "    ) async throws {\n"
-                "        action()\n"
-                "        try await waitUntil(description, file: file, line: line) {\n"
-                "            !client.hasReplyInFlight && condition()\n"
-                "        }\n"
-                "        await Task.yield()\n"
-                "    }\n"
-                "\n"
-                "    func waitUntil(\n"
-                "        _ description: String, file: StaticString = #filePath, line: UInt = #line,\n"
-                "        _ condition: @MainActor () -> Bool\n"
-                "    ) async throws {\n"
-                "        let deadline = Date().addingTimeInterval(0.5)\n"
-                "        while !condition() {\n"
-                "            guard Date() < deadline else {\n"
-                "                cleanup()\n"
-                "                throw TestTimeout(description: \"Timed out waiting for \\(description) at \\(file):\\(line)\")\n"
-                "            }\n"
-                "            await Task.yield()\n"
-                "        }\n"
-                "    }\n"
-                "}\n"
-                "\n",
-            ),
-            (
-                "        sync.onChange = nil\n"
-                "        sync.sleep()\n",
-                "        sync.sleep()\n",
-            ),
-            (
-                "    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }\n",
-                "    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }\n"
-                "    /// Whether a request has its reply but the code that sent the request hasn't resumed yet.\n"
-                "    var hasReplyInFlight: Bool { deliveringReplies > outstanding.count }\n",
-            ),
-        ),
-        None,
-        None,
-        ("App/TrackerSyncSelectionAndReloadTests.swift",),
-        (
-            "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift",
-            "Features/TaskArchiving/TaskArchivingTests.swift",
-            "Features/TaskCreation/TaskCreationTests.swift",
-            "Features/TaskEditing/TaskNameEditingPolicyTests.swift",
-            "Features/TaskRename/TaskRenameTests.swift",
-            "Features/WorklogCorrection/WorklogCorrectionTests.swift",
-            "Features/WorklogDeletion/WorklogDeletionTests.swift",
-            "Features/WorklogHistory/HistoryTests.swift",
-            "Features/WorklogMove/WorklogMoveTests.swift",
-        ),
-    ),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
@@ -322,10 +209,7 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
-REVIEWED_DELETIONS: frozenset[str] = frozenset({
-    SOURCES + "App/TrackerPresentation.swift",
-    TESTS + "App/PresentationTests.swift",
-})
+REVIEWED_DELETIONS: frozenset[str] = frozenset()
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
