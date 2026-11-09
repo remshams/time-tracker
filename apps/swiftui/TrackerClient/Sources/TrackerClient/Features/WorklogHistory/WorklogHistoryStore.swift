@@ -23,20 +23,18 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
 
     init(client: any TrackerClient) { self.client = client }
 
-    /// Starts over with the selected task's first page. Requests are never cancelled: `finished` receives nil
-    /// after a page arrives and the error after a failure, and isn't called for a page or failure whose task is
-    /// no longer selected.
-    func reload(selectedTaskID: String?, finished: @escaping @MainActor (Error?) -> Void) {
+    /// Starts over with the selected task's first page. Requests are never cancelled: `failed` receives the error
+    /// after a failure, and isn't called for a failure whose task is no longer selected.
+    func reload(selectedTaskID: String?, failed: @escaping @MainActor (Error) -> Void) {
         request(selectedTaskID: selectedTaskID)
         guard let selectedTaskID else { return }
-        load(taskID: selectedTaskID, cursor: nil, finished: finished)
+        load(taskID: selectedTaskID, cursor: nil, failed: failed)
     }
 
-    /// Requests the page after the loaded ones. Returns false when a page is loading or none is left.
-    func loadMore(finished: @escaping @MainActor (Error?) -> Void) -> Bool {
-        guard !isLoading, let taskID, let nextCursor else { return false }
-        load(taskID: taskID, cursor: nextCursor, finished: finished)
-        return true
+    /// Requests the page after the loaded ones. Does nothing when a page is loading or none is left.
+    func loadMore(failed: @escaping @MainActor (Error) -> Void) {
+        guard !isLoading, let taskID, let nextCursor else { return }
+        load(taskID: taskID, cursor: nextCursor, failed: failed)
     }
 
     func request(selectedTaskID: String?) {
@@ -76,7 +74,7 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
         set(\.error, nil)
     }
 
-    private func load(taskID requested: String, cursor: String?, finished: @escaping @MainActor (Error?) -> Void) {
+    private func load(taskID requested: String, cursor: String?, failed: @escaping @MainActor (Error) -> Void) {
         beginLoading()
         Task { [weak self] in
             guard let self else { return }
@@ -85,11 +83,10 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
                 // Drop a page whose task is no longer selected.
                 guard requested == taskID else { return }
                 accept(page, cursor: cursor)
-                finished(nil)
             } catch {
                 guard requested == taskID else { return }
                 fail(error)
-                finished(error)
+                failed(error)
             }
         }
     }

@@ -38,25 +38,25 @@ final class WorklogHistoryStoreTests: XCTestCase {
         defer { fixture.cleanup() }
         let history = WorklogHistoryStore(client: fixture.client)
         let reports = PageReports()
-        let finished: @MainActor (Error?) -> Void = { reports.values.append($0?.localizedDescription) }
-        XCTAssertFalse(history.loadMore(finished: finished))
+        let failed: @MainActor (Error) -> Void = { reports.values.append($0.localizedDescription) }
+        history.loadMore(failed: failed)
 
-        history.reload(selectedTaskID: firstTask.id, finished: finished)
+        history.reload(selectedTaskID: firstTask.id, failed: failed)
         let first = try await fixture.client.next()
         XCTAssertEqual(first.operation, .history(task: firstTask.id, cursor: nil))
         first.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await settled(fixture, history)
-        XCTAssertEqual(reports.values, [nil])
+        XCTAssertEqual(reports.values, [])
 
-        XCTAssertTrue(history.loadMore(finished: finished))
+        history.loadMore(failed: failed)
         XCTAssertTrue(history.isLoading)
-        XCTAssertFalse(history.loadMore(finished: finished))
+        history.loadMore(failed: failed)
         let older = try await fixture.client.next()
         XCTAssertEqual(older.operation, .history(task: firstTask.id, cursor: "older"))
         older.fail(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
         try await settled(fixture, history)
 
-        XCTAssertEqual(reports.values, [nil, "Tracker unavailable"])
+        XCTAssertEqual(reports.values, ["Tracker unavailable"])
         XCTAssertEqual(history.worklogs, [oldWorklog])
         XCTAssertTrue(history.unavailable)
         XCTAssertEqual(history.error, "Tracker unavailable")
@@ -69,31 +69,30 @@ final class WorklogHistoryStoreTests: XCTestCase {
         defer { fixture.cleanup() }
         let history = WorklogHistoryStore(client: fixture.client)
         let reports = PageReports()
-        let finished: @MainActor (Error?) -> Void = { reports.values.append($0?.localizedDescription) }
+        let failed: @MainActor (Error) -> Void = { reports.values.append($0.localizedDescription) }
         let currentPage = HistoryPage(worklogs: [activeWorklog], nextCursor: nil, reset: false)
 
-        history.reload(selectedTaskID: firstTask.id, finished: finished)
+        history.reload(selectedTaskID: firstTask.id, failed: failed)
         let stalePage = try await fixture.client.next()
-        history.reload(selectedTaskID: secondTask.id, finished: finished)
+        history.reload(selectedTaskID: secondTask.id, failed: failed)
         let current = try await fixture.client.next()
         XCTAssertEqual(stalePage.operation, .history(task: firstTask.id, cursor: nil))
         XCTAssertEqual(current.operation, .history(task: secondTask.id, cursor: nil))
         stalePage.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         current.succeed(currentPage)
         try await settled(fixture, history)
-        XCTAssertEqual(reports.values, [nil])
         XCTAssertEqual(history.worklogs, [activeWorklog])
         XCTAssertFalse(history.hasMore)
 
-        history.reload(selectedTaskID: firstTask.id, finished: finished)
+        history.reload(selectedTaskID: firstTask.id, failed: failed)
         let staleFailure = try await fixture.client.next()
-        history.reload(selectedTaskID: secondTask.id, finished: finished)
+        history.reload(selectedTaskID: secondTask.id, failed: failed)
         let reloaded = try await fixture.client.next()
         staleFailure.fail(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
         reloaded.succeed(currentPage)
         try await settled(fixture, history)
 
-        XCTAssertEqual(reports.values, [nil, nil])
+        XCTAssertEqual(reports.values, [])
         XCTAssertEqual(history.worklogs, [activeWorklog])
         XCTAssertFalse(history.unavailable)
         XCTAssertNil(history.error)
@@ -110,8 +109,8 @@ final class WorklogHistoryStoreTests: XCTestCase {
     }
 }
 
-/// Records what a history store reported to its caller after each page request.
+/// Records the failures a history store reported to its caller.
 @MainActor
 private final class PageReports {
-    var values: [String?] = []
+    var values: [String] = []
 }
