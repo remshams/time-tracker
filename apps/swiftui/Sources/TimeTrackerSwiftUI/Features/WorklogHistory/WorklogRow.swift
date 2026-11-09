@@ -48,7 +48,6 @@ struct WorklogRow: View {
 private struct WorklogActionsMenu: View {
     let worklog: WorklogItem
     @Environment(WorklogMoveStore.self) private var move
-    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
     @Environment(WorklogDeletionStore.self) private var deletion
     @Environment(WorklogCorrectionStore.self) private var correction
 
@@ -62,7 +61,7 @@ private struct WorklogActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(presentation.hasPresentation || (!correction.canOpen && !move.canOpen && !deletion.canOpen))
+        .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
         .help("Worklog actions")
         .accessibilityIdentifier("worklog-history.actions.\(worklog.id)")
     }
@@ -71,19 +70,17 @@ private struct WorklogActionsMenu: View {
 private struct WorklogContextMenu: View {
     let worklog: WorklogItem
     @Environment(WorklogMoveStore.self) private var move
-    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
     @Environment(WorklogDeletionStore.self) private var deletion
     @Environment(WorklogCorrectionStore.self) private var correction
 
     var body: some View {
-        let hasPresentation = presentation.hasPresentation
         Button("Edit times...") { correction.open(worklogID: worklog.id) }
-            .disabled(!correction.canOpen || hasPresentation)
+            .disabled(!correction.canOpen)
         Button("Move to task...") { move.open(worklogID: worklog.id) }
-            .disabled(!move.canOpen || hasPresentation)
+            .disabled(!move.canOpen)
         Divider()
         // Running worklogs cannot be deleted. Stop the timer first.
         Button("Delete...", role: .destructive) { deletion.open(worklogID: worklog.id) }
-            .disabled(!deletion.canOpen || hasPresentation || worklog.end == nil)
+            .disabled(!deletion.canOpen || worklog.end == nil)
     }
 }
