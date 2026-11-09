@@ -9,8 +9,8 @@ import Observation
 /// call the package-internal methods below, for example to reload the task list or the history, record a failure
 /// and publish.
 ///
-/// It is observable only so that views can read it from the SwiftUI environment. Views only call its methods, so
-/// none of its state is observed: the timers, flags and visibility below change often and would only cause redraws.
+/// It is observable only so that views can read it from the SwiftUI environment. Views only call its methods, and its
+/// state stays out of observation, so a view that reads it later can't track the timers and flags below.
 @Observable
 public final class TrackerSync {
     private let client: any TrackerClient
