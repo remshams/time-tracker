@@ -85,9 +85,9 @@ public final class TrackingActions {
             } catch {
                 sync.recordTrackingFailure(error)
             }
+            // The reload publishes on every path, which also shows a failure recorded above.
             await sync.reloadTaskList()
             tracking.endSubmitting()
-            sync.publish()
         }
     }
 }
