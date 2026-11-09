@@ -32,6 +32,7 @@ struct TimeTrackerApp: App {
             SettingsView(store: delegate.runtime.store)
                 .environment(delegate.runtime.store.connection)
                 .environment(delegate.runtime.store.trackingAutomation)
+                .environment(delegate.runtime.store.menuBarPreferences)
                 .frame(height: 680)
         }
         .defaultSize(width: 540, height: 680)
