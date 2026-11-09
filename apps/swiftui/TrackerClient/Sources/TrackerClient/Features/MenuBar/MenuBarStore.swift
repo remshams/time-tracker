@@ -17,15 +17,30 @@ public extension ConnectionSettings {
 /// Holds the menu bar's own state for the whole app: the last tracked task of the current connection.
 ///
 /// The menu reads `lastTrackedTaskID`; `TrackerSync` calls `observe` after each task list. The task is
-/// remembered per connection and saved to the repository, so switching connections back restores it.
+/// remembered per connection and saved to the repository, so switching connections back restores it. The menu's
+/// copy actions, in `MenuTaskClipboard.swift`, read the task and its time today from the stores passed in here.
 @Observable
 public final class MenuBarStore: ChangeGuardedStore {
     public private(set) var lastTrackedTaskID: String?
     @ObservationIgnored private let repository: (any LastTrackedTaskRepository)?
     @ObservationIgnored private var remembered: [String: String] = [:]
+    @ObservationIgnored let connection: ConnectionStore
+    @ObservationIgnored let catalog: TaskCatalogStore
+    @ObservationIgnored let tracking: TrackingStore
+    @ObservationIgnored let dailyTotals: DailyTotalsStore
+    @ObservationIgnored let clock: any TrackerClock
 
-    init(repository: (any LastTrackedTaskRepository)?, settings: ConnectionSettings) {
+    init(
+        repository: (any LastTrackedTaskRepository)?, connection: ConnectionStore, catalog: TaskCatalogStore,
+        tracking: TrackingStore, dailyTotals: DailyTotalsStore, clock: any TrackerClock
+    ) {
         self.repository = repository
+        self.connection = connection
+        self.catalog = catalog
+        self.tracking = tracking
+        self.dailyTotals = dailyTotals
+        self.clock = clock
+        let settings = connection.settings
         let saved = repository?.load(for: settings)
         lastTrackedTaskID = saved
         remembered[settings.trackingIdentityKey] = saved
@@ -66,7 +81,7 @@ public final class MenuBarStore: ChangeGuardedStore {
 
     private func largerTaskID(_ left: String, _ right: String) -> Bool { left > right }
 
-    private func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
+    func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
         for task in tasks {
             if task.id == id { return task }
         }

@@ -98,8 +98,8 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlockedAt)))
         resume.succeed(running)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.active, activeWorklog)
-        XCTAssertNil(fixture.session.tracking.recordedError)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
+        XCTAssertNil(fixture.features.tracking.recordedError)
         XCTAssertEqual(
             fixture.client.operations.filter {
                 if case .resume = $0 { return true }; return false
@@ -114,11 +114,11 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
         try await fixture.client.next().succeed(running)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.tracking.recordedError, "Start rejected")
+        XCTAssertEqual(fixture.features.tracking.recordedError, "Start rejected")
 
         try await acknowledgePause(fixture)
-        XCTAssertNil(fixture.session.tracking.recordedError)
-        XCTAssertNil(fixture.session.tracking.error)
+        XCTAssertNil(fixture.features.tracking.recordedError)
+        XCTAssertNil(fixture.features.tracking.error)
     }
 
     func testUnlockDuringUnsuccessfulPauseNeverResumes() async throws {
@@ -142,7 +142,7 @@ final class TrackingAutomationTests: XCTestCase {
                 fixture.client.operations.contains {
                     if case .resume = $0 { return true }; return false
                 })
-            XCTAssertEqual(fixture.session.tracking.recordedError, didFail ? "Pause rejected" : nil)
+            XCTAssertEqual(fixture.features.tracking.recordedError, didFail ? "Pause rejected" : nil)
         }
     }
 
@@ -157,7 +157,7 @@ final class TrackingAutomationTests: XCTestCase {
         startedElsewhere.succeed(running)
         try await finishHistory(fixture)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
 
         fixture.sync.setPauseOnScreenLock(false)
         fixture.sync.refresh()
@@ -165,7 +165,7 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(next.operation, .refresh(.local), "Disabling the preference must not pause tracking.")
         next.succeed(running)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
     }
 
     func testManualStopAfterUnlockDuringPauseCancelsTheAutomaticResume() async throws {
@@ -182,7 +182,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await finishHistory(fixture)
         stop.succeed(idle)
         try await fixture.settled()
-        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.features.tracking.active)
         XCTAssertFalse(
             fixture.client.operations.contains {
                 if case .resume = $0 { return true }; return false
@@ -262,7 +262,7 @@ final class TrackingAutomationTests: XCTestCase {
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
-        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.features.tracking.active)
         XCTAssertNil(fixture.trackingAutomation.statusText)
         XCTAssertFalse(
             fixture.client.operations.contains {
@@ -292,13 +292,13 @@ final class TrackingAutomationTests: XCTestCase {
         let pause = try await fixture.client.next()
         pause.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reconcile = try await fixture.client.next()
-        XCTAssertEqual(reconcile.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reconcile.operation, .refresh(fixture.features.connection.settings))
         reconcile.succeed(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertEqual(
-            fixture.session.tracking.recordedError,
+            fixture.features.tracking.recordedError,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
         XCTAssertNil(fixture.trackingAutomation.statusText)
         XCTAssertFalse(
@@ -315,7 +315,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.client.next().fail(BridgeFailure(message: "Pause rejected"))
         try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.tracking.error, "Pause rejected")
+        XCTAssertEqual(fixture.features.tracking.error, "Pause rejected")
     }
 
     func testSleepDoesNotPreventPauseAndWakeAloneDoesNotResume() async throws {
@@ -353,9 +353,9 @@ final class TrackingAutomationTests: XCTestCase {
         try await finishHistory(fixture)
         try await fixture.settled()
         XCTAssertEqual(
-            fixture.session.tracking.recordedError,
+            fixture.features.tracking.recordedError,
             "Could not confirm the change. Check the reloaded data before trying again. Resume response lost")
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertNil(fixture.trackingAutomation.statusText)
         XCTAssertEqual(
             fixture.client.operations.filter {
@@ -374,8 +374,8 @@ final class TrackingAutomationTests: XCTestCase {
         retry.fail(BridgeFailure(message: "Still offline", kind: "unavailable"))
         try await fixture.settled()
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
-        XCTAssertTrue(fixture.session.connection.stale)
-        XCTAssertEqual(fixture.session.tracking.recordedError, "Offline")
+        XCTAssertTrue(fixture.features.connection.stale)
+        XCTAssertEqual(fixture.features.tracking.recordedError, "Offline")
         XCTAssertNil(fixture.trackingAutomation.statusText)
     }
 
@@ -477,7 +477,7 @@ final class TrackingAutomationTests: XCTestCase {
         resume.succeed(running)
         try await finishHistory(fixture)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertNil(fixture.trackingAutomation.statusText)
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
     }
@@ -513,7 +513,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let content = ObservationProbe { ViewReads.content(fixture.features) }
 
         fixture.sync.setPauseOnScreenLock(true)
         XCTAssertTrue(content.consume())
@@ -527,7 +527,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        let tracking = fixture.session.tracking
+        let tracking = fixture.features.tracking
 
         fixture.trackingActions.startTracking(taskID: secondTask.id)
         let write = try await fixture.client.next()

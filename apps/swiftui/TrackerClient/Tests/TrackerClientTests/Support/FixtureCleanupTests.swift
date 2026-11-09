@@ -18,6 +18,6 @@ final class FixtureCleanupTests: XCTestCase {
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         write.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
         XCTAssertEqual(fixture.client.operations.count, count)
-        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.features.tracking.active)
     }
 }

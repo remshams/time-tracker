@@ -13,7 +13,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         fixture.sync.start()
         try await fixture.client.next().succeed(running)
         let history = try await fixture.client.next()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:30")
         history.succeed(emptyPage)
         try await fixture.settled()
     }
@@ -25,7 +25,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         try await fixture.start(running)
         fixture.advanceClock(by: 4)
         fixture.sync.setPauseOnScreenLock(true)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
     }
 
     @MainActor
@@ -35,10 +35,10 @@ final class TrackerSyncPublishTests: XCTestCase {
         try await fixture.start(running)
         fixture.advanceClock(by: 4)
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
         fixture.advanceClock(by: 4)
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:38")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:38")
     }
 
     @MainActor
@@ -48,10 +48,10 @@ final class TrackerSyncPublishTests: XCTestCase {
         fixture.sync.start()
         try await fixture.client.next().succeed(emptyTaskListResources)
         let report = try await fixture.client.next()
-        XCTAssertEqual(fixture.session.dailyTotals.status, .loading)
+        XCTAssertEqual(fixture.features.dailyTotals.status, .loading)
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.dailyTotals.status, .current)
+        XCTAssertEqual(fixture.features.dailyTotals.status, .current)
     }
 
     @MainActor
@@ -64,8 +64,8 @@ final class TrackerSyncPublishTests: XCTestCase {
         fixture.advanceClock(by: 4)
         report.fail(BridgeFailure(message: "Report failed"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
-        XCTAssertEqual(fixture.session.dailyTotals.status, .cached)
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.dailyTotals.status, .cached)
     }
 
     @MainActor
@@ -78,7 +78,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         fixture.advanceClock(by: 4)
         refresh.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
     }
 
     @MainActor
@@ -89,12 +89,12 @@ final class TrackerSyncPublishTests: XCTestCase {
         fixture.trackingActions.startTracking(taskID: firstTask.id)
         try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
-        XCTAssertNil(fixture.session.tracking.error, "The error waits for the publish after the reload.")
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
+        XCTAssertNil(fixture.features.tracking.error, "The error waits for the publish after the reload.")
         reload.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.tracking.error, "Start rejected")
-        XCTAssertFalse(fixture.session.tracking.isSubmitting)
+        XCTAssertEqual(fixture.features.tracking.error, "Start rejected")
+        XCTAssertFalse(fixture.features.tracking.isSubmitting)
     }
 
     @MainActor
@@ -104,7 +104,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         try await fixture.start(running)
         fixture.advanceClock(by: 4)
         fixture.trackingActions.startTracking(taskID: secondTask.id)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
         try await fixture.client.next().succeed(running)
         try await fixture.settled()
     }
@@ -118,7 +118,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
         fixture.advanceClock(by: 4)
         rollover.fire()
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
         try await fixture.client.next().succeed(TaskListTotalsRefresh(taskList: running, rows: rows))
         try await fixture.settled()
     }

@@ -412,20 +412,20 @@ final class Fixture {
     let clock = FakeClock()
     let scheduler = FakeScheduler()
     let settings: MemorySettings
-    let session: TrackerSession
-    var sync: TrackerSync { session.sync }
-    var trackingActions: TrackingActions { session.trackingActions }
-    var trackingAvailability: TrackingAvailability { session.trackingAvailability }
-    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
-    var taskRename: TaskRenameStore { session.taskRename }
-    var taskArchiving: TaskArchivingStore { session.taskArchiving }
-    var taskCreation: TaskCreationStore { session.taskCreation }
-    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
-    var worklogMove: WorklogMoveStore { session.worklogMove }
-    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
-    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }
+    let features: TrackerFeatures
+    var sync: TrackerSync { features.sync }
+    var trackingActions: TrackingActions { features.trackingActions }
+    var trackingAvailability: TrackingAvailability { features.trackingAvailability }
+    var trackingAutomation: TrackingAutomationStore { features.trackingAutomation }
+    var taskRename: TaskRenameStore { features.taskRename }
+    var taskArchiving: TaskArchivingStore { features.taskArchiving }
+    var taskCreation: TaskCreationStore { features.taskCreation }
+    var worklogDeletion: WorklogDeletionStore { features.worklogDeletion }
+    var worklogMove: WorklogMoveStore { features.worklogMove }
+    var bulkTaskArchiving: BulkTaskArchivingStore { features.bulkTaskArchiving }
+    var worklogCorrection: WorklogCorrectionStore { features.worklogCorrection }
     var canStartSelectedTask: Bool {
-        guard let taskID = session.taskCatalog.selectedTaskID else { return false }
+        guard let taskID = features.taskCatalog.selectedTaskID else { return false }
         return trackingAvailability.canStart(taskID: taskID)
     }
     let preferences: MemoryTrackingPreferences
@@ -441,7 +441,7 @@ final class Fixture {
         self.settings = settings
         let preferences = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: pauseOnScreenLock))
         self.preferences = preferences
-        session = TrackerSession(
+        features = TrackerFeatures(
             client: client, clock: clock, scheduler: scheduler, settings: settings,
             trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, reports: reports ? client : nil,
             calendar: calendar)
@@ -462,7 +462,7 @@ final class Fixture {
             let request = try await client.next()
             switch request.operation {
             case .history(let taskID, nil):
-                XCTAssertEqual(taskID, session.taskCatalog.selectedTaskID)
+                XCTAssertEqual(taskID, features.taskCatalog.selectedTaskID)
                 request.succeed(emptyPage)
             case .report where reportsEnabled:
                 request.succeed(TaskListTotalsRefresh(taskList: resources, rows: rows))
@@ -476,7 +476,7 @@ final class Fixture {
 
     func settled() async throws {
         let finished = Task { @MainActor in
-            while (self.client.hasPendingRequests || self.session.worklogHistory.isLoading) && !Task.isCancelled {
+            while (self.client.hasPendingRequests || self.features.worklogHistory.isLoading) && !Task.isCancelled {
                 await Task.yield()
             }
         }

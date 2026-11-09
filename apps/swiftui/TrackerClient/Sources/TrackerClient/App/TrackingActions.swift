@@ -3,7 +3,7 @@ import Foundation
 /// Starts and stops tracking from the window and the menu bar. `TrackingAvailability` decides which of those
 /// requests are possible right now.
 ///
-/// `TrackerSession` creates it with the session's stores and `TrackerSync`. After each request it asks the sync
+/// `TrackerFeatures` creates it with the stores and `TrackerSync`. After each request it asks the sync
 /// to cancel a pending auto-resume, reload the task list, record a failure and publish. The sync never calls
 /// back into this class.
 public final class TrackingActions {

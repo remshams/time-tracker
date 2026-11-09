@@ -70,10 +70,10 @@ final class TaskArchivingTests: XCTestCase {
         try await fixture.update("the archived task") {
             command.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: activeWorklog))
         }
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived(secondTask)])
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
-        XCTAssertEqual(fixture.session.active, activeWorklog)
-        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived(secondTask)])
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
+        XCTAssertEqual(fixture.features.taskCatalog.tab, .active)
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertFalse(fixture.taskArchiving.isSubmitting)
         XCTAssertEqual(
@@ -81,7 +81,7 @@ final class TaskArchivingTests: XCTestCase {
             [
                 .open(.local), .history(task: firstTask.id, cursor: nil),
                 .archive(task: secondTask.id, expectedName: secondTask.name, at: "2025-01-01T00:00:00.000Z"),
-                .refresh(fixture.session.connection.settings),
+                .refresh(fixture.features.connection.settings),
             ])
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
     }
@@ -96,12 +96,12 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.complete(.success(.task(TaskCommandResult(task: archived(secondTask)))))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.taskArchiving.isPresented, "The dialog must close before the reload.")
         XCTAssertFalse(fixture.taskArchiving.isSubmitting)
         reload.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.taskCatalog.visibleTasks, [firstTask])
+        XCTAssertEqual(fixture.features.taskCatalog.visibleTasks, [firstTask])
     }
 
     @MainActor
@@ -118,8 +118,8 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
-        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.features.taskCatalog.tab, .active)
         XCTAssertFalse(fixture.taskArchiving.isPresented)
     }
 
@@ -148,15 +148,15 @@ final class TaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertNil(fixture.taskArchiving.error)
-        XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, archivedTask.id)
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.taskCatalog.tab, .archived)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, archivedTask.id)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         fixture.sync.changeTab(.active)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertEqual(
             fixture.client.operations.filter {
                 if case .unarchive = $0 { return true }; return false
@@ -222,7 +222,7 @@ final class TaskArchivingTests: XCTestCase {
         let startedHistory = try await fixture.client.next()
         XCTAssertEqual(startedHistory.operation, .history(task: firstTask.id, cursor: nil))
         try await fixture.update("the tracking history") { startedHistory.succeed(emptyPage) }
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertTrue(fixture.taskArchiving.isSubmitting)
         try await fixture.update("the archived task") {
             command.succeed(
@@ -232,7 +232,7 @@ final class TaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertTrue(fixture.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertTrue(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
     }
 
@@ -247,21 +247,21 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "The task changed on another client.", kind: "conflict"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.taskArchiving.isSubmitting)
         XCTAssertEqual(fixture.taskArchiving.error, "The task changed on another client.")
         let renamed = archived(secondTask, false, name: "Renamed elsewhere")
         try await fixture.update("the reloaded task list") {
             reload.succeed(TaskListResources(tasks: [firstTask, renamed], active: nil))
         }
-        XCTAssertEqual(fixture.session.tasks, [firstTask, renamed])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, renamed])
         XCTAssertTrue(fixture.taskArchiving.isPresented)
         XCTAssertEqual(fixture.taskArchiving.taskID, secondTask.id)
         XCTAssertEqual(fixture.taskArchiving.taskName, secondTask.name)
         XCTAssertEqual(fixture.taskArchiving.action, .archive)
         XCTAssertEqual(fixture.taskArchiving.error, "The task changed on another client.")
         XCTAssertTrue(fixture.taskArchiving.canSubmit)
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
         fixture.clock.now.addTimeInterval(90)
         fixture.taskArchiving.submit()
         XCTAssertNil(fixture.taskArchiving.error)
@@ -293,16 +293,16 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         try await fixture.update("the reloaded task list") {
             reload.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         }
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived(secondTask)])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived(secondTask)])
         XCTAssertTrue(fixture.taskArchiving.isPresented)
         XCTAssertEqual(
             fixture.taskArchiving.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        XCTAssertFalse(fixture.session.connection.stale)
+        XCTAssertFalse(fixture.features.connection.stale)
         XCTAssertEqual(fixture.client.operations.count, 4)
     }
 
@@ -320,13 +320,13 @@ final class TaskArchivingTests: XCTestCase {
         try await fixture.update("the failed reload") {
             reload.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         } until: {
-            fixture.session.connection.stale
+            fixture.features.connection.stale
         }
-        XCTAssertEqual(fixture.session.connection.message, "Server offline")
+        XCTAssertEqual(fixture.features.connection.message, "Server offline")
         XCTAssertTrue(fixture.taskArchiving.isPresented)
         XCTAssertEqual(fixture.taskArchiving.error, "Archive rejected")
         XCTAssertTrue(fixture.taskArchiving.canSubmit)
-        XCTAssertEqual(fixture.session.tasks, resources.catalog.value)
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, resources.catalog.value)
     }
 
     @MainActor
@@ -346,7 +346,7 @@ final class TaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertNil(fixture.taskArchiving.error)
-        XCTAssertFalse(fixture.session.tasks.first { $0.id == secondTask.id }!.archived)
+        XCTAssertFalse(fixture.features.taskCatalog.tasks.first { $0.id == secondTask.id }!.archived)
     }
 
     @MainActor
@@ -360,7 +360,7 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Rejected", kind: "validation"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertTrue(fixture.taskArchiving.isPresented)
         try await fixture.update("the reloaded task list") {
             reload.succeed(resources)
@@ -383,7 +383,7 @@ final class TaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertNil(fixture.taskArchiving.error)
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived(archivedTask, false)])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived(archivedTask, false)])
     }
 
     @MainActor
@@ -435,7 +435,7 @@ final class TaskArchivingTests: XCTestCase {
             !fixture.taskArchiving.isSubmitting
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
-        XCTAssertEqual(fixture.session.tasks, [firstTask, archived(backgroundName)])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived(backgroundName)])
     }
 
     @MainActor
@@ -444,8 +444,8 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
         fixture.worklogCorrection.open(worklogID: "missing")
-        let archive = ObservationProbe { ViewReads.taskArchiving(fixture.session) }
-        let content = ObservationProbe { ViewReads.content(fixture.session) }
+        let archive = ObservationProbe { ViewReads.taskArchiving(fixture.features) }
+        let content = ObservationProbe { ViewReads.content(fixture.features) }
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(archive.consume())
         XCTAssertTrue(fixture.worklogCorrection.canOpen)

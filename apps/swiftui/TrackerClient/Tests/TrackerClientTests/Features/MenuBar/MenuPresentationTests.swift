@@ -6,7 +6,7 @@ final class MenuPresentationTests: XCTestCase {
     func testRunningTaskNameFollowsConnectionTrackingAndCatalog() async throws {
         let unconfirmed = Fixture()
         defer { unconfirmed.cleanup() }
-        XCTAssertEqual(TrackerMenuInputs.current(unconfirmed.session).runningTaskName, "Waiting for tracker state")
+        XCTAssertEqual(TrackerMenuInputs.current(unconfirmed.features).runningTaskName, "Waiting for tracker state")
 
         let orphan = WorklogItem(id: "worklog-orphan", taskId: "missing-task", start: activeWorklog.start, end: nil)
         let cases = [
@@ -18,7 +18,7 @@ final class MenuPresentationTests: XCTestCase {
             let fixture = Fixture()
             defer { fixture.cleanup() }
             try await fixture.start(resources)
-            XCTAssertEqual(TrackerMenuInputs.current(fixture.session).runningTaskName, expected)
+            XCTAssertEqual(TrackerMenuInputs.current(fixture.features).runningTaskName, expected)
         }
     }
 
@@ -46,8 +46,8 @@ final class MenuPresentationTests: XCTestCase {
         var valueChanges = 0
         observer.onLabelChange = { labelChanges += 1 }
         observer.onValuesChange = { valueChanges += 1 }
-        let windowTimer = ObservationProbe { ViewReads.timer(fixture.session) }
-        let windowControls = ObservationProbe { ViewReads.controls(fixture.session) }
+        let windowTimer = ObservationProbe { ViewReads.timer(fixture.features) }
+        let windowControls = ObservationProbe { ViewReads.controls(fixture.features) }
         observer.menuOpened()
         let originalContent = observer.content
         let originalLabel = observer.label
@@ -57,8 +57,8 @@ final class MenuPresentationTests: XCTestCase {
             display.fire()
             XCTAssertTrue(windowTimer.consume(), "Freezing a menu must not freeze the window's clock.")
             try await menu.settled()
-            let totals = fixture.session.dailyTotals
-            XCTAssertEqual(observer.values.elapsedText, fixture.session.tracking.timerText)
+            let totals = fixture.features.dailyTotals
+            XCTAssertEqual(observer.values.elapsedText, fixture.features.tracking.timerText)
             XCTAssertEqual(observer.values.totalText, totals.dayTotal.map(formatClockDuration))
             XCTAssertEqual(
                 observer.values.taskDurationTexts[firstTask.id],
@@ -83,7 +83,7 @@ final class MenuPresentationTests: XCTestCase {
         observer.menuClosed()
         XCTAssertNotEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 1)
-        XCTAssertEqual(observer.content.elapsedText, fixture.session.tracking.timerText)
+        XCTAssertEqual(observer.content.elapsedText, fixture.features.tracking.timerText)
         XCTAssertTrue(observer.content.canStopTracking)
     }
 
@@ -230,7 +230,7 @@ final class MenuPresentationTests: XCTestCase {
         fixture.trackingActions.stopTracking(worklogID: try XCTUnwrap(observer.content.activeWorklogID))
         fixture.trackingActions.startTracking(taskID: target.id)
         XCTAssertEqual(fixture.client.operations.count, count)
-        XCTAssertEqual(fixture.session.active?.id, changed.id)
+        XCTAssertEqual(fixture.features.tracking.active?.id, changed.id)
         XCTAssertEqual(observer.content.activeWorklogID, activeWorklog.id)
         observer.menuClosed()
         XCTAssertEqual(observer.content.activeWorklogID, changed.id)

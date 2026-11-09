@@ -14,12 +14,13 @@ final class MenuTaskClipboardTests: XCTestCase {
         try await fixture.start(resources, rows: rows)
         fixture.sync.selectTask(firstTask.id)
         XCTAssertEqual(
-            fixture.session.menuCopyValue(.copyName, taskID: secondTask.id, connection: .local), "Second task")
+            fixture.features.menuBar.menuCopyValue(.copyName, taskID: secondTask.id, connection: .local), "Second task")
         XCTAssertEqual(
-            fixture.session.menuCopyValue(.copyExact, taskID: secondTask.id, connection: .local), "1h 23m 45s")
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: secondTask.id, connection: .local), "1h 30m")
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, firstTask.id)
-        XCTAssertEqual(fixture.session.active, activeWorklog)
+            fixture.features.menuBar.menuCopyValue(.copyExact, taskID: secondTask.id, connection: .local), "1h 23m 45s")
+        XCTAssertEqual(
+            fixture.features.menuBar.menuCopyValue(.copyRounded, taskID: secondTask.id, connection: .local), "1h 30m")
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
     }
 
     @MainActor
@@ -37,8 +38,10 @@ final class MenuTaskClipboardTests: XCTestCase {
         fixture.clock.uptime += 15
         try await menu.settled()
         XCTAssertEqual(observer.content, captured)
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "7m 35s")
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "15m")
+        XCTAssertEqual(
+            fixture.features.menuBar.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "7m 35s")
+        XCTAssertEqual(
+            fixture.features.menuBar.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "15m")
         observer.menuClosed()
     }
 
@@ -51,11 +54,13 @@ final class MenuTaskClipboardTests: XCTestCase {
             rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 1_200_000_000)])
         let operations = fixture.client.operations.count
         XCTAssertFalse(fixture.trackingAvailability.canStart(taskID: archivedTask.id))
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: archivedTask.id, connection: .local), "20m 0s")
         XCTAssertEqual(
-            fixture.session.menuCopyValue(.copyName, taskID: archivedTask.id, connection: .local), archivedTask.name)
+            fixture.features.menuBar.menuCopyValue(.copyExact, taskID: archivedTask.id, connection: .local), "20m 0s")
+        XCTAssertEqual(
+            fixture.features.menuBar.menuCopyValue(.copyName, taskID: archivedTask.id, connection: .local),
+            archivedTask.name)
         XCTAssertEqual(fixture.client.operations.count, operations)
-        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.features.tracking.active)
     }
 
     @MainActor
@@ -63,10 +68,10 @@ final class MenuTaskClipboardTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        XCTAssertNil(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local))
-        XCTAssertNil(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local))
+        XCTAssertNil(fixture.features.menuBar.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local))
+        XCTAssertNil(fixture.features.menuBar.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local))
         XCTAssertEqual(
-            fixture.session.menuCopyValue(.copyName, taskID: firstTask.id, connection: .local), firstTask.name)
+            fixture.features.menuBar.menuCopyValue(.copyName, taskID: firstTask.id, connection: .local), firstTask.name)
     }
 
     @MainActor
@@ -74,11 +79,13 @@ final class MenuTaskClipboardTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil), rows: [])
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "0s")
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "0m")
-        XCTAssertNil(fixture.session.menuCopyValue(.copyName, taskID: "missing-task", connection: .local))
+        XCTAssertEqual(
+            fixture.features.menuBar.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "0s")
+        XCTAssertEqual(
+            fixture.features.menuBar.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "0m")
+        XCTAssertNil(fixture.features.menuBar.menuCopyValue(.copyName, taskID: "missing-task", connection: .local))
         for action in [MenuShortcutAction.openMenu, .moveUp, .moveDown] {
-            XCTAssertNil(fixture.session.menuCopyValue(action, taskID: firstTask.id, connection: .local))
+            XCTAssertNil(fixture.features.menuBar.menuCopyValue(action, taskID: firstTask.id, connection: .local))
         }
     }
 
@@ -90,16 +97,17 @@ final class MenuTaskClipboardTests: XCTestCase {
             TaskListResources(tasks: [firstTask], active: nil),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)])
         for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
-            XCTAssertNil(fixture.session.menuCopyValue(action, taskID: firstTask.id, connection: serverSettings))
+            XCTAssertNil(
+                fixture.features.menuBar.menuCopyValue(action, taskID: firstTask.id, connection: serverSettings))
         }
         fixture.clock.now.addTimeInterval(86_400)
         fixture.clock.uptime += 86_400
-        XCTAssertNil(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local))
-        XCTAssertNil(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local))
+        XCTAssertNil(fixture.features.menuBar.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local))
+        XCTAssertNil(fixture.features.menuBar.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local))
     }
 
     @MainActor
-    func testCachedTotalsRemainCopyableWithTheSessionMarkingThemCached() async throws {
+    func testCachedTotalsRemainCopyableMarkedAsCached() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
@@ -109,8 +117,9 @@ final class MenuTaskClipboardTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.dailyTotals.status, .cached)
+        XCTAssertEqual(fixture.features.dailyTotals.status, .cached)
         XCTAssertEqual(
-            fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: serverSettings), "1m 0s")
+            fixture.features.menuBar.menuCopyValue(.copyExact, taskID: firstTask.id, connection: serverSettings),
+            "1m 0s")
     }
 }

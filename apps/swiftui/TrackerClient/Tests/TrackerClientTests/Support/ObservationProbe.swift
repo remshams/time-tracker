@@ -56,42 +56,42 @@ final class TaskTotalProbes {
 @MainActor
 enum ViewReads {
     /// Reads the values the task list and worklog list display.
-    static func lists(_ session: TrackerSession) {
-        _ = session.taskCatalog.visibleTasks
-        _ = session.taskCatalog.selectedTaskID
-        _ = session.taskCatalog.selectedTask
-        _ = session.taskCatalog.tab
-        _ = session.tracking.active
-        _ = session.connection.stale
-        _ = session.dailyTotals.status
-        _ = session.worklogHistory.worklogs
-        _ = session.worklogHistory.hasMore
-        _ = session.worklogHistory.isLoading
-        _ = session.worklogHistory.error
-        _ = session.worklogHistory.unavailable
-        _ = session.trackingAutomation.statusText
+    static func lists(_ features: TrackerFeatures) {
+        _ = features.taskCatalog.visibleTasks
+        _ = features.taskCatalog.selectedTaskID
+        _ = features.taskCatalog.selectedTask
+        _ = features.taskCatalog.tab
+        _ = features.tracking.active
+        _ = features.connection.stale
+        _ = features.dailyTotals.status
+        _ = features.worklogHistory.worklogs
+        _ = features.worklogHistory.hasMore
+        _ = features.worklogHistory.isLoading
+        _ = features.worklogHistory.error
+        _ = features.worklogHistory.unavailable
+        _ = features.trackingAutomation.statusText
     }
 
     /// Reads every window value outside the request controls, timer, totals, and feature sheets.
-    static func content(_ session: TrackerSession) {
-        lists(session)
-        _ = session.tracking.error
-        _ = session.connection.settings
-        _ = session.connection.statusText
-        _ = session.connection.message
-        _ = session.connection.changing
-        _ = session.trackingAutomation.enabled
+    static func content(_ features: TrackerFeatures) {
+        lists(features)
+        _ = features.tracking.error
+        _ = features.connection.settings
+        _ = features.connection.statusText
+        _ = features.connection.message
+        _ = features.connection.changing
+        _ = features.trackingAutomation.enabled
     }
 
-    static func controls(_ session: TrackerSession) {
-        _ = session.trackingAvailability.canStop
-        for task in session.taskCatalog.tasks { _ = session.trackingAvailability.canStart(taskID: task.id) }
+    static func controls(_ features: TrackerFeatures) {
+        _ = features.trackingAvailability.canStop
+        for task in features.taskCatalog.tasks { _ = features.trackingAvailability.canStart(taskID: task.id) }
     }
 
-    static func timer(_ session: TrackerSession) { _ = session.tracking.timerText }
+    static func timer(_ features: TrackerFeatures) { _ = features.tracking.timerText }
 
-    static func taskCreation(_ session: TrackerSession) {
-        let store = session.taskCreation
+    static func taskCreation(_ features: TrackerFeatures) {
+        let store = features.taskCreation
         _ = store.isPresented
         _ = store.name
         _ = store.isSubmitting
@@ -99,8 +99,8 @@ enum ViewReads {
         _ = store.canOpen
     }
 
-    static func taskRename(_ session: TrackerSession) {
-        let store = session.taskRename
+    static func taskRename(_ features: TrackerFeatures) {
+        let store = features.taskRename
         _ = store.isPresented
         _ = store.originalName
         _ = store.name
@@ -109,8 +109,8 @@ enum ViewReads {
         _ = store.canOpen
     }
 
-    static func taskArchiving(_ session: TrackerSession) {
-        let store = session.taskArchiving
+    static func taskArchiving(_ features: TrackerFeatures) {
+        let store = features.taskArchiving
         _ = store.isPresented
         _ = store.taskName
         _ = store.action
@@ -118,8 +118,8 @@ enum ViewReads {
         _ = store.error
     }
 
-    static func bulkTaskArchiving(_ session: TrackerSession) {
-        let store = session.bulkTaskArchiving
+    static func bulkTaskArchiving(_ features: TrackerFeatures) {
+        let store = features.bulkTaskArchiving
         _ = store.isPresented
         _ = store.daysText
         _ = store.isLoading
@@ -131,8 +131,8 @@ enum ViewReads {
         _ = store.canOpen
     }
 
-    static func worklogCorrection(_ session: TrackerSession) {
-        let store = session.worklogCorrection
+    static func worklogCorrection(_ features: TrackerFeatures) {
+        let store = features.worklogCorrection
         _ = store.isPresented
         _ = store.taskName
         _ = store.start
@@ -143,8 +143,8 @@ enum ViewReads {
         _ = store.canOpen
     }
 
-    static func worklogMove(_ session: TrackerSession) {
-        let store = session.worklogMove
+    static func worklogMove(_ features: TrackerFeatures) {
+        let store = features.worklogMove
         _ = store.isPresented
         _ = store.original
         _ = store.sourceTaskName
@@ -157,8 +157,8 @@ enum ViewReads {
         _ = store.canOpen
     }
 
-    static func worklogDeletion(_ session: TrackerSession) {
-        let store = session.worklogDeletion
+    static func worklogDeletion(_ features: TrackerFeatures) {
+        let store = features.worklogDeletion
         _ = store.isPresented
         _ = store.taskName
         _ = store.original
@@ -171,24 +171,27 @@ enum ViewReads {
 /// Checks that the last publish updated the tracking store's timer text, the auto-pause status and the daily totals
 /// store's values. Call it only while the clock hasn't moved since that publish.
 @MainActor
-func assertPublished(_ session: TrackerSession, file: StaticString = #filePath, line: UInt = #line) {
-    let automation = session.trackingAutomation
+func assertPublished(_ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line) {
+    let features = fixture.features
+    let automation = features.trackingAutomation
     XCTAssertEqual(automation.statusText, automation.pausedStatusText, file: file, line: line)
-    let totals = session.dailyTotals
-    XCTAssertEqual(totals.status, totals.shownStatus(clock: session.clock), file: file, line: line)
+    let totals = features.dailyTotals
+    XCTAssertEqual(totals.status, totals.shownStatus(clock: fixture.clock), file: file, line: line)
     XCTAssertEqual(
-        totals.dayTotal, totals.totalDuration(active: session.active, clock: session.clock), file: file, line: line)
-    let explanation = totals.explanation(clock: session.clock)
+        totals.dayTotal, totals.totalDuration(active: features.tracking.active, clock: fixture.clock),
+        file: file, line: line)
+    let explanation = totals.explanation(clock: fixture.clock)
     XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
     XCTAssertEqual(
-        session.tracking.timerText,
-        session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),
+        features.tracking.timerText,
+        features.tracking.displayText(clock: fixture.clock, confirmed: features.connection.confirmed),
         file: file, line: line)
-    for task in session.tasks {
-        XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
+    for task in features.taskCatalog.tasks {
+        XCTAssertEqual(
+            totals.taskDurations[task.id], features.menuBar.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
             totals.taskTotal(taskID: task.id).content?.text,
-            session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
+            features.menuBar.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
         XCTAssertEqual(totals.taskTotal(taskID: task.id).content?.explanation, explanation, file: file, line: line)
     }
 }

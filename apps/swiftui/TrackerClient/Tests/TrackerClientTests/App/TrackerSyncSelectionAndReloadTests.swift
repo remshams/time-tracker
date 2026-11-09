@@ -14,12 +14,12 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
 
         let finished = Task { @MainActor in
             await reload {
-                tasksInThen = fixture.session.tasks
-                timerInThen = fixture.session.tracking.timerText
+                tasksInThen = fixture.features.tasks
+                timerInThen = fixture.features.tracking.timerText
             }
         }
         let refresh = try await fixture.client.next()
-        XCTAssertEqual(refresh.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(refresh.operation, .refresh(fixture.features.connection.settings))
         fixture.advanceClock(by: 4)
         refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         try await fixture.taskValue(finished)
@@ -40,13 +40,13 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
 
         let finished = Task { @MainActor in await reload() }
         let refresh = try await fixture.client.next()
-        XCTAssertEqual(refresh.operation, .refresh(fixture.session.connection.settings))
+        XCTAssertEqual(refresh.operation, .refresh(fixture.features.connection.settings))
         fixture.advanceClock(by: 4)
         refresh.succeed(running)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         try await fixture.taskValue(finished)
-        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:34", "The reloaded task list must show.")
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34", "The reloaded task list must show.")
         history.succeed(emptyPage)
         try await fixture.settled()
     }
@@ -58,14 +58,14 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
 
         fixture.sync.selectTask(secondTask.id)
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
         let selected = try await fixture.client.next()
         XCTAssertEqual(selected.operation, .history(task: secondTask.id, cursor: nil))
         selected.succeed(emptyPage)
         try await fixture.settled()
 
         fixture.sync.changeTab(.archived)
-        XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
+        XCTAssertEqual(fixture.features.taskCatalog.tab, .archived)
         let changed = try await fixture.client.next()
         XCTAssertEqual(changed.operation, .history(task: archivedTask.id, cursor: nil))
         changed.succeed(emptyPage)
@@ -78,8 +78,8 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
         let lists = ObservationProbe { ViewReads.lists(fixture.session) }
-        let catalog = fixture.session.taskCatalog
-        let worklogHistory = fixture.session.worklogHistory
+        let catalog = fixture.features.taskCatalog
+        let worklogHistory = fixture.features.worklogHistory
 
         fixture.sync.selectTask(secondTask.id)
         let history = try await fixture.client.next()
@@ -118,8 +118,8 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
 
         fixture.sync.showTask(secondTask)
 
-        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
-        XCTAssertEqual(fixture.session.taskCatalog.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.features.taskCatalog.tab, .active)
+        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)

@@ -4,7 +4,7 @@ import Foundation
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
 /// connection change, the tab and task selection, and the reloads after dialog writes.
 ///
-/// `TrackerSession` creates the stores and passes them in. `TrackingActions` and the dialog stores' reload closures
+/// `TrackerFeatures` creates the stores and passes them in. `TrackingActions` and the dialog stores' reload closures
 /// call the package-internal methods below, for example to reload the task list or the history, record a failure
 /// and publish.
 public final class TrackerSync {

@@ -3,8 +3,8 @@ import Observation
 
 /// Holds the task list, the Active or Archived tab, and the selected task for the whole app.
 ///
-/// Views read the properties; `TrackerSync` and `TrackerSession` write them. Each property is assigned only
-/// when its value changes, so an unchanged poll redraws nothing and a change to another task leaves the
+/// Views read the properties; `TrackerSync` and the dialog stores' follow-ups write them. Each property is assigned
+/// only when its value changes, so an unchanged poll redraws nothing and a change to another task leaves the
 /// selected task's readers alone.
 @Observable
 public final class TaskCatalogStore: ChangeGuardedStore {
