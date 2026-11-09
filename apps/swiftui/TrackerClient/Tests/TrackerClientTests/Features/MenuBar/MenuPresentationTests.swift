@@ -53,8 +53,7 @@ final class MenuPresentationTests: XCTestCase {
         let originalLabel = observer.label
         let display = try XCTUnwrap(fixture.scheduler.display)
         for step in 1...3 {
-            fixture.clock.now.addTimeInterval(60)
-            fixture.clock.uptime += 60
+            fixture.advanceClock(by: 60)
             display.fire()
             XCTAssertTrue(windowTimer.consume(), "Freezing a menu must not freeze the window's clock.")
             try await menu.settled()
@@ -74,10 +73,7 @@ final class MenuPresentationTests: XCTestCase {
                     durationMicroseconds: Int64(10 + step * 60) * 1_000_000)
             ]
             poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: updatedRows))
-            let finished = Task { @MainActor in
-                while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-            }
-            try await fixture.taskValue(finished)
+            try await fixture.settled()
             try await menu.settled()
         }
         XCTAssertEqual(observer.content, originalContent)
@@ -167,13 +163,11 @@ final class MenuPresentationTests: XCTestCase {
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 5_000_000)])
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
-        fixture.clock.now.addTimeInterval(60)
-        fixture.clock.uptime += 60
+        fixture.advanceClock(by: 60)
         menu.menuOpened()
         XCTAssertEqual(observer.content.totalText, "00:01:05")
         XCTAssertEqual(observer.label.totalText, "00:01")
-        fixture.clock.now.addTimeInterval(60)
-        fixture.clock.uptime += 60
+        fixture.advanceClock(by: 60)
         observer.setShowDailyTotal(false)
         XCTAssertEqual(observer.content.totalText, "00:01:05")
         XCTAssertEqual(observer.label.totalText, "00:01")
@@ -231,10 +225,7 @@ final class MenuPresentationTests: XCTestCase {
         poll.succeed(TaskListResources(tasks: [firstTask, archived], active: changed))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
-        let finished = Task { @MainActor in
-            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.settled()
         try await menu.settled()
         let count = fixture.client.operations.count
         fixture.trackingActions.stopTracking(worklogID: try XCTUnwrap(observer.content.activeWorklogID))

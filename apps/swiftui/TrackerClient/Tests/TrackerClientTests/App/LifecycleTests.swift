@@ -78,8 +78,7 @@ final class LifecycleTests: XCTestCase {
         XCTAssertNil(fixture.scheduler.display, "The clock runs while no window or menu is open.")
         XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 0)
         let operationCount = fixture.client.operations.count
-        fixture.clock.now.addTimeInterval(60)
-        fixture.clock.uptime += 60
+        fixture.advanceClock(by: 60)
         clock.fire()
         XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 60)
         XCTAssertEqual(fixture.client.operations.count, operationCount)

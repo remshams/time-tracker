@@ -514,23 +514,21 @@ final class Fixture {
     ///
     /// Waiting for the reply first means a condition that was already true can't end the wait early.
     func update(
-        _ description: String, timeout: TimeInterval = 0.5,
-        file: StaticString = #filePath, line: UInt = #line,
+        _ description: String, file: StaticString = #filePath, line: UInt = #line,
         after action: () -> Void, until condition: @MainActor () -> Bool = { true }
     ) async throws {
         action()
-        try await waitUntil(description, timeout: timeout, file: file, line: line) {
+        try await waitUntil(description, file: file, line: line) {
             !client.hasReplyInFlight && condition()
         }
         await Task.yield()
     }
 
     func waitUntil(
-        _ description: String, timeout: TimeInterval = 0.5,
-        file: StaticString = #filePath, line: UInt = #line,
+        _ description: String, file: StaticString = #filePath, line: UInt = #line,
         _ condition: @MainActor () -> Bool
     ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(0.5)
         while !condition() {
             guard Date() < deadline else {
                 cleanup()

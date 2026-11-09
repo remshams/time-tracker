@@ -39,8 +39,7 @@ final class RefreshPresentationTests: XCTestCase {
         var redraws: [Set<String>] = []
         let display = try XCTUnwrap(fixture.scheduler.display)
         for _ in 0..<3 {
-            fixture.clock.now.addTimeInterval(1)
-            fixture.clock.uptime += 1
+            fixture.advanceClock(by: 1)
             display.fire()
             redraws.append(totals.changed())
             assertPublished(fixture.session)
@@ -96,8 +95,7 @@ final class RefreshPresentationTests: XCTestCase {
             ])
         let totals = TaskTotalProbes(fixture.session.dailyTotals, taskIDs: [firstTask.id, secondTask.id])
         let lists = ObservationProbe { ViewReads.content(fixture.session) }
-        fixture.clock.now.addTimeInterval(5)
-        fixture.clock.uptime += 5
+        fixture.advanceClock(by: 5)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.succeed(
