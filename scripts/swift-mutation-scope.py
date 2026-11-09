@@ -191,20 +191,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    (
-        "#327 exposes the creation store on the fixture",
-        ((
-            "    var taskArchiving: TaskArchivingStore { session.taskArchiving }\n",
-            "    var taskArchiving: TaskArchivingStore { session.taskArchiving }\n"
-            "    var taskCreation: TaskCreationStore { session.taskCreation }\n",
-        ),),
-        None,
-        None,
-        ("Features/TaskCreation/TaskCreationTests.swift",),
-        ("Features/TaskCreation/TaskCreationTests.swift",),
-    ),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
@@ -220,9 +207,7 @@ SUPPORT_PRODUCTION = {
 # deleted path to the successor here. The successor's own scope covers the
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
-REVIEWED_REPLACEMENTS: dict[str, str] = {
-    SOURCES + "Features/TaskCreation/TaskCreationState.swift": SOURCES + CREATION,
-}
+REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
