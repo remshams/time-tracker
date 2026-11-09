@@ -18,7 +18,6 @@ TESTS = "Tests/TrackerClientTests/"
 SESSION = "App/TrackerSession.swift"
 SYNC = "App/TrackerSync.swift"
 TRACKING_ACTIONS = "App/TrackingActions.swift"
-PRESENTATION = "App/TrackerPresentation.swift"
 MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingStore.swift"
@@ -58,32 +57,28 @@ TEST_PRODUCTION = {
         SESSION, SYNC, TRACKING_ACTIONS, CONNECTION, CONNECTION_TESTING, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION,
         CREATION,
     ],
-    "App/HistoryPresentationTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, HISTORY, CATALOG],
+    "App/HistoryPresentationTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
         SESSION, SYNC, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, MENU_BAR_STORE,
     ],
     "App/ObserverTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
-    "App/PresentationTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TRACKING, CATALOG, HISTORY, TOTALS, CREATION, AUTOMATION,
-        CONNECTION, CONNECTION_TESTING, BULK_ARCHIVING, RENAME, MOVE, DELETION,
-    ],
     "App/RefreshPresentationTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION,
-        MENU_SOURCES,
+        SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION, MENU_SOURCES,
     ],
-    "App/TrackerSyncSelectionAndReloadTests.swift": [SYNC, CATALOG, HISTORY, CONNECTION],
+    "App/TrackerSyncPublishTests.swift": [
+        SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION,
+    ],
+    "App/TrackerSyncSelectionAndReloadTests.swift": [SESSION, SYNC, TRACKING, CATALOG, HISTORY, CONNECTION],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TIME_FORMATTING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION,
-        CONNECTION_TESTING, CREATION, RENAME, ARCHIVING, CORRECTION, MOVE, DELETION,
+        SESSION, SYNC, TRACKING_ACTIONS, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CONNECTION_TESTING, CREATION,
+        RENAME, ARCHIVING, CORRECTION, MOVE, DELETION,
     ],
     "Features/Connection/ConnectionTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, CONNECTION, CONNECTION_TESTING, CATALOG, TRACKING, HISTORY,
-        MENU_SOURCES,
+        SESSION, SYNC, TRACKING_ACTIONS, CONNECTION, CONNECTION_TESTING, CATALOG, TRACKING, HISTORY, MENU_SOURCES,
     ],
     "Features/DailyTotals/DailyTotalsTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING,
-        CATALOG, HISTORY,
+        SESSION, SYNC, TRACKING_ACTIONS, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING, CATALOG, HISTORY,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
@@ -93,8 +88,8 @@ TEST_PRODUCTION = {
         CONNECTION, CONNECTION_TESTING, CATALOG, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, PRESENTATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER,
-        MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
+        SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER, MENU_VALUES, TOTALS,
+        TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskOrderTests.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, AUTOMATION, MENU_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TOTALS,
@@ -117,20 +112,20 @@ TEST_PRODUCTION = {
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
     ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME,
-        CORRECTION, MOVE, CONNECTION, DELETION, BULK_ARCHIVING,
+        SESSION, SYNC, TRACKING_ACTIONS, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION, MOVE,
+        CONNECTION, DELETION, BULK_ARCHIVING,
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION,
-        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION,
+        SESSION, SYNC, TRACKING_ACTIONS, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, CONNECTION_TESTING,
+        AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         SESSION, SYNC, NAME_POLICY, CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION,
-        CONNECTION, CONNECTION_TESTING, NAME_POLICY, MENU_SOURCES, DELETION, MOVE, CORRECTION,
+        SESSION, SYNC, TRACKING_ACTIONS, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
+        CONNECTION_TESTING, NAME_POLICY, MENU_SOURCES, DELETION, MOVE, CORRECTION,
     ],
     "Features/Tracking/TrackingAvailabilityTests.swift": [TRACKING_AVAILABILITY, CONNECTION, CATALOG, TRACKING],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
@@ -152,31 +147,31 @@ TEST_PRODUCTION = {
     ],
     "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY],
     "Features/WorklogMove/WorklogMoveTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION,
-        CREATION, CORRECTION, MENU_SOURCES, DELETION,
+        SESSION, SYNC, TRACKING_ACTIONS, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
+        MENU_SOURCES, DELETION,
     ],
     "Features/WorklogDeletion/WorklogDeletionTests.swift": [
-        SESSION, SYNC, TRACKING_ACTIONS, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION,
-        RENAME, CORRECTION, ARCHIVING, MOVE,
+        SESSION, SYNC, TRACKING_ACTIONS, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, RENAME,
+        CORRECTION, ARCHIVING, MOVE,
     ],
     "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
     "Support/FixtureCleanupTests.swift": [SESSION, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, CONNECTION],
 }
 # A suite that exercises a key file also exercises its companions. #257 moved the
 # elapsed time helpers from TrackingState.swift to TimeFormatting.swift, so every
-# suite mapped to TRACKING runs them. The observable stores and the presentation
-# assign through the shared change-guarded helper. A direct change to a key file
-# still selects only that file.
+# suite mapped to TRACKING runs them. The observable stores assign through the
+# shared change-guarded helper. A direct change to a key file still selects only
+# that file.
 TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
     **{store: (CHANGE_GUARD,) for store in (
-        PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
+        CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
     # TrackingActions asks TrackingAvailability before each request.
     TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
     **{
         owner: (WRITE_FAILURE,)
-        for owner in (SESSION, SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION)
+        for owner in (SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION)
     },
 }
 
@@ -196,23 +191,125 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # entry once its PR has merged, since its base snapshot no longer matches main.
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
     (
-        "#331 exposes the worklog correction store on the fixture",
-        ((
-            "    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }\n",
-            "    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }\n"
-            "    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }\n",
-        ),),
+        "#338 waits for conditions now that TrackerSync.onChange is gone",
+        (
+            (
+                "    /// Runs `action`, then waits for the next session update that satisfies `condition`.\n"
+                "    func update(\n"
+                "        _ description: String, timeout: TimeInterval = 0.5,\n"
+                "        file: StaticString = #filePath, line: UInt = #line,\n"
+                "        after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }\n"
+                "    ) async throws {\n"
+                "        let expectation = XCTestExpectation(description: description)\n"
+                "        sync.onChange = { [weak sync = session.sync] in\n"
+                "            if condition() {\n"
+                "                sync?.onChange = nil\n"
+                "                expectation.fulfill()\n"
+                "            }\n"
+                "        }\n"
+                "        action()\n"
+                "        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)\n"
+                "        sync.onChange = nil\n"
+                "        guard result == .completed else {\n"
+                "            cleanup()\n"
+                "            throw TestTimeout(description: \"Timed out waiting for \\(description) at \\(file):\\(line)\")\n"
+                "        }\n"
+                "    }\n"
+                "\n"
+                "    func waitUntil(\n"
+                "        _ description: String, timeout: TimeInterval = 0.5,\n"
+                "        file: StaticString = #filePath, line: UInt = #line,\n"
+                "        _ condition: @escaping @MainActor () -> Bool\n"
+                "    ) async throws {\n"
+                "        if condition() { return }\n"
+                "        let expectation = XCTestExpectation(description: description)\n"
+                "        sync.onChange = { [weak sync = session.sync] in\n"
+                "            if condition() {\n"
+                "                sync?.onChange = nil\n"
+                "                expectation.fulfill()\n"
+                "            }\n"
+                "        }\n"
+                "        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)\n"
+                "        sync.onChange = nil\n"
+                "        guard result == .completed else {\n"
+                "            cleanup()\n"
+                "            throw TestTimeout(description: \"Timed out waiting for \\(description) at \\(file):\\(line)\")\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+                "\n",
+                "    /// Moves the clock without a timer tick, so only a publish can show the new elapsed time.\n"
+                "    func advanceClock(by seconds: TimeInterval) {\n"
+                "        clock.now.addTimeInterval(seconds)\n"
+                "        clock.uptime += seconds\n"
+                "    }\n"
+                "\n"
+                "    /// Runs `action`, normally a reply to a request, waits until the app has handled that reply and `condition`\n"
+                "    /// holds, then lets any task the reply started send its first request.\n"
+                "    ///\n"
+                "    /// Waiting for the reply first means a condition that was already true can't end the wait early.\n"
+                "    func update(\n"
+                "        _ description: String, timeout: TimeInterval = 0.5,\n"
+                "        file: StaticString = #filePath, line: UInt = #line,\n"
+                "        after action: () -> Void, until condition: @MainActor () -> Bool = { true }\n"
+                "    ) async throws {\n"
+                "        action()\n"
+                "        try await waitUntil(description, timeout: timeout, file: file, line: line) {\n"
+                "            !client.hasReplyInFlight && condition()\n"
+                "        }\n"
+                "        await Task.yield()\n"
+                "    }\n"
+                "\n"
+                "    func waitUntil(\n"
+                "        _ description: String, timeout: TimeInterval = 0.5,\n"
+                "        file: StaticString = #filePath, line: UInt = #line,\n"
+                "        _ condition: @MainActor () -> Bool\n"
+                "    ) async throws {\n"
+                "        let deadline = Date().addingTimeInterval(timeout)\n"
+                "        while !condition() {\n"
+                "            guard Date() < deadline else {\n"
+                "                cleanup()\n"
+                "                throw TestTimeout(description: \"Timed out waiting for \\(description) at \\(file):\\(line)\")\n"
+                "            }\n"
+                "            await Task.yield()\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+                "\n",
+            ),
+            (
+                "        sync.onChange = nil\n"
+                "        sync.sleep()\n",
+                "        sync.sleep()\n",
+            ),
+            (
+                "    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }\n",
+                "    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }\n"
+                "    /// Whether a request has its reply but the code that sent the request hasn't resumed yet.\n"
+                "    var hasReplyInFlight: Bool { deliveringReplies > outstanding.count }\n",
+            ),
+        ),
         None,
         None,
-        ("Features/WorklogCorrection/WorklogCorrectionTests.swift",),
-        ("Features/WorklogCorrection/WorklogCorrectionTests.swift",),
+        ("App/TrackerSyncSelectionAndReloadTests.swift",),
+        (
+            "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift",
+            "Features/TaskArchiving/TaskArchivingTests.swift",
+            "Features/TaskCreation/TaskCreationTests.swift",
+            "Features/TaskEditing/TaskNameEditingPolicyTests.swift",
+            "Features/TaskRename/TaskRenameTests.swift",
+            "Features/WorklogCorrection/WorklogCorrectionTests.swift",
+            "Features/WorklogDeletion/WorklogDeletionTests.swift",
+            "Features/WorklogHistory/HistoryTests.swift",
+            "Features/WorklogMove/WorklogMoveTests.swift",
+        ),
     ),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
-        PRESENTATION, SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING,
-        TOTALS, AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION,
+        SESSION, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS,
+        AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION,
     ],
     "Support/MenuHarness.swift": [
         SESSION, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION, TRACKING,
@@ -223,13 +320,14 @@ SUPPORT_PRODUCTION = {
 # deleted path to the successor here. The successor's own scope covers the
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
-REVIEWED_REPLACEMENTS: dict[str, str] = {
-    SOURCES + "Features/WorklogCorrection/WorklogCorrectionState.swift": SOURCES + CORRECTION,
-}
+REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
-REVIEWED_DELETIONS: frozenset[str] = frozenset()
+REVIEWED_DELETIONS: frozenset[str] = frozenset({
+    SOURCES + "App/TrackerPresentation.swift",
+    TESTS + "App/PresentationTests.swift",
+})
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.

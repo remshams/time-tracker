@@ -144,7 +144,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
                 self.assertEqual(result["status"], "focused", result["review_reasons"])
                 self.assertIn(scope.SOURCES + production, result["files"])
 
-    def test_integration_suite_selects_feature_coordinator_and_presentation(self):
+    def test_integration_suite_selects_feature_and_coordinator(self):
         test = scope.TESTS + "Features/WorklogMove/WorklogMoveTests.swift"
         self.write(scope.PACKAGE + test, "func testWorklogMoveUpdatesPresentation() {}\n")
         self.commit("Add worklog move assertion")
@@ -154,7 +154,6 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertEqual(result["status"], "focused")
         self.assertIn(scope.SOURCES + "Features/WorklogMove/WorklogMoveStore.swift", result["files"])
         self.assertIn(scope.SOURCES + scope.SESSION, result["files"])
-        self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
         self.assertIn(scope.SOURCES + scope.TIMESTAMP, result["files"])
         self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
@@ -186,30 +185,18 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        for source in [scope.CATALOG, scope.HISTORY, scope.PRESENTATION]:
+        for source in [scope.CATALOG, scope.HISTORY, scope.TOTALS]:
             self.assertIn(scope.SOURCES + source, result["files"])
 
-    def test_connection_suite_selects_the_presentation_its_availability_test_asserts(self):
-        test = scope.TESTS + "Features/Connection/ConnectionTests.swift"
-        self.write(scope.PACKAGE + test, "func testConnectionFailurePublishes() {}\n")
-        self.commit("Change connection presentation assertions")
+    def test_publish_suite_selects_the_sync_and_the_stores_its_timer_checks_read(self):
+        test = scope.TESTS + "App/TrackerSyncPublishTests.swift"
+        self.write(scope.PACKAGE + test, "func testSleepPublishes() {}\n")
+        self.commit("Change publish assertions")
 
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
-
-    def test_presentation_suite_selects_the_sheets_its_interaction_test_opens(self):
-        test = scope.TESTS + "App/PresentationTests.swift"
-        self.write(scope.PACKAGE + test, "func testSheetInteractions() {}\n")
-        self.commit("Change sheet interaction assertions")
-
-        result = self.select()
-
-        self.assertEqual(result["status"], "focused")
-        for source in [
-            scope.BULK_ARCHIVING, scope.RENAME, scope.MOVE, scope.DELETION,
-        ]:
+        for source in [scope.SYNC, scope.TRACKING, scope.TOTALS, scope.TRACKING_ACTIONS]:
             self.assertIn(scope.SOURCES + source, result["files"])
 
     def test_rename_suite_selects_the_creation_and_automation_interactions_it_asserts(self):
@@ -339,7 +326,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
     def reviewed_package_edit(self):
         edits = (
             ("Reviewed platform raise",
-             (("platforms: [.macOS(.v14)],", "platforms: [.macOS(.v15)],"),), (scope.PRESENTATION,)),
+             (("platforms: [.macOS(.v14)],", "platforms: [.macOS(.v15)],"),), (scope.CATALOG,)),
         )
         replacement = mock.patch.object(scope, "REVIEWED_PACKAGE_EDITS", edits)
         replacement.start()
@@ -357,7 +344,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], [scope.SOURCES + scope.PRESENTATION])
+        self.assertEqual(result["files"], [scope.SOURCES + scope.CATALOG])
         self.assertTrue(any("Reviewed platform raise" in reason for reason in result["reasons"]))
 
     def test_other_package_manifest_edits_still_require_review(self):
@@ -376,8 +363,8 @@ class SwiftMutationScopeTests(unittest.TestCase):
         retired_source = scope.SOURCES + "App/RetiredPresentation.swift"
         retired_suite = scope.TESTS + "App/RetiredPresentationTests.swift"
         replacements = {
-            retired_source: scope.SOURCES + scope.PRESENTATION,
-            retired_suite: scope.TESTS + "App/PresentationTests.swift",
+            retired_source: scope.SOURCES + scope.CATALOG,
+            retired_suite: scope.TESTS + "App/RefreshPresentationTests.swift",
         }
         replacement = mock.patch.object(scope, "REVIEWED_REPLACEMENTS", replacements)
         replacement.start()
@@ -394,13 +381,13 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.base = self.commit("Add the retired files")
         self.git("rm", "-q", scope.PACKAGE + retired_source, scope.PACKAGE + retired_suite)
         self.write(scope.PACKAGE + successor_source, "final class Successor { var value = 0 }\n")
-        self.write(scope.PACKAGE + scope.TESTS + "App/PresentationTests.swift", "func testSuccessor() {}\n")
+        self.write(scope.PACKAGE + scope.TESTS + "App/RefreshPresentationTests.swift", "func testSuccessor() {}\n")
         self.commit("Replace the retired files")
 
         result = self.select()
 
         self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
+        self.assertIn(scope.SOURCES + scope.CATALOG, result["files"])
         self.assertTrue(any("Reviewed replacement" in reason for reason in result["reasons"]))
 
     def test_reviewed_replacement_reported_as_a_rename_selects_the_successor_scope(self):
@@ -424,7 +411,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
     def test_unreviewed_test_rename_still_requires_review(self):
         retired_suite = scope.TESTS + "App/RetiredTests.swift"
-        successor_suite = scope.TESTS + "App/PresentationTests.swift"
+        successor_suite = scope.TESTS + "App/RefreshPresentationTests.swift"
         body = "".join(f"func testPresentation{index}() {{ XCTAssertTrue(true) }}\n" for index in range(20))
         self.write(scope.PACKAGE + retired_suite, body)
         self.base = self.commit("Add an unmapped suite")
