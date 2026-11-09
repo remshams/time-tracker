@@ -232,8 +232,7 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   from the connection, tracking and catalog stores. `TrackerSync` loads,
   refreshes and polls the stores, runs the display, rollover and menu bar timers, handles visibility, sleep
   and wake, pauses and resumes tracking when the screen locks and unlocks,
-  switches the connection, changes the tab and task selection, and reloads
-  after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
+  switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingActions` starts and
   stops tracking after asking it; `TrackingActions` calls `TrackerSync` to reload
@@ -245,8 +244,13 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   gets `showTask(_:)` and `BulkTaskArchivingStore` gets `recordReadFailure(_:)`.
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
-  `WorklogHistoryStore` sends its own page requests and reports each failure
-  to `TrackerSync`, which records connection failures.
+  Views change the tab and selection on `TaskCatalogStore`, and retry the
+  history and load older pages on `WorklogHistoryStore`. A tab or selection
+  change reloads the history through a closure that `TrackerFeatures` points
+  at `WorklogHistoryStore`. `WorklogHistoryStore` reads the selection from
+  `TaskCatalogStore` and the stale connection from `ConnectionStore`, sends its
+  own page requests, and reports each failure through a closure to
+  `TrackerSync`, which records connection failures.
   User actions move from `TrackerSync` and `TrackingActions` onto the store of
   the feature that owns them, step by step in
   [issue #369](https://github.com/remshams/time-tracker/issues/369). A view reads
