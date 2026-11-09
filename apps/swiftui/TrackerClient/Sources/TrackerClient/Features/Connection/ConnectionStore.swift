@@ -41,7 +41,8 @@ public final class ConnectionStore: ChangeGuardedStore {
         return true
     }
 
-    /// Reloads the task list now, for example after a failed connection. Does nothing while a refresh runs.
+    /// Reloads the task list now, for example after a failed connection. Does nothing before the first load starts,
+    /// while the Mac sleeps or while a refresh runs.
     public func refresh() { refreshTaskList() }
 
     func beginChange() { set(\.changing, true) }
