@@ -4,7 +4,10 @@ import Carbon
 import TrackerClient
 
 final class TrackerStatusItemController: NSObject {
-    private let store: TrackerStore
+    private let sync: TrackerSync
+    private let trackingActions: TrackingActions
+    private let menuBar: MenuBarStore
+    private let connection: ConnectionStore
     private let menu: TrackerMenuPresentationObserver
     private let preferences: MenuBarPreferencesStore
     private var statusItem: NSStatusItem?
@@ -17,8 +20,14 @@ final class TrackerStatusItemController: NSObject {
     private var taskRows: [String: MenuTaskRow] = [:]
     private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
-    init(store: TrackerStore, menu: TrackerMenuPresentationObserver, preferences: MenuBarPreferencesStore) {
-        self.store = store
+    init(
+        sync: TrackerSync, trackingActions: TrackingActions, menuBar: MenuBarStore, connection: ConnectionStore,
+        menu: TrackerMenuPresentationObserver, preferences: MenuBarPreferencesStore
+    ) {
+        self.sync = sync
+        self.trackingActions = trackingActions
+        self.menuBar = menuBar
+        self.connection = connection
         self.menu = menu
         self.preferences = preferences
         super.init()
@@ -97,7 +106,7 @@ final class TrackerStatusItemController: NSObject {
         let event = NSApplication.shared.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showNativeMenu()
-        } else if case .openMenu = store.performMenuPrimaryAction() {
+        } else if case .openMenu = trackingActions.performMenuPrimaryAction() {
             showNativeMenu()
         }
     }
@@ -113,7 +122,9 @@ final class TrackerStatusItemController: NSObject {
 
     private func showNativeMenu() {
         guard nativeMenu == nil, let statusItem, let button = statusItem.button else { return }
-        store.menuOpened()
+        // The sync publishes first, so the menu captures current values even when no display tick ran.
+        sync.setMenuVisible(true)
+        self.menu.menuOpened()
         let content = self.menu.content
         let menu = makeMenu(content, appearance: NSApplication.shared.effectiveAppearance)
         nativeMenu = menu
@@ -128,7 +139,8 @@ final class TrackerStatusItemController: NSObject {
             nativeMenu = nil
             clearMenuValues()
             button.highlight(false)
-            store.menuClosed()
+            sync.setMenuVisible(false)
+            self.menu.menuClosed()
             do {
                 if try shortcutRegistration?.endMenuTracking() == true {
                     preferences.reportMenuGlobalShortcutError(nil)
@@ -157,7 +169,7 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func copyValue(_ action: MenuShortcutAction, taskID: String, connection: ConnectionSettings) {
-        guard let value = store.menuCopyValue(action, taskID: taskID, connection: connection) else {
+        guard let value = menuBar.menuCopyValue(action, taskID: taskID, connection: connection) else {
             NSSound.beep()
             return
         }
@@ -170,7 +182,7 @@ final class TrackerStatusItemController: NSObject {
         let menu = NSMenu()
         menu.appearance = appearance
         menu.autoenablesItems = false
-        let connection = store.connection.settings
+        let connection = self.connection.settings
         let serverURL =
             connection.mode == .server
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
@@ -246,9 +258,9 @@ final class TrackerStatusItemController: NSObject {
         submenu.addItem(.separator())
         for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
             let available =
-                store.menuCopyValue(
+                menuBar.menuCopyValue(
                     action, taskID: entry.id,
-                    connection: store.connection.settings) != nil
+                    connection: connection.settings) != nil
             let item = addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
             item.setAccessibilityIdentifier("menu.copy.\(entry.id).\(action.rawValue)")
         }
@@ -355,7 +367,7 @@ final class TrackerStatusItemController: NSObject {
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(selected(_:)), keyEquivalent: "")
         item.target = self
-        item.representedObject = action.map { MenuCommand(action: $0, connection: store.connection.settings) }
+        item.representedObject = action.map { MenuCommand(action: $0, connection: connection.settings) }
         item.isEnabled = enabled
         menu.addItem(item)
         return item
@@ -375,11 +387,11 @@ final class TrackerStatusItemController: NSObject {
         // `TrackingActions` also validates the captured task and worklog against the current state.
         switch command.action {
         case .start(let id):
-            guard command.connection == store.connection.settings else { return }
-            store.startTracking(taskID: id)
+            guard command.connection == connection.settings else { return }
+            trackingActions.startTracking(taskID: id)
         case .stop(let id):
-            guard command.connection == store.connection.settings else { return }
-            store.stopTracking(worklogID: id)
+            guard command.connection == connection.settings else { return }
+            trackingActions.stopTracking(worklogID: id)
         case .copy(let copyAction, let taskID):
             copyValue(copyAction, taskID: taskID, connection: command.connection)
         case .openWindow:
