@@ -190,53 +190,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    (
-        "#333 renames the fixture's session to the TrackerFeatures it now holds",
-        (
-            (
-                "    let session: TrackerSession\n"
-                "    var sync: TrackerSync { session.sync }\n"
-                "    var trackingActions: TrackingActions { session.trackingActions }\n"
-                "    var trackingAvailability: TrackingAvailability { session.trackingAvailability }\n"
-                "    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }\n"
-                "    var taskRename: TaskRenameStore { session.taskRename }\n"
-                "    var taskArchiving: TaskArchivingStore { session.taskArchiving }\n"
-                "    var taskCreation: TaskCreationStore { session.taskCreation }\n"
-                "    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }\n"
-                "    var worklogMove: WorklogMoveStore { session.worklogMove }\n"
-                "    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }\n"
-                "    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }\n",
-                "    let features: TrackerFeatures\n"
-                "    var sync: TrackerSync { features.sync }\n"
-                "    var trackingActions: TrackingActions { features.trackingActions }\n"
-                "    var trackingAvailability: TrackingAvailability { features.trackingAvailability }\n"
-                "    var trackingAutomation: TrackingAutomationStore { features.trackingAutomation }\n"
-                "    var taskRename: TaskRenameStore { features.taskRename }\n"
-                "    var taskArchiving: TaskArchivingStore { features.taskArchiving }\n"
-                "    var taskCreation: TaskCreationStore { features.taskCreation }\n"
-                "    var worklogDeletion: WorklogDeletionStore { features.worklogDeletion }\n"
-                "    var worklogMove: WorklogMoveStore { features.worklogMove }\n"
-                "    var bulkTaskArchiving: BulkTaskArchivingStore { features.bulkTaskArchiving }\n"
-                "    var worklogCorrection: WorklogCorrectionStore { features.worklogCorrection }\n",
-            ),
-            (
-                "guard let taskID = session.taskCatalog.selectedTaskID else { return false }",
-                "guard let taskID = features.taskCatalog.selectedTaskID else { return false }",
-            ),
-            ("session = TrackerSession(", "features = TrackerFeatures("),
-            (
-                "XCTAssertEqual(taskID, session.taskCatalog.selectedTaskID)",
-                "XCTAssertEqual(taskID, features.taskCatalog.selectedTaskID)",
-            ),
-            ("self.session.worklogHistory.isLoading", "self.features.worklogHistory.isLoading"),
-        ),
-        None,
-        None,
-        ("Features/MenuBar/MenuTaskClipboardTests.swift",),
-        ("Features/MenuBar/MenuTaskClipboardTests.swift",),
-    ),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
