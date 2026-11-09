@@ -6,6 +6,8 @@ Accepted. It partially supersedes the clauses of ADR 0026 and ADR 0030 listed un
 
 Partially superseded by [ADR 0033](0033-report-bulk-archive-preview-failures-through-a-closure.md); all other decisions remain accepted.
 
+Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for the reason given for the reload closures, which stay; all other decisions remain accepted.
+
 ## Date
 
 2026-11-08
