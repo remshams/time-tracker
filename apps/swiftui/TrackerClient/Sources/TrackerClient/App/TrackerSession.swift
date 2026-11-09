@@ -75,7 +75,7 @@ public final class TrackerSession {
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
     }
 
-    // The session's flows read these two; `TrackerPresentation` also reads `tasks`.
+    // The session's flows read these two.
     public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
