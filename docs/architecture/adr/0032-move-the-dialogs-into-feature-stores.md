@@ -4,6 +4,8 @@
 
 Accepted. It partially supersedes the clauses of ADR 0026 and ADR 0030 listed under [Superseded clauses](#superseded-clauses). All other decisions in those records remain accepted.
 
+Partially superseded by [ADR 0033](0033-report-bulk-archive-preview-failures-through-a-closure.md); all other decisions remain accepted.
+
 ## Date
 
 2026-11-08
