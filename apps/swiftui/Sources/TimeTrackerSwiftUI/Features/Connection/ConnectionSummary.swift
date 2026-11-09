@@ -3,7 +3,6 @@ import TrackerClient
 
 struct ConnectionSummary: View {
     @Environment(ConnectionStore.self) private var connection
-    @Environment(TrackerSync.self) private var sync
 
     var body: some View {
         HStack(spacing: 12) {
@@ -32,7 +31,7 @@ struct ConnectionSummary: View {
             DelayedProgressIndicator(
                 isBusy: connection.changing, identifier: "connection-summary.progress")
             if !connection.changing, connection.stale {
-                Button("Retry") { sync.refresh() }
+                Button("Retry") { connection.refresh() }
                     .accessibilityIdentifier("connection-summary.retry")
             }
         }
