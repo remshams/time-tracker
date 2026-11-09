@@ -2,7 +2,7 @@ import SwiftUI
 import TrackerClient
 
 struct MenuShortcutSettingsSection: View {
-    let store: TrackerStore
+    @Environment(MenuBarPreferencesStore.self) private var preferences
 
     var body: some View {
         Section("Menu shortcut") {
@@ -10,15 +10,15 @@ struct MenuShortcutSettingsSection: View {
                 HStack {
                     Text(action.title)
                     Spacer()
-                    ShortcutRecorder(shortcut: store.menuShortcuts[action]) { shortcut in
-                        store.setMenuShortcut(action, shortcut: shortcut)
+                    ShortcutRecorder(shortcut: preferences.menuShortcuts[action]) { shortcut in
+                        preferences.setMenuShortcut(action, shortcut: shortcut)
                     }
                     .frame(width: 160, height: 28)
                     .accessibilityLabel("\(action.title) shortcut")
                     .accessibilityIdentifier("menu.shortcut.open")
                 }
             }
-            if let error = store.menuShortcutError {
+            if let error = preferences.menuShortcutError {
                 Text(error).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("menu.shortcut.error")
@@ -33,7 +33,7 @@ struct MenuShortcutSettingsSection: View {
             )
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            Button("Restore default shortcut") { store.resetMenuShortcuts() }
+            Button("Restore default shortcut") { preferences.resetMenuShortcuts() }
                 .accessibilityIdentifier("menu.shortcut.restore")
         }
     }

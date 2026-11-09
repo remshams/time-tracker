@@ -10,6 +10,7 @@
 		0C391F78DA9ADAAB4A231999 /* RunLoopTrackerScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */; };
 		F30DD6C09A7D9D49A4CD415B /* SystemTrackerClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */; };
 		A53F467E0E26F6B210E885BA /* MenuShortcutSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */; };
+		A1F3C7D24E8B6A9035D1E7C2 /* MenuBarPreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E2D4A16C9F3085E1A4D6B3 /* MenuBarPreferencesStore.swift */; };
 		06AEE760C5198EB5016F7085 /* MenuBarSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D651176EBD36B19B9B164BE /* MenuBarSettingsSection.swift */; };
 		85DD25AF44FE630E7BB7ACEE /* TrackingSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125E89E5A6E0417513C177E8 /* TrackingSettingsSection.swift */; };
 		92068A25524433423026E4B4 /* CurrentConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21402102784B3125883E67F /* CurrentConnectionSection.swift */; };
@@ -101,6 +102,7 @@
 		A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunLoopTrackerScheduler.swift; sourceTree = "<group>"; };
 		0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemTrackerClock.swift; sourceTree = "<group>"; };
 		FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuShortcutSettingsSection.swift; sourceTree = "<group>"; };
+		B7E2D4A16C9F3085E1A4D6B3 /* MenuBarPreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPreferencesStore.swift; sourceTree = "<group>"; };
 		2D651176EBD36B19B9B164BE /* MenuBarSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarSettingsSection.swift; sourceTree = "<group>"; };
 		125E89E5A6E0417513C177E8 /* TrackingSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingSettingsSection.swift; sourceTree = "<group>"; };
 		F21402102784B3125883E67F /* CurrentConnectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentConnectionSection.swift; sourceTree = "<group>"; };
@@ -410,6 +412,7 @@
 				D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */,
 				58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */,
 				E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */,
+				B7E2D4A16C9F3085E1A4D6B3 /* MenuBarPreferencesStore.swift */,
 				2D651176EBD36B19B9B164BE /* MenuBarSettingsSection.swift */,
 				FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */,
 			);
@@ -765,6 +768,7 @@
 				8BE6CE736C624EFAB0D710CC /* ConnectionActionsSection.swift in Sources */,
 				92068A25524433423026E4B4 /* CurrentConnectionSection.swift in Sources */,
 				85DD25AF44FE630E7BB7ACEE /* TrackingSettingsSection.swift in Sources */,
+				A1F3C7D24E8B6A9035D1E7C2 /* MenuBarPreferencesStore.swift in Sources */,
 				06AEE760C5198EB5016F7085 /* MenuBarSettingsSection.swift in Sources */,
 				A53F467E0E26F6B210E885BA /* MenuShortcutSettingsSection.swift in Sources */,
 				F30DD6C09A7D9D49A4CD415B /* SystemTrackerClock.swift in Sources */,
