@@ -38,10 +38,9 @@ final class TrackerStore {
         features.sync.start()
     }
 
-    /// Views read this from the SwiftUI environment to change the tab and selection, refresh and connect, and the
-    /// status item gets it through `init`.
+    /// Views read this from the SwiftUI environment; the connection draft and the status item get it through `init`.
     var sync: TrackerSync { features.sync }
-    /// The SwiftUI environment and the status item start and stop tracking with this.
+    /// The status item starts and stops tracking with this. It is in the SwiftUI environment, which no view reads yet.
     var trackingActions: TrackingActions { features.trackingActions }
     /// The status item reads the copy values here.
     var menuBar: MenuBarStore { features.menuBar }
