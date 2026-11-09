@@ -1,7 +1,7 @@
 import Foundation
 
 /// Creates the stores, `TrackerSync`, `TrackingActions` and the dialog stores, and passes each one what it uses.
-/// It holds them and has no methods: `TrackerStore` and the test fixture read them from here.
+/// It holds them and has no methods: the app runtime and the test fixture read them from here.
 public final class TrackerFeatures {
     /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
     /// change, changes the tab and task selection, reloads after dialog writes, and publishes the timer text, today's
