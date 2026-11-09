@@ -8,8 +8,6 @@ import Observation
 /// only the views that read the changed values.
 @Observable
 public final class TrackerPresentation: ChangeGuardedStore {
-    public private(set) var archivableTaskIDs: Set<String>
-    public private(set) var unarchivableTaskIDs: Set<String>
     public private(set) var bulkTaskArchiving: BulkTaskArchivingPresentation
     public private(set) var bulkTaskArchivingSheetContent: BulkTaskArchivingPresentation
     public private(set) var canOpenBulkTaskArchiving: Bool
@@ -24,8 +22,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var canOpenWorklogDeletion: Bool
 
     public init(session: TrackerSession) {
-        archivableTaskIDs = Self.archivableTaskIDs(session)
-        unarchivableTaskIDs = Self.unarchivableTaskIDs(session)
         bulkTaskArchiving = session.bulkTaskArchiving
         bulkTaskArchivingSheetContent = session.bulkTaskArchiving
         canOpenBulkTaskArchiving = session.canOpenBulkTaskArchiving
@@ -41,8 +37,6 @@ public final class TrackerPresentation: ChangeGuardedStore {
     }
 
     public func update(from session: TrackerSession) {
-        set(\.archivableTaskIDs, Self.archivableTaskIDs(session))
-        set(\.unarchivableTaskIDs, Self.unarchivableTaskIDs(session))
         set(\.bulkTaskArchiving, session.bulkTaskArchiving)
         set(\.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving)
         set(\.worklogCorrection, session.worklogCorrection)
@@ -56,16 +50,5 @@ public final class TrackerPresentation: ChangeGuardedStore {
         if worklogCorrection.isPresented { set(\.worklogCorrectionSheetContent, worklogCorrection) }
         if worklogMove.isPresented { set(\.worklogMoveSheetContent, worklogMove) }
         if worklogDeletion.isPresented { set(\.worklogDeletionSheetContent, worklogDeletion) }
-    }
-
-    public func canArchiveTask(taskID: String) -> Bool { archivableTaskIDs.contains(taskID) }
-    public func canUnarchiveTask(taskID: String) -> Bool { unarchivableTaskIDs.contains(taskID) }
-
-    private static func archivableTaskIDs(_ session: TrackerSession) -> Set<String> {
-        Set(session.tasks.map(\.id).filter { session.taskArchiving.canArchive(taskID: $0) })
-    }
-
-    private static func unarchivableTaskIDs(_ session: TrackerSession) -> Set<String> {
-        Set(session.tasks.map(\.id).filter { session.taskArchiving.canUnarchive(taskID: $0) })
     }
 }

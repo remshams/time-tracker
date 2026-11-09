@@ -143,12 +143,9 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual(harness.catalog.selectedTask, archivedTask)
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
-        XCTAssertTrue(harness.presentation.canUnarchiveTask(taskID: archivedTask.id))
-        XCTAssertFalse(harness.presentation.canArchiveTask(taskID: archivedTask.id))
         fixture.sync.changeTab(.active)
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
-        XCTAssertTrue(harness.presentation.canArchiveTask(taskID: firstTask.id))
         XCTAssertGreaterThan(lists.count, 0)
 
         XCTAssertTrue(harness.availability.canStart(taskID: firstTask.id))
@@ -159,7 +156,6 @@ final class PresentationTests: XCTestCase {
         try await harness.settled(fixture)
         XCTAssertEqual(harness.tracking.active, activeWorklog)
         XCTAssertTrue(harness.availability.canStop)
-        XCTAssertFalse(harness.presentation.canArchiveTask(taskID: firstTask.id))
         XCTAssertGreaterThan(controls.count, 0)
     }
 
