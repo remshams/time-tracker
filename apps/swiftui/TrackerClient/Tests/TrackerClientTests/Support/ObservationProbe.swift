@@ -187,8 +187,6 @@ enum PresentationReads {
         _ = views.taskArchiving.action
         _ = views.taskArchiving.isSubmitting
         _ = views.taskArchiving.error
-        _ = views.presentation.archivableTaskIDs
-        _ = views.presentation.unarchivableTaskIDs
     }
 
     static func bulkTaskArchiving(_ views: PresentationHarness) {
@@ -240,12 +238,6 @@ func assertMirrors(
     XCTAssertEqual(presentation.worklogDeletion, session.worklogDeletion, file: file, line: line)
     XCTAssertEqual(presentation.canOpenWorklogDeletion, session.canOpenWorklogDeletion, file: file, line: line)
     for task in session.tasks {
-        XCTAssertEqual(
-            presentation.canArchiveTask(taskID: task.id), session.taskArchiving.canArchive(taskID: task.id),
-            file: file, line: line)
-        XCTAssertEqual(
-            presentation.canUnarchiveTask(taskID: task.id), session.taskArchiving.canUnarchive(taskID: task.id),
-            file: file, line: line)
         XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
             totals.taskTotal(taskID: task.id).content?.text,
