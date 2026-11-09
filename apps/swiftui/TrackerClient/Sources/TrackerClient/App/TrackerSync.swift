@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
@@ -9,9 +8,8 @@ import Observation
 /// package-internal methods below, for example to switch the connection, reload the task list or the history, record a
 /// failure and publish.
 ///
-/// It is observable only so that views can read it from the SwiftUI environment. Views only call its methods, and its
-/// state stays out of observation, so a view that reads it later can't track the timers and flags below.
-@Observable
+/// Views don't read it. The app delegate and the menu bar and lifecycle classes get it through `init` and only call its
+/// methods.
 public final class TrackerSync {
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
@@ -25,18 +23,18 @@ public final class TrackerSync {
     private let menuBar: MenuBarStore
     private let automation: TrackingAutomationStore
     private let settingsRepository: any ConnectionSettingsRepository
-    @ObservationIgnored private var displayTimer: (any TrackerCancellation)?
-    @ObservationIgnored private var pollTimer: (any TrackerCancellation)?
-    @ObservationIgnored private var rolloverTimer: (any TrackerCancellation)?
-    @ObservationIgnored private var menuBarClock: (any TrackerCancellation)?
-    @ObservationIgnored private var menuBarClockEnabled = false
+    private var displayTimer: (any TrackerCancellation)?
+    private var pollTimer: (any TrackerCancellation)?
+    private var rolloverTimer: (any TrackerCancellation)?
+    private var menuBarClock: (any TrackerCancellation)?
+    private var menuBarClockEnabled = false
     // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
-    @ObservationIgnored private var started = false
+    private var started = false
     // One poll at a time: no poll is scheduled while a refresh is waiting.
-    @ObservationIgnored private var refreshing = false
-    @ObservationIgnored private var sleeping = false
-    @ObservationIgnored private var windowVisible = false
-    @ObservationIgnored private var menuOpen = false
+    private var refreshing = false
+    private var sleeping = false
+    private var windowVisible = false
+    private var menuOpen = false
     private var uiVisible: Bool { windowVisible || menuOpen }
 
     init(
