@@ -69,7 +69,7 @@ final class MenuBarPreferencesStore {
         }
         menuShortcuts = candidate
         reportMenuShortcutError(nil)
-        if changesGlobal { menuGlobalShortcutError = nil }
+        if changesGlobal { reportMenuGlobalShortcutError(nil) }
         keyboardPreferences.save(candidate)
     }
 
