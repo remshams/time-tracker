@@ -9,21 +9,21 @@ struct TimeTrackerApp: App {
         // A Window scene exists at most once, so opening it again focuses the existing window.
         Window("Time Tracker", id: TrackerSceneID.tracker) {
             TrackerWindow(runtime: delegate.runtime)
-                .environment(delegate.runtime.store.sync)
-                .environment(delegate.runtime.store.trackingActions)
-                .environment(delegate.runtime.store.taskCatalog)
-                .environment(delegate.runtime.store.worklogHistory)
-                .environment(delegate.runtime.store.connection)
-                .environment(delegate.runtime.store.tracking)
-                .environment(delegate.runtime.store.dailyTotals)
-                .environment(delegate.runtime.store.trackingAutomation)
-                .environment(delegate.runtime.store.taskRename)
-                .environment(delegate.runtime.store.taskArchiving)
-                .environment(delegate.runtime.store.taskCreation)
-                .environment(delegate.runtime.store.worklogDeletion)
-                .environment(delegate.runtime.store.worklogMove)
-                .environment(delegate.runtime.store.bulkTaskArchiving)
-                .environment(delegate.runtime.store.worklogCorrection)
+                .environment(delegate.runtime.features.sync)
+                .environment(delegate.runtime.features.trackingActions)
+                .environment(delegate.runtime.features.taskCatalog)
+                .environment(delegate.runtime.features.worklogHistory)
+                .environment(delegate.runtime.features.connection)
+                .environment(delegate.runtime.features.tracking)
+                .environment(delegate.runtime.features.dailyTotals)
+                .environment(delegate.runtime.features.trackingAutomation)
+                .environment(delegate.runtime.features.taskRename)
+                .environment(delegate.runtime.features.taskArchiving)
+                .environment(delegate.runtime.features.taskCreation)
+                .environment(delegate.runtime.features.worklogDeletion)
+                .environment(delegate.runtime.features.worklogMove)
+                .environment(delegate.runtime.features.bulkTaskArchiving)
+                .environment(delegate.runtime.features.worklogCorrection)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
@@ -32,13 +32,13 @@ struct TimeTrackerApp: App {
 
         Window("Settings", id: TrackerSceneID.settings) {
             SettingsView(
-                connection: delegate.runtime.store.connection, sync: delegate.runtime.store.sync,
-                client: delegate.runtime.store.client
+                connection: delegate.runtime.features.connection, sync: delegate.runtime.features.sync,
+                client: delegate.runtime.client
             )
-            .environment(delegate.runtime.store.sync)
-            .environment(delegate.runtime.store.connection)
-            .environment(delegate.runtime.store.trackingAutomation)
-            .environment(delegate.runtime.store.menuBarPreferences)
+            .environment(delegate.runtime.features.sync)
+            .environment(delegate.runtime.features.connection)
+            .environment(delegate.runtime.features.trackingAutomation)
+            .environment(delegate.runtime.menuBarPreferences)
             .frame(height: 680)
         }
         .defaultSize(width: 540, height: 680)

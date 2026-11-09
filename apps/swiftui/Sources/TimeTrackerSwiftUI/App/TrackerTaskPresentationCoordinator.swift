@@ -10,22 +10,29 @@ final class TrackerTaskPresentationCoordinator {
     // The toolbar buttons and the New Task command stay disabled while this is true. An attached sheet blocks the
     // menus inside the window, as OpenDialogUITests shows.
     private(set) var hasPresentation = false
-    private let store: TrackerStore
+    private let sources: PresentationSources
     private let revealWindow: () -> Void
     @ObservationIgnored private var editorWasPresented = false
 
-    init(store: TrackerStore, revealWindow: @escaping () -> Void) {
-        self.store = store
+    init(
+        taskCreation: TaskCreationStore, taskRename: TaskRenameStore, worklogCorrection: WorklogCorrectionStore,
+        worklogMove: WorklogMoveStore, worklogDeletion: WorklogDeletionStore, taskArchiving: TaskArchivingStore,
+        bulkTaskArchiving: BulkTaskArchivingStore, tracking: TrackingStore, revealWindow: @escaping () -> Void
+    ) {
+        sources = PresentationSources(
+            taskCreation: taskCreation, taskRename: taskRename, worklogCorrection: worklogCorrection,
+            worklogMove: worklogMove, worklogDeletion: worklogDeletion, taskArchiving: taskArchiving,
+            bulkTaskArchiving: bulkTaskArchiving, tracking: tracking)
         self.revealWindow = revealWindow
     }
 
     /// The first value arrives after this returns, so `hasPresentation` stays false until then. Views observe the
     /// flag, and a presentation that opens in between is part of that first value.
     func start() {
-        // The closure reads the store without the coordinator. The loop ends at the first change after the
+        // The closure reads the stores without the coordinator. The loop ends at the first change after the
         // coordinator is released.
-        Task { [weak self, store] in
-            for await flags in Observations({ store.presentationFlags }) {
+        Task { [weak self, sources] in
+            for await flags in Observations({ sources.flags }) {
                 guard let self else { return }
                 update(flags)
             }
@@ -45,10 +52,20 @@ final class TrackerTaskPresentationCoordinator {
     }
 }
 
-extension TrackerStore {
+/// The stores whose dialogs and tracking error the coordinator watches.
+private struct PresentationSources {
+    let taskCreation: TaskCreationStore
+    let taskRename: TaskRenameStore
+    let worklogCorrection: WorklogCorrectionStore
+    let worklogMove: WorklogMoveStore
+    let worklogDeletion: WorklogDeletionStore
+    let taskArchiving: TaskArchivingStore
+    let bulkTaskArchiving: BulkTaskArchivingStore
+    let tracking: TrackingStore
+
     /// The values the presentation coordinator reacts to. A closure given to `Observations` re-reads them after
     /// each change, so a flag that `||` skips is read as soon as it can change the result.
-    fileprivate var presentationFlags: (editorIsPresented: Bool, hasTrackingError: Bool) {
+    var flags: (editorIsPresented: Bool, hasTrackingError: Bool) {
         let editorIsPresented =
             taskCreation.isPresented || taskRename.isPresented || worklogCorrection.isPresented
             || worklogMove.isPresented || worklogDeletion.isPresented || taskArchiving.isPresented
@@ -58,14 +75,21 @@ extension TrackerStore {
 }
 
 struct TrackerDetailPresentation: View {
-    let store: TrackerStore
     @Environment(TrackingStore.self) private var tracking
+    @Environment(TrackingActions.self) private var trackingActions
+    @Environment(TaskCreationStore.self) private var taskCreation
+    @Environment(TaskRenameStore.self) private var taskRename
+    @Environment(WorklogCorrectionStore.self) private var worklogCorrection
+    @Environment(WorklogMoveStore.self) private var worklogMove
+    @Environment(WorklogDeletionStore.self) private var worklogDeletion
+    @Environment(BulkTaskArchivingStore.self) private var bulkTaskArchiving
+    @Environment(TaskArchivingStore.self) private var taskArchiving
 
     private var trackingFailurePresented: Binding<Bool> {
         Binding(
             get: { tracking.error != nil },
             set: {
-                if !$0 { store.dismissTrackingError() }
+                if !$0 { trackingActions.dismissTrackingError() }
             })
     }
 
@@ -73,50 +97,50 @@ struct TrackerDetailPresentation: View {
         TaskDetails()
             .background {
                 EditorSheet(
-                    isPresented: { store.taskCreation.isPresented },
-                    cancel: store.taskCreation.cancel
+                    isPresented: { taskCreation.isPresented },
+                    cancel: taskCreation.cancel
                 ) {
                     TaskCreationSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.taskRename.isPresented },
-                    cancel: store.taskRename.cancel
+                    isPresented: { taskRename.isPresented },
+                    cancel: taskRename.cancel
                 ) {
                     TaskRenameSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.worklogCorrection.isPresented },
-                    cancel: store.worklogCorrection.cancel
+                    isPresented: { worklogCorrection.isPresented },
+                    cancel: worklogCorrection.cancel
                 ) {
                     WorklogCorrectionSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.worklogMove.isPresented },
-                    cancel: store.worklogMove.cancel
+                    isPresented: { worklogMove.isPresented },
+                    cancel: worklogMove.cancel
                 ) {
                     WorklogMoveSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.worklogDeletion.isPresented },
-                    cancel: store.worklogDeletion.cancel
+                    isPresented: { worklogDeletion.isPresented },
+                    cancel: worklogDeletion.cancel
                 ) {
                     WorklogDeletionSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.bulkTaskArchiving.isPresented },
-                    cancel: store.bulkTaskArchiving.cancel
+                    isPresented: { bulkTaskArchiving.isPresented },
+                    cancel: bulkTaskArchiving.cancel
                 ) {
                     BulkTaskArchivingSheet()
                 }
                 EditorSheet(
-                    isPresented: { store.taskArchiving.isPresented },
-                    cancel: store.taskArchiving.cancel
+                    isPresented: { taskArchiving.isPresented },
+                    cancel: taskArchiving.cancel
                 ) {
                     TaskArchivingSheet()
                 }
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
-                Button("OK", role: .cancel) { store.dismissTrackingError() }
+                Button("OK", role: .cancel) { trackingActions.dismissTrackingError() }
             } message: {
                 Text(tracking.error ?? "Please try again.")
             }

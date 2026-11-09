@@ -26,7 +26,6 @@
 		ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484979169FE35618CB437645 /* TrackerSidebar.swift */; };
 		3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */; };
 		B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */; };
-		3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC372281DA1DF7ABC74910A /* TrackerStore.swift */; };
 		FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E054EA2B878A02189368B9D /* TrackerWindow.swift */; };
 		547C118F7FB1E47BBCD519B9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF149CF30295C296B13AF32E /* SettingsView.swift */; };
 		0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */; };
@@ -124,7 +123,6 @@
 		000000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000013 /* build-rust.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-rust.sh"; sourceTree = "<group>"; };
 		F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTrackerApp.swift; sourceTree = "<group>"; };
-		4EC372281DA1DF7ABC74910A /* TrackerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStore.swift; sourceTree = "<group>"; };
 		9E054EA2B878A02189368B9D /* TrackerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWindow.swift; sourceTree = "<group>"; };
 		AF149CF30295C296B13AF32E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSummary.swift; sourceTree = "<group>"; };
@@ -279,7 +277,6 @@
 				522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */,
 				323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */,
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
-				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
 				9E054EA2B878A02189368B9D /* TrackerWindow.swift */,
 			);
 			path = App;
@@ -754,7 +751,6 @@
 				BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
 				A10000000000000000000016 /* TrackerLaunchConfiguration.swift in Sources */,
-				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,
 				FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */,
 				547C118F7FB1E47BBCD519B9 /* SettingsView.swift in Sources */,
 				0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */,

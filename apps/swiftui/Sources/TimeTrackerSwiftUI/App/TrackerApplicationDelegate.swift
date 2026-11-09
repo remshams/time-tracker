@@ -30,17 +30,55 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// Creates the feature objects, the menu observer, the menu bar settings and the lifecycle observer, and starts
+/// the sync. The scenes, the app menus, the status item and the presentation coordinator read the objects here.
 final class TrackerAppRuntime {
-    let store = TrackerStore()
+    let features: TrackerFeatures
+    /// Settings tests a connection with this client.
+    let client: any TrackerClient
+    /// The Settings window reads this store through the SwiftUI environment; the status item gets it through `init`.
+    let menuBarPreferences: MenuBarPreferencesStore
+    private let menu: TrackerMenuPresentationObserver
+    private let lifecycle: MacLifecycleObserver
     private lazy var statusItem = TrackerStatusItemController(
-        sync: store.sync, trackingActions: store.trackingActions, menuBar: store.menuBar,
-        connection: store.connection, menu: store.menu, preferences: store.menuBarPreferences)
-    lazy var presentation = TrackerTaskPresentationCoordinator(store: store) { [weak self] in
+        sync: features.sync, trackingActions: features.trackingActions, menuBar: features.menuBar,
+        connection: features.connection, menu: menu, preferences: menuBarPreferences)
+    lazy var presentation = TrackerTaskPresentationCoordinator(
+        taskCreation: features.taskCreation, taskRename: features.taskRename,
+        worklogCorrection: features.worklogCorrection, worklogMove: features.worklogMove,
+        worklogDeletion: features.worklogDeletion, taskArchiving: features.taskArchiving,
+        bulkTaskArchiving: features.bulkTaskArchiving, tracking: features.tracking
+    ) { [weak self] in
         self?.showTracker()
     }
     private var openWindow: OpenWindowAction?
     private var opensTrackerWhenOpenerArrives = false
     private var isRunning = false
+
+    init() {
+        let launch = TrackerLaunchConfiguration.current
+        let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
+        client = worker
+        features = TrackerFeatures(
+            client: worker, clock: SystemTrackerClock(),
+            scheduler: RunLoopTrackerScheduler(),
+            settings: UserDefaultsConnectionSettings(defaults: launch.defaults),
+            trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
+            lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
+            reports: worker)
+        let savedPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
+        menu = TrackerMenuPresentationObserver(
+            sources: features.menuSources, showDailyTotal: savedPreferences.load(),
+            taskOrder: savedPreferences.loadTaskOrder())
+        // The store turns the menu bar clock on or off for the saved setting.
+        menuBarPreferences = MenuBarPreferencesStore(
+            preferences: savedPreferences,
+            keyboardPreferences: UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults),
+            menu: menu, sync: features.sync)
+        lifecycle = MacLifecycleObserver(sync: features.sync)
+        lifecycle.start()
+        features.sync.start()
+    }
 
     func start() {
         guard !isRunning else { return }
