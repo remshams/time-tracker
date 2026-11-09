@@ -4,7 +4,7 @@
 
 Accepted. It partially supersedes the clause of ADR 0032 listed under [Superseded clause](#superseded-clause). All other decisions in that record remain accepted.
 
-Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for the context statement that features can't call `TrackerSync`; the decision remains accepted.
+Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for the context statement that features can't call `TrackerSync`; all other decisions remain accepted.
 
 ## Date
 
