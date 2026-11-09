@@ -23,10 +23,9 @@ final class OpenDialogUITests: TrackerUITestCase {
         assertMenusOpenWithoutDialog(entries)
 
         openCreation()
-        let openDialogs = countOpenDialogs()
-        XCTAssertEqual(openDialogs, 1)
+        XCTAssertEqual(openDialogCount, 1)
         for entry in entries {
-            attemptToOpen(entry, expecting: openDialogs)
+            attemptToOpen(entry)
             XCTAssertTrue(element("task-name.input").exists, "\(entry.name) replaced the open sheet.")
         }
 
@@ -57,10 +56,9 @@ final class OpenDialogUITests: TrackerUITestCase {
 
         let title = app.staticTexts["Could not change tracking"]
         waitUntil("The tracking failure alert appears") { title.exists }
-        let openDialogs = countOpenDialogs()
-        XCTAssertEqual(openDialogs, 1)
+        XCTAssertEqual(openDialogCount, 1)
         for entry in entries {
-            attemptToOpen(entry, expecting: openDialogs)
+            attemptToOpen(entry)
             XCTAssertTrue(title.exists, "\(entry.name) replaced the open alert.")
             XCTAssertFalse(element("task-name.input").exists, "\(entry.name) opened the rename editor.")
         }
@@ -98,7 +96,7 @@ final class OpenDialogUITests: TrackerUITestCase {
 
     /// The same clicks must open each menu while no dialog shows, or the blocked attempts prove nothing.
     private func assertMenusOpenWithoutDialog(_ entries: [MenuEntry]) {
-        XCTAssertEqual(countOpenDialogs(), 0)
+        XCTAssertEqual(openDialogCount, 0)
         for entry in entries {
             entry.open(entry.target)
             let item = app.menuItems[entry.item]
@@ -109,14 +107,14 @@ final class OpenDialogUITests: TrackerUITestCase {
     }
 
     /// Clicks through coordinates, so XCTest sends the mouse event to the blocked window as a person's click would.
-    private func attemptToOpen(_ entry: MenuEntry, expecting openDialogs: Int) {
+    private func attemptToOpen(_ entry: MenuEntry) {
         XCTAssertFalse(
             openDialogElements.contains { $0.frame.contains(entry.target.screenPoint) },
             "\(entry.name) lies under the dialog, so this click cannot reach it.")
         entry.open(entry.target)
         let item = app.menuItems[entry.item]
         if item.waitForExistence(timeout: 2) { item.click() }
-        XCTAssertEqual(countOpenDialogs(), openDialogs, "\(entry.name) opened a second dialog.")
+        XCTAssertEqual(openDialogCount, 1, "\(entry.name) opened a second dialog.")
         XCTAssertFalse(element("worklog-correction.start").exists, "\(entry.name) opened the correction editor.")
     }
 
@@ -124,8 +122,7 @@ final class OpenDialogUITests: TrackerUITestCase {
     /// leave New task disabled.
     private func assertNoDialogRemains() {
         let newTask = app.buttons["New task"]
-        waitUntil("All dialogs close and New task returns") { self.countOpenDialogs() == 0 && newTask.isEnabled }
-        XCTAssertEqual(countOpenDialogs(), 0)
+        waitUntil("All dialogs close and New task returns") { self.openDialogCount == 0 && newTask.isEnabled }
     }
 
     /// SwiftUI may report an alert as either element type.
@@ -133,5 +130,5 @@ final class OpenDialogUITests: TrackerUITestCase {
         app.sheets.allElementsBoundByIndex + app.dialogs.allElementsBoundByIndex
     }
 
-    private func countOpenDialogs() -> Int { openDialogElements.count }
+    private var openDialogCount: Int { app.sheets.count + app.dialogs.count }
 }
