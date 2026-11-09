@@ -4,8 +4,8 @@ import TrackerClient
 
 @Observable
 final class TrackerStore {
-    private let session: TrackerSession
-    // Connection tests go straight to the worker; they don't touch the session's state.
+    private let features: TrackerFeatures
+    // Connection tests go straight to the worker; they don't touch the stores.
     private let worker: TrackerWorker
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
@@ -32,7 +32,7 @@ final class TrackerStore {
         menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
         self.worker = worker
-        session = TrackerSession(
+        features = TrackerFeatures(
             client: worker, clock: SystemTrackerClock(),
             scheduler: RunLoopTrackerScheduler(),
             settings: UserDefaultsConnectionSettings(defaults: launch.defaults),
@@ -40,48 +40,48 @@ final class TrackerStore {
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
         menu = TrackerMenuPresentationObserver(
-            sources: TrackerMenuSources(session: session), showDailyTotal: showDailyTotal, taskOrder: taskOrder)
-        session.sync.setMenuBarClockEnabled(showDailyTotal)
-        lifecycle = MacLifecycleObserver(sync: session.sync)
+            sources: features.menuSources, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
+        features.sync.setMenuBarClockEnabled(showDailyTotal)
+        lifecycle = MacLifecycleObserver(sync: features.sync)
         lifecycle?.start()
-        session.sync.start()
+        features.sync.start()
     }
 
     /// Views read the task list, tab and selection from this store through the SwiftUI environment.
-    var taskCatalog: TaskCatalogStore { session.taskCatalog }
+    var taskCatalog: TaskCatalogStore { features.taskCatalog }
     /// Views read the selected task's worklogs and the history panel's state from this store the same way.
-    var worklogHistory: WorklogHistoryStore { session.worklogHistory }
+    var worklogHistory: WorklogHistoryStore { features.worklogHistory }
     /// Views read the connection settings and status from this store the same way.
-    var connection: ConnectionStore { session.connection }
+    var connection: ConnectionStore { features.connection }
     /// Views read the running worklog, the tracking error and the timer text from this store the same way.
-    var tracking: TrackingStore { session.tracking }
+    var tracking: TrackingStore { features.tracking }
     /// Views read today's status and task totals from this store the same way.
-    var dailyTotals: DailyTotalsStore { session.dailyTotals }
+    var dailyTotals: DailyTotalsStore { features.dailyTotals }
     /// Views read the auto-pause preference and status from this store the same way.
-    var trackingAutomation: TrackingAutomationStore { session.trackingAutomation }
+    var trackingAutomation: TrackingAutomationStore { features.trackingAutomation }
     /// The environment and the coordinator read the rename dialog from this store.
-    var taskRename: TaskRenameStore { session.taskRename }
+    var taskRename: TaskRenameStore { features.taskRename }
     /// The environment and the coordinator read the archive dialog from this store.
-    var taskArchiving: TaskArchivingStore { session.taskArchiving }
+    var taskArchiving: TaskArchivingStore { features.taskArchiving }
     /// The environment, the coordinator and the app menus read the creation dialog from this store.
-    var taskCreation: TaskCreationStore { session.taskCreation }
+    var taskCreation: TaskCreationStore { features.taskCreation }
     /// The environment and the coordinator read the worklog deletion dialog from this store.
-    var worklogDeletion: WorklogDeletionStore { session.worklogDeletion }
-    var worklogMove: WorklogMoveStore { session.worklogMove }
+    var worklogDeletion: WorklogDeletionStore { features.worklogDeletion }
+    var worklogMove: WorklogMoveStore { features.worklogMove }
     /// The environment and the coordinator read the bulk archive dialog from this store.
-    var bulkTaskArchiving: BulkTaskArchivingStore { session.bulkTaskArchiving }
+    var bulkTaskArchiving: BulkTaskArchivingStore { features.bulkTaskArchiving }
     /// The environment and the coordinator read the worklog correction dialog from this store.
-    var worklogCorrection: WorklogCorrectionStore { session.worklogCorrection }
+    var worklogCorrection: WorklogCorrectionStore { features.worklogCorrection }
 
-    var canStopTracking: Bool { session.trackingAvailability.canStop }
-    func canStartTracking(taskID: String) -> Bool { session.trackingAvailability.canStart(taskID: taskID) }
+    var canStopTracking: Bool { features.trackingAvailability.canStop }
+    func canStartTracking(taskID: String) -> Bool { features.trackingAvailability.canStart(taskID: taskID) }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {
         guard showDailyTotalInMenuBar != enabled else { return }
         showDailyTotalInMenuBar = enabled
         menuBarPreferences.save(enabled)
         menu.setShowDailyTotal(enabled)
-        session.sync.setMenuBarClockEnabled(enabled)
+        features.sync.setMenuBarClockEnabled(enabled)
     }
 
     func setMenuTaskOrder(_ order: MenuTaskOrder) {
@@ -91,7 +91,7 @@ final class TrackerStore {
         menu.setTaskOrder(order)
     }
 
-    func setPauseOnScreenLock(_ enabled: Bool) { session.sync.setPauseOnScreenLock(enabled) }
+    func setPauseOnScreenLock(_ enabled: Bool) { features.sync.setPauseOnScreenLock(enabled) }
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
         var candidate = action == .openMenu ? MenuKeyboardShortcuts() : menuShortcuts
         candidate[action] = shortcut
@@ -132,32 +132,32 @@ final class TrackerStore {
         _ action: MenuShortcutAction, taskID: String,
         connection: ConnectionSettings
     ) -> String? {
-        session.menuCopyValue(action, taskID: taskID, connection: connection)
+        features.menuBar.menuCopyValue(action, taskID: taskID, connection: connection)
     }
-    func changeTab(_ tab: TaskTab) { session.sync.changeTab(tab) }
-    func selectTask(_ taskID: String?) { session.sync.selectTask(taskID) }
-    func refresh() { session.sync.refresh() }
-    func retryHistory() { session.sync.retryHistory() }
-    func loadOlder() { session.sync.loadOlder() }
-    func startTracking(taskID: String) { session.trackingActions.startTracking(taskID: taskID) }
-    func stopTracking(worklogID: String) { session.trackingActions.stopTracking(worklogID: worklogID) }
-    func dismissTrackingError() { session.trackingActions.dismissTrackingError() }
-    func performMenuPrimaryAction() -> MenuPrimaryAction { session.trackingActions.performMenuPrimaryAction() }
+    func changeTab(_ tab: TaskTab) { features.sync.changeTab(tab) }
+    func selectTask(_ taskID: String?) { features.sync.selectTask(taskID) }
+    func refresh() { features.sync.refresh() }
+    func retryHistory() { features.sync.retryHistory() }
+    func loadOlder() { features.sync.loadOlder() }
+    func startTracking(taskID: String) { features.trackingActions.startTracking(taskID: taskID) }
+    func stopTracking(worklogID: String) { features.trackingActions.stopTracking(worklogID: worklogID) }
+    func dismissTrackingError() { features.trackingActions.dismissTrackingError() }
+    func performMenuPrimaryAction() -> MenuPrimaryAction { features.trackingActions.performMenuPrimaryAction() }
 
     func menuOpened() {
         // The sync publishes first, so the menu captures current values even when no display tick ran.
-        session.sync.setMenuVisible(true)
+        features.sync.setMenuVisible(true)
         menu.menuOpened()
     }
 
     func menuClosed() {
-        session.sync.setMenuVisible(false)
+        features.sync.setMenuVisible(false)
         menu.menuClosed()
     }
     func testConnection(_ settings: ConnectionSettings) async throws {
         try await testConnectionSettings(settings, client: worker)
     }
     func connect(_ settings: ConnectionSettings) async -> Bool {
-        await session.sync.connect(settings)
+        await features.sync.connect(settings)
     }
 }
