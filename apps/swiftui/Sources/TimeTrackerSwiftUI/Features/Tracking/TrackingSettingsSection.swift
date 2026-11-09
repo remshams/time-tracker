@@ -2,7 +2,7 @@ import SwiftUI
 import TrackerClient
 
 struct TrackingSettingsSection: View {
-    let store: TrackerStore
+    @Environment(TrackerSync.self) private var sync
     @Environment(TrackingAutomationStore.self) private var automation
 
     var body: some View {
@@ -11,7 +11,7 @@ struct TrackingSettingsSection: View {
                 "Automatically pause tracking when the screen is locked",
                 isOn: Binding(
                     get: { automation.enabled },
-                    set: { store.setPauseOnScreenLock($0) }
+                    set: { sync.setPauseOnScreenLock($0) }
                 )
             )
             .accessibilityIdentifier("tracking.pause-on-lock")
