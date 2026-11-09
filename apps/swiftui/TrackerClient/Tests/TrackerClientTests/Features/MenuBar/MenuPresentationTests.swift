@@ -6,7 +6,7 @@ final class MenuPresentationTests: XCTestCase {
     func testRunningTaskNameFollowsConnectionTrackingAndCatalog() async throws {
         let unconfirmed = Fixture()
         defer { unconfirmed.cleanup() }
-        XCTAssertEqual(TrackerMenuInputs.current(unconfirmed.features).runningTaskName, "Waiting for tracker state")
+        XCTAssertEqual(unconfirmed.features.menuSources.read().runningTaskName, "Waiting for tracker state")
 
         let orphan = WorklogItem(id: "worklog-orphan", taskId: "missing-task", start: activeWorklog.start, end: nil)
         let cases = [
@@ -18,7 +18,7 @@ final class MenuPresentationTests: XCTestCase {
             let fixture = Fixture()
             defer { fixture.cleanup() }
             try await fixture.start(resources)
-            XCTAssertEqual(TrackerMenuInputs.current(fixture.features).runningTaskName, expected)
+            XCTAssertEqual(fixture.features.menuSources.read().runningTaskName, expected)
         }
     }
 

@@ -7,10 +7,10 @@ extension MenuBarStore {
     ) -> String? {
         // A dropdown opened on one data source must not copy from another.
         guard self.connection.settings == connection,
-            let menuTask = task(withID: taskID, in: catalog.tasks)
+            let task = catalog.tasks.first(where: { $0.id == taskID })
         else { return nil }
         switch action {
-        case .copyName: return menuTask.name
+        case .copyName: return task.name
         case .copyExact: return MenuDurationFormatter.exact(dailyDuration(taskID: taskID))
         case .copyRounded: return MenuDurationFormatter.rounded(dailyDuration(taskID: taskID))
         case .openMenu, .moveDown, .moveUp: return nil
