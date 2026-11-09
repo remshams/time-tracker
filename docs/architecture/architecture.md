@@ -160,15 +160,11 @@ features but not in a cycle; the compiler doesn't catch cycles between folders,
 so review does.
 
 In the Swift app and package, folders in a target must not form a cycle, and
-`App/` counts as an ordinary folder. A feature may use something in `App/` when
-that creates no cycle. Each target is checked separately: the package can't see
-the app, so a dependency from the app into the package can't complete a cycle,
-and same-named feature folders in the two targets are separate nodes
+`App/` counts as an ordinary folder. Review checks each target separately, and
+same-named feature folders in the two targets are separate nodes
 ([ADR 0034](adr/0034-allow-no-cycles-between-folders-in-a-target.md)). The package
 has no cycle. The app target still has one through `App/`, which
-[#360](https://github.com/remshams/time-tracker/issues/360),
-[#361](https://github.com/remshams/time-tracker/issues/361),
-[#362](https://github.com/remshams/time-tracker/issues/362) and
+[#360](https://github.com/remshams/time-tracker/issues/360) to
 [#363](https://github.com/remshams/time-tracker/issues/363) remove. `Shared/` holds
 helpers no feature owns and `Contracts/` holds protocols and wire models
 ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
