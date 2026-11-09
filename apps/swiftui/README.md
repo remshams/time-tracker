@@ -297,6 +297,7 @@ flowchart TD
     Menu --> Actions[TrackingActions]
     UI --> Actions
     UI --> Features
+    UI -->|menu bar clock setting| Sync
     TrackerFeatures --> Sync
     Actions --> Sync
     TrackerFeatures & Sync & Actions --> Features[Connection, task catalog, task creation, task renaming, tracking, daily totals and history state]
