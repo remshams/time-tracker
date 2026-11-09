@@ -51,27 +51,31 @@ final class MenuBarPreferencesStore {
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
         var candidate = action == .openMenu ? MenuKeyboardShortcuts() : menuShortcuts
         candidate[action] = shortcut
-        setMenuShortcuts(candidate)
+        // Recording the open menu shortcut again retries a failed global registration.
+        setMenuShortcuts(candidate, retryGlobal: action == .openMenu && menuGlobalShortcutError != nil)
     }
 
     func resetMenuShortcuts() { setMenuShortcuts(.defaults, retryGlobal: true) }
 
-    private func setMenuShortcuts(_ candidate: MenuKeyboardShortcuts, retryGlobal: Bool = false) {
+    private func setMenuShortcuts(_ candidate: MenuKeyboardShortcuts, retryGlobal: Bool) {
         if let error = candidate.validationError {
-            menuShortcutValidationError = error
+            reportMenuShortcutError(error)
             return
         }
-        // A failed global registration retries even when the user records the same shortcut again.
-        let changesGlobal =
-            retryGlobal || menuGlobalShortcutError != nil || candidate.openMenu != menuShortcuts.openMenu
+        let changesGlobal = retryGlobal || candidate.openMenu != menuShortcuts.openMenu
         if changesGlobal, let error = registerMenuShortcut?(candidate.openMenu) {
-            menuShortcutValidationError = error
+            reportMenuShortcutError(error)
             return
         }
         menuShortcuts = candidate
-        menuShortcutValidationError = nil
+        reportMenuShortcutError(nil)
         if changesGlobal { menuGlobalShortcutError = nil }
         keyboardPreferences.save(candidate)
+    }
+
+    private func reportMenuShortcutError(_ message: String?) {
+        guard menuShortcutValidationError != message else { return }
+        menuShortcutValidationError = message
     }
 
     func reportMenuGlobalShortcutError(_ message: String?) {
