@@ -3,7 +3,6 @@ import TrackerClient
 
 /// Shows the selected task's worklogs with their loading, empty, error and pagination states.
 struct WorklogHistorySection: View {
-    let store: TrackerStore
     @Environment(TrackingStore.self) private var tracking
     @Environment(WorklogHistoryStore.self) private var history
 
@@ -11,7 +10,7 @@ struct WorklogHistorySection: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 WorklogHistoryHeading()
-                WorklogHistoryError(store: store)
+                WorklogHistoryError()
 
                 if history.worklogs.isEmpty && history.isLoading {
                     DelayedProgressIndicator(
@@ -31,7 +30,7 @@ struct WorklogHistorySection: View {
                 }
 
                 if history.hasMore {
-                    HistoryPaginationButton(store: store)
+                    HistoryPaginationButton()
                         .padding(.top, 8)
                 }
             }
@@ -44,7 +43,7 @@ struct WorklogHistorySection: View {
 
 /// Shows the history panel's message, with a retry button when the history failed to load.
 struct WorklogHistoryError: View {
-    let store: TrackerStore
+    @Environment(TrackerSync.self) private var sync
     @Environment(WorklogHistoryStore.self) private var history
 
     var body: some View {
@@ -59,7 +58,7 @@ struct WorklogHistoryError: View {
                 }
                 .foregroundStyle(.primary)
                 if history.unavailable {
-                    Button("Retry") { store.retryHistory() }
+                    Button("Retry") { sync.retryHistory() }
                         .accessibilityIdentifier("worklog-history.retry")
                 }
             }
@@ -83,12 +82,12 @@ private struct WorklogHistoryHeading: View {
 }
 
 private struct HistoryPaginationButton: View {
-    let store: TrackerStore
+    @Environment(TrackerSync.self) private var sync
     @Environment(WorklogHistoryStore.self) private var history
     @Environment(ConnectionStore.self) private var connection
 
     var body: some View {
-        Button("Load older worklogs") { store.loadOlder() }
+        Button("Load older worklogs") { sync.loadOlder() }
             .accessibilityIdentifier("worklog-history.load-older")
             .disabled(connection.stale || history.isLoading)
     }
