@@ -5,8 +5,8 @@ import TrackerClient
 @Observable
 final class TrackerStore {
     private let features: TrackerFeatures
-    // Connection tests go straight to the worker; they don't touch the stores.
-    private let worker: TrackerWorker
+    /// Settings tests connections with this client directly; the tests don't touch the stores.
+    let client: any TrackerClient
     /// The AppKit status menu reads its content, label and live values here.
     let menu: TrackerMenuPresentationObserver
     /// The Settings window reads this store through the SwiftUI environment; the status item gets it through `init`.
@@ -16,7 +16,7 @@ final class TrackerStore {
     init() {
         let launch = TrackerLaunchConfiguration.current
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
-        self.worker = worker
+        client = worker
         features = TrackerFeatures(
             client: worker, clock: SystemTrackerClock(),
             scheduler: RunLoopTrackerScheduler(),
@@ -38,6 +38,13 @@ final class TrackerStore {
         features.sync.start()
     }
 
+    /// Views read this from the SwiftUI environment to change the tab and selection, refresh and connect, and the
+    /// status item gets it through `init`.
+    var sync: TrackerSync { features.sync }
+    /// The SwiftUI environment and the status item start and stop tracking with this.
+    var trackingActions: TrackingActions { features.trackingActions }
+    /// The status item reads the copy values here.
+    var menuBar: MenuBarStore { features.menuBar }
     /// Views read the task list, tab and selection from this store through the SwiftUI environment.
     var taskCatalog: TaskCatalogStore { features.taskCatalog }
     /// Views read the selected task's worklogs and the history panel's state from this store the same way.
@@ -66,38 +73,7 @@ final class TrackerStore {
 
     var canStopTracking: Bool { features.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { features.trackingAvailability.canStart(taskID: taskID) }
-
-    func setPauseOnScreenLock(_ enabled: Bool) { features.sync.setPauseOnScreenLock(enabled) }
-    func menuCopyValue(
-        _ action: MenuShortcutAction, taskID: String,
-        connection: ConnectionSettings
-    ) -> String? {
-        features.menuBar.menuCopyValue(action, taskID: taskID, connection: connection)
-    }
-    func changeTab(_ tab: TaskTab) { features.sync.changeTab(tab) }
-    func selectTask(_ taskID: String?) { features.sync.selectTask(taskID) }
-    func refresh() { features.sync.refresh() }
-    func retryHistory() { features.sync.retryHistory() }
-    func loadOlder() { features.sync.loadOlder() }
     func startTracking(taskID: String) { features.trackingActions.startTracking(taskID: taskID) }
     func stopTracking(worklogID: String) { features.trackingActions.stopTracking(worklogID: worklogID) }
     func dismissTrackingError() { features.trackingActions.dismissTrackingError() }
-    func performMenuPrimaryAction() -> MenuPrimaryAction { features.trackingActions.performMenuPrimaryAction() }
-
-    func menuOpened() {
-        // The sync publishes first, so the menu captures current values even when no display tick ran.
-        features.sync.setMenuVisible(true)
-        menu.menuOpened()
-    }
-
-    func menuClosed() {
-        features.sync.setMenuVisible(false)
-        menu.menuClosed()
-    }
-    func testConnection(_ settings: ConnectionSettings) async throws {
-        try await testConnectionSettings(settings, client: worker)
-    }
-    func connect(_ settings: ConnectionSettings) async -> Bool {
-        await features.sync.connect(settings)
-    }
 }
