@@ -468,11 +468,10 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
         try await fixture.start(resources)
-        let archiving = fixture.taskArchiving
         let availability = ObservationProbe {
-            _ = archiving.canArchive(taskID: firstTask.id)
-            _ = archiving.canArchive(taskID: secondTask.id)
-            _ = archiving.canUnarchive(taskID: archivedTask.id)
+            _ = fixture.taskArchiving.canArchive(taskID: firstTask.id)
+            _ = fixture.taskArchiving.canArchive(taskID: secondTask.id)
+            _ = fixture.taskArchiving.canUnarchive(taskID: archivedTask.id)
         }
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
@@ -483,13 +482,13 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertEqual(fixture.taskArchiving.taskName, "")
         XCTAssertTrue(availability.consume())
-        XCTAssertFalse(archiving.canArchive(taskID: firstTask.id))
-        XCTAssertTrue(archiving.canArchive(taskID: secondTask.id))
-        XCTAssertTrue(archiving.canUnarchive(taskID: archivedTask.id))
+        XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: firstTask.id))
+        XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
+        XCTAssertTrue(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
         fixture.taskCreation.open()
         XCTAssertTrue(fixture.taskCreation.isPresented)
         XCTAssertFalse(availability.consume())
-        XCTAssertTrue(archiving.canArchive(taskID: secondTask.id))
+        XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
     }
 
     @MainActor
