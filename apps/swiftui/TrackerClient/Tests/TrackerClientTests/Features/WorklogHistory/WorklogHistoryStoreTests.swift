@@ -42,7 +42,7 @@ final class WorklogHistoryStoreTests: XCTestCase {
         history.recordReadFailure = { reports.values.append($0.localizedDescription) }
         history.loadOlder()
 
-        history.reload(selectedTaskID: firstTask.id)
+        history.reload()
         let first = try await fixture.client.next()
         XCTAssertEqual(first.operation, .history(task: firstTask.id, cursor: nil))
         first.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
@@ -68,14 +68,15 @@ final class WorklogHistoryStoreTests: XCTestCase {
     func testPageOrFailureForATaskNoLongerSelectedIsDroppedWithoutReport() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let history = makeStore(client: fixture.client).history
+        let (history, catalog, _) = makeStore(client: fixture.client)
         let reports = PageReports()
         history.recordReadFailure = { reports.values.append($0.localizedDescription) }
         let currentPage = HistoryPage(worklogs: [activeWorklog], nextCursor: nil, reset: false)
 
-        history.reload(selectedTaskID: firstTask.id)
+        history.reload()
         let stalePage = try await fixture.client.next()
-        history.reload(selectedTaskID: secondTask.id)
+        XCTAssertTrue(catalog.switchSelection(to: secondTask.id))
+        history.reload()
         let current = try await fixture.client.next()
         XCTAssertEqual(stalePage.operation, .history(task: firstTask.id, cursor: nil))
         XCTAssertEqual(current.operation, .history(task: secondTask.id, cursor: nil))
@@ -85,9 +86,11 @@ final class WorklogHistoryStoreTests: XCTestCase {
         XCTAssertEqual(history.worklogs, [activeWorklog])
         XCTAssertFalse(history.hasMore)
 
-        history.reload(selectedTaskID: firstTask.id)
+        XCTAssertTrue(catalog.switchSelection(to: firstTask.id))
+        history.reload()
         let staleFailure = try await fixture.client.next()
-        history.reload(selectedTaskID: secondTask.id)
+        XCTAssertTrue(catalog.switchSelection(to: secondTask.id))
+        history.reload()
         let reloaded = try await fixture.client.next()
         staleFailure.fail(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
         reloaded.succeed(currentPage)
@@ -104,7 +107,6 @@ final class WorklogHistoryStoreTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let (history, catalog, _) = makeStore(client: fixture.client)
-        XCTAssertTrue(catalog.apply([firstTask, secondTask], previousActive: nil, active: nil))
         XCTAssertTrue(catalog.switchSelection(to: secondTask.id))
 
         history.reload()
@@ -122,7 +124,7 @@ final class WorklogHistoryStoreTests: XCTestCase {
         defer { fixture.cleanup() }
         let (history, _, connection) = makeStore(client: fixture.client)
         connection.acceptTaskList()
-        history.reload(selectedTaskID: firstTask.id)
+        history.reload()
         try await fixture.client.next().succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await settled(fixture, history)
         connection.recordFailure(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
@@ -139,6 +141,8 @@ final class WorklogHistoryStoreTests: XCTestCase {
         client: FakeClient
     ) -> (history: WorklogHistoryStore, catalog: TaskCatalogStore, connection: ConnectionStore) {
         let catalog = TaskCatalogStore()
+        // Selects the first task.
+        _ = catalog.apply([firstTask, secondTask], previousActive: nil, active: nil)
         let connection = ConnectionStore(settings: .local)
         return (WorklogHistoryStore(client: client, catalog: catalog, connection: connection), catalog, connection)
     }
