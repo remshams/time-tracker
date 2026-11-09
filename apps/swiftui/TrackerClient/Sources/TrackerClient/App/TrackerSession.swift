@@ -90,7 +90,7 @@ public final class TrackerSession {
             tracking: tracking, reloadAfterWrite: sync.reloadAfterWorklogWrite)
     }
 
-    // The session's flows read these two.
+    // The menu's copy actions and `dailyDuration` read these two.
     public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
 
