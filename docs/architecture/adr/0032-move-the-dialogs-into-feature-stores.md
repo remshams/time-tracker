@@ -8,6 +8,8 @@ Partially superseded by [ADR 0033](0033-report-bulk-archive-preview-failures-thr
 
 Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for the reasons given for the reload closures and against the first rejected alternative, though both decisions stay, for views calling `changeTab(_:)` and `selectTask(_:)` through `TrackerStore`, and for the coordinator and app menus reading the dialog stores through `TrackerStore`, which keeps its Mac settings and forwarders; all other decisions remain accepted.
 
+Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) for moving `changeTab(_:)` and `selectTask(_:)` to `TrackerSync`, for `TrackerFeatures` holding `TrackingActions`, and for `TrackingActions` using `TrackingAvailability`; all other decisions remain accepted.
+
 ## Date
 
 2026-11-08

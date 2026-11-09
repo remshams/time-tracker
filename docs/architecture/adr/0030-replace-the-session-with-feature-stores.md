@@ -8,6 +8,8 @@ Partially superseded by [ADR 0032](0032-move-the-dialogs-into-feature-stores.md)
 
 Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-target.md) for three clauses of "Feature dependencies": "Only `App/` composes features at runtime", the no-cycle rule for Swift folders, and the sentence that `docs/architecture/architecture.md` doesn't list the rule; all other decisions remain accepted.
 
+Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) for passive stores and for `TrackerSync` owning auto-pause and the connection change flow; all other decisions remain accepted.
+
 ## Date
 
 2026-10-20
