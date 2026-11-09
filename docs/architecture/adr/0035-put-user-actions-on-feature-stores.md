@@ -36,7 +36,7 @@ A package store that has to trigger orchestration in the package's `App/`, such 
 
 Starting, stopping and dismissing the tracking error move to `Features/Tracking`. The menu's primary action moves to `MenuBarStore`. Its folder, `Features/MenuBar`, already depends on Tracking and TrackingAutomation.
 
-Cancelling a pending auto-resume, reloading and publishing reach `Features/Tracking` through closures. TrackingAutomation reads `TrackingStore`, so a direct call from Tracking into TrackingAutomation would form a cycle.
+Cancelling a pending auto-resume, reloading and publishing reach `Features/Tracking` through closures. Once the screen-lock auto-pause moves into TrackingAutomation, that feature reads `TrackingStore`, so a direct call from Tracking into TrackingAutomation would form a cycle.
 
 ### Screen-lock auto-pause
 
