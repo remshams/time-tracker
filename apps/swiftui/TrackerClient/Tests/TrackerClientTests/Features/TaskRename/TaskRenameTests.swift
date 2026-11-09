@@ -459,7 +459,7 @@ final class TaskRenameTests: XCTestCase {
         let resumedHistory = try await fixture.client.next()
         resumedHistory.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(TrackerMenuInputs.current(fixture.features).runningTaskName, renamed.name)
+        XCTAssertEqual(fixture.features.menuSources.read().runningTaskName, renamed.name)
     }
 
     @MainActor

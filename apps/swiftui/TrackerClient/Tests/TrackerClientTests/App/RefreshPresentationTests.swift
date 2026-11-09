@@ -7,11 +7,11 @@ final class RefreshPresentationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         XCTAssertTrue(fixture.features.taskCatalog.tasks.isEmpty)
-        XCTAssertEqual(TrackerMenuInputs.current(fixture.features).runningTaskName, "Waiting for tracker state")
+        XCTAssertEqual(fixture.features.menuSources.read().runningTaskName, "Waiting for tracker state")
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask])
         XCTAssertNil(fixture.features.tracking.active)
-        XCTAssertEqual(TrackerMenuInputs.current(fixture.features).runningTaskName, "No timer running")
+        XCTAssertEqual(fixture.features.menuSources.read().runningTaskName, "No timer running")
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
         let running = WorklogItem(id: "worklog-second", taskId: secondTask.id, start: activeWorklog.start, end: nil)

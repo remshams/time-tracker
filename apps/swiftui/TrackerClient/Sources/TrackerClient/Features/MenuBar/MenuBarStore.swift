@@ -22,13 +22,13 @@ public extension ConnectionSettings {
 @Observable
 public final class MenuBarStore: ChangeGuardedStore {
     public private(set) var lastTrackedTaskID: String?
-    @ObservationIgnored private let repository: (any LastTrackedTaskRepository)?
+    private let repository: (any LastTrackedTaskRepository)?
     @ObservationIgnored private var remembered: [String: String] = [:]
-    @ObservationIgnored let connection: ConnectionStore
-    @ObservationIgnored let catalog: TaskCatalogStore
-    @ObservationIgnored let tracking: TrackingStore
-    @ObservationIgnored let dailyTotals: DailyTotalsStore
-    @ObservationIgnored let clock: any TrackerClock
+    let connection: ConnectionStore
+    let catalog: TaskCatalogStore
+    let tracking: TrackingStore
+    let dailyTotals: DailyTotalsStore
+    let clock: any TrackerClock
 
     init(
         repository: (any LastTrackedTaskRepository)?, connection: ConnectionStore, catalog: TaskCatalogStore,
@@ -81,7 +81,7 @@ public final class MenuBarStore: ChangeGuardedStore {
 
     private func largerTaskID(_ left: String, _ right: String) -> Bool { left > right }
 
-    func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
+    private func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
         for task in tasks {
             if task.id == id { return task }
         }

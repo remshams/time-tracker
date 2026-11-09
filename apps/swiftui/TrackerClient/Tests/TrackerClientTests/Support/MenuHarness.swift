@@ -46,10 +46,3 @@ final class MenuHarness {
         try await settled(file: file, line: line)
     }
 }
-
-extension TrackerMenuInputs {
-    /// Reads the menu's inputs from the features' stores.
-    @MainActor static func current(_ features: TrackerFeatures) -> TrackerMenuInputs {
-        features.menuSources.read()
-    }
-}
