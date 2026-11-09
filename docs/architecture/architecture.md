@@ -250,7 +250,11 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   at `WorklogHistoryStore`. `WorklogHistoryStore` reads the selection from
   `TaskCatalogStore` and the stale connection from `ConnectionStore`, sends its
   own page requests, and reports each failure through a closure to
-  `TrackerSync`, which records connection failures.
+  `TrackerSync`, which records connection failures. Views connect and retry
+  on `ConnectionStore` and turn the auto-pause on or off on
+  `TrackingAutomationStore`. Through closures that `TrackerFeatures` sets,
+  those stores let `TrackerSync` switch the connection, refresh, and pause a
+  running timer when the screen is already locked. No view reads `TrackerSync`.
   User actions move from `TrackerSync` and `TrackingActions` onto the store of
   the feature that owns them, step by step in
   [issue #369](https://github.com/remshams/time-tracker/issues/369). A view reads
