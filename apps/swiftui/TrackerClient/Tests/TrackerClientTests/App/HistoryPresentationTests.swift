@@ -9,7 +9,7 @@ final class HistoryPresentationTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let content = ObservationProbe { ViewReads.content(fixture.features) }
 
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let request = try await fixture.client.next()
         XCTAssertTrue(content.consume())
         XCTAssertTrue(fixture.features.worklogHistory.isLoading)

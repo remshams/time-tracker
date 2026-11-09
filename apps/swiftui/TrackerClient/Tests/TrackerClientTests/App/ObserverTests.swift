@@ -63,7 +63,7 @@ final class ObserverTests: XCTestCase {
         open.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
         let selectedHistory = try await fixture.client.next()
         XCTAssertEqual(selectedHistory.operation, .history(task: secondTask.id, cursor: nil))

@@ -4,17 +4,17 @@ import Foundation
 /// It holds them and has no methods: the app runtime and the test fixture read them from here.
 public final class TrackerFeatures {
     /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
-    /// change, changes the tab and task selection, reloads after dialog writes, and publishes the timer text, today's
-    /// totals, the auto-pause status and the recorded errors.
+    /// change, reloads after dialog writes, and publishes the timer text, today's totals, the auto-pause status and the
+    /// recorded errors.
     public let sync: TrackerSync
     /// Starts and stops tracking.
     public let trackingActions: TrackingActions
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
-    /// Views read the task list, tab and selection here; the sync writes them.
+    /// Views read the task list, tab and selection here and change the tab and selection; the sync writes them too.
     public let taskCatalog = TaskCatalogStore()
-    /// Views read the selected task's worklog pages and the history panel's state here; the store loads the pages
-    /// when the sync asks it to.
+    /// Views read the selected task's worklog pages and the history panel's state here, retry and load older pages;
+    /// the store loads the first page when the sync or a selection change asks it to.
     public let worklogHistory: WorklogHistoryStore
     /// Views read the connection settings and status here; the sync writes them.
     public let connection: ConnectionStore
@@ -51,10 +51,10 @@ public final class TrackerFeatures {
         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
-        worklogHistory = WorklogHistoryStore(client: client)
         dailyTotals = DailyTotalsStore(calendar: calendar)
         trackingAutomation = TrackingAutomationStore(preferences: trackingPreferences.load())
         connection = ConnectionStore(settings: settings.load() ?? .local)
+        worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
             dailyTotals: dailyTotals, clock: clock)
@@ -68,6 +68,11 @@ public final class TrackerFeatures {
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, settings: settings,
             trackingPreferences: trackingPreferences)
+        // The catalog and the history exist before the sync, so their closures are set here. The captures are weak
+        // because the history holds the catalog and the sync holds the history.
+        taskCatalog.reloadHistory = { [weak worklogHistory] in worklogHistory?.reload() }
+        // A page changes nothing that the sync publishes, so recovering the connection is enough.
+        worklogHistory.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
         trackingActions = TrackingActions(
             client: client, clock: clock, sync: sync, catalog: taskCatalog, availability: trackingAvailability,
             tracking: tracking, menuBar: menuBar, automation: trackingAutomation)

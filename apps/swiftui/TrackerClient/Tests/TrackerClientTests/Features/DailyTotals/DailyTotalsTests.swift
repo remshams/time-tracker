@@ -755,7 +755,7 @@ final class DailyTotalsAppTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [total(firstTask, 10)])
         XCTAssertEqual(fixture.totalsStatus, .current)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
         try await fixture.settled()

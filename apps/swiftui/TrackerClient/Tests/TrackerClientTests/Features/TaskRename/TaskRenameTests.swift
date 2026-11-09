@@ -115,7 +115,7 @@ final class TaskRenameTests: XCTestCase {
         try await fixture.start(resources)
         fixture.taskRename.open(taskID: firstTask.id)
         fixture.taskRename.setName("Renamed task")
-        fixture.sync.selectTask(secondTask.id)
+        fixture.features.taskCatalog.select(secondTask.id)
         let selectedHistory = try await fixture.client.next()
         let selectedLog = WorklogItem(
             id: "second-log", taskId: secondTask.id, start: oldWorklog.start, end: oldWorklog.end)
@@ -153,7 +153,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertFalse(fixture.taskRename.canOpen)
         fixture.taskRename.open(taskID: archivedTask.id)
         XCTAssertFalse(fixture.taskRename.isPresented)
-        fixture.sync.changeTab(.archived)
+        fixture.features.taskCatalog.changeTab(.archived)
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()

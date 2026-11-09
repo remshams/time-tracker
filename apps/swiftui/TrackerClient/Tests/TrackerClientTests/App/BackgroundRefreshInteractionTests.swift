@@ -44,7 +44,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.sync.retryHistory()
+        fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
         fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
         fixture.clock.now.addTimeInterval(90)

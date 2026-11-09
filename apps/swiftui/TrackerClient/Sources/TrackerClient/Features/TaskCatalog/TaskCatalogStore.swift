@@ -3,9 +3,9 @@ import Observation
 
 /// Holds the task list, the Active or Archived tab, and the selected task for the whole app.
 ///
-/// Views read the properties; `TrackerSync` and the dialog stores' follow-ups write them. Each property is assigned
-/// only when its value changes, so an unchanged poll redraws nothing and a change to another task leaves the
-/// selected task's readers alone.
+/// Views read the properties and change the tab and selection; `TrackerSync` and the dialog stores' follow-ups write
+/// them too. Each property is assigned only when its value changes, so an unchanged poll redraws nothing and a change
+/// to another task leaves the selected task's readers alone.
 @Observable
 public final class TaskCatalogStore: ChangeGuardedStore {
     public private(set) var tasks: [TaskItem] = []
@@ -16,8 +16,20 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     // Each tab's last selection, restored when the user switches back to that tab.
     @ObservationIgnored private var activeSelection: String?
     @ObservationIgnored private var archivedSelection: String?
+    /// Loads the selected task's history after the user changed the tab or the selection. `TrackerFeatures` sets it
+    /// once, after it creates the history store, which needs this store.
+    @ObservationIgnored var reloadHistory: @MainActor () -> Void = {}
 
-    func changeTab(_ newTab: TaskTab) -> Bool {
+    public func changeTab(_ newTab: TaskTab) {
+        if switchTab(to: newTab) { reloadHistory() }
+    }
+
+    public func select(_ taskID: String?) {
+        if switchSelection(to: taskID) { reloadHistory() }
+    }
+
+    /// Changes the tab without loading the history. Returns whether the tab changed.
+    func switchTab(to newTab: TaskTab) -> Bool {
         guard tab != newTab else { return false }
         tab = newTab
         set(\.selectedTaskID, selection(for: newTab) ?? firstTaskID(in: newTab))
@@ -26,7 +38,8 @@ public final class TaskCatalogStore: ChangeGuardedStore {
         return true
     }
 
-    func select(_ taskID: String?) -> Bool {
+    /// Changes the selection without loading the history. Returns whether the selection changed.
+    func switchSelection(to taskID: String?) -> Bool {
         guard let taskID, matchingTaskID(taskID, in: tab) != nil, selectedTaskID != taskID else {
             return false
         }
