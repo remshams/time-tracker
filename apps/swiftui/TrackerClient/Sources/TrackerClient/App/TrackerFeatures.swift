@@ -68,8 +68,8 @@ public final class TrackerFeatures {
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, settings: settings,
             trackingPreferences: trackingPreferences)
-        // The catalog and the history exist before the sync, so their closures are set here. The captures are weak
-        // because the history holds the catalog and the sync holds the history.
+        // The history needs the catalog and the sync needs the history, so these closures are set once both exist.
+        // The captures are weak because the history holds the catalog and the sync holds the history.
         taskCatalog.reloadHistory = { [weak worklogHistory] in worklogHistory?.reload() }
         // A page changes nothing that the sync publishes, so recovering the connection is enough.
         worklogHistory.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
