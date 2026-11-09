@@ -2,8 +2,8 @@ import SwiftUI
 import TrackerClient
 
 struct ConnectionSummary: View {
-    let store: TrackerStore
     @Environment(ConnectionStore.self) private var connection
+    @Environment(TrackerSync.self) private var sync
 
     var body: some View {
         HStack(spacing: 12) {
@@ -32,7 +32,7 @@ struct ConnectionSummary: View {
             DelayedProgressIndicator(
                 isBusy: connection.changing, identifier: "connection-summary.progress")
             if !connection.changing, connection.stale {
-                Button("Retry") { store.refresh() }
+                Button("Retry") { sync.refresh() }
                     .accessibilityIdentifier("connection-summary.retry")
             }
         }
