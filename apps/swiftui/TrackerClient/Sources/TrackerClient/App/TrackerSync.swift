@@ -138,7 +138,7 @@ public final class TrackerSync {
 
     public func loadOlder() {
         guard !connection.stale else { return }
-        _ = history.loadMore(finished: historyPageFinished)
+        history.loadMore(failed: historyFailed)
     }
 
     public func changeTab(_ newTab: TaskTab) {
@@ -280,7 +280,7 @@ public final class TrackerSync {
 
     /// Asks the history store for the selected task's first page.
     private func reloadHistory() {
-        history.reload(selectedTaskID: catalog.selectedTaskID, finished: historyPageFinished)
+        history.reload(selectedTaskID: catalog.selectedTaskID, failed: historyFailed)
     }
 
     private func recordConnectionFailure(_ failure: Error) {
@@ -318,10 +318,8 @@ public final class TrackerSync {
     }
 
     /// Recovers the connection when a history failure calls for it. A page changes nothing that `publish` shows.
-    private var historyPageFinished: @MainActor (Error?) -> Void {
-        { [weak self] failure in
-            if let failure { self?.recordReadFailure(failure) }
-        }
+    private var historyFailed: @MainActor (Error) -> Void {
+        { [weak self] failure in self?.recordReadFailure(failure) }
     }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
