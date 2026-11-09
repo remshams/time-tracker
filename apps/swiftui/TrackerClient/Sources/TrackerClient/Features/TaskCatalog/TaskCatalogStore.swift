@@ -20,10 +20,12 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     /// once, after it creates the history store, which needs this store.
     @ObservationIgnored var reloadHistory: @MainActor () -> Void = {}
 
+    /// Switches to `newTab` and reloads the history when the selection changes with it.
     public func changeTab(_ newTab: TaskTab) {
         if switchTab(to: newTab) { reloadHistory() }
     }
 
+    /// Selects `taskID`, or no task, and reloads the history when the selection changed.
     public func select(_ taskID: String?) {
         if switchSelection(to: taskID) { reloadHistory() }
     }
