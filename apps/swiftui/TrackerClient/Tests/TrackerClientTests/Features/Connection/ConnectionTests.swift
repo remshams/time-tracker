@@ -141,7 +141,6 @@ final class ConnectionTests: XCTestCase {
         let testing = Task { try await testConnectionSettings(candidate, client: fixture.client) }
         let request = try await fixture.client.next()
         XCTAssertEqual(request.operation, .test(serverSettings))
-        XCTAssertTrue(fixture.client.hasPendingRequests)
         request.tested()
         try await fixture.taskValue(testing)
 

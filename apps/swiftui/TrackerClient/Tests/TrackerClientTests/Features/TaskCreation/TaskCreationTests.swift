@@ -545,10 +545,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(resubmission.operation, .create(name: firstTask.name, at: "2025-01-01T00:00:45.000Z"))
 
         resubmission.created(taskID: firstTask.id, resources: confirmed)
-        let finished = Task { @MainActor in
-            while fixture.taskCreation.isPresented && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.waitUntil("the sheet to close") { !fixture.taskCreation.isPresented }
         XCTAssertFalse(fixture.taskCreation.isSubmitting)
         XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertTrue(fixture.canStartSelectedTask)

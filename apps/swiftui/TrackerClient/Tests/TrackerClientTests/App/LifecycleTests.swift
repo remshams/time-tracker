@@ -55,8 +55,7 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(timer?.delay, 1)
         XCTAssertEqual(timer?.tolerance, 0.2)
         let operationCount = fixture.client.operations.count
-        fixture.clock.uptime += 9
-        fixture.clock.now.addTimeInterval(9)
+        fixture.advanceClock(by: 9)
         timer?.fire()
         XCTAssertEqual(fixture.session.tracking.timerText, "00:00:39")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
