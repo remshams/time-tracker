@@ -7,7 +7,8 @@ import TrackerClient
 final class TrackerTaskPresentationCoordinator {
     // Views read this flag instead of the feature states, so draft edits do not redraw them.
     // macOS shows one sheet per window, so another editor waits until the open sheet or alert closes.
-    // Menus and buttons that open an editor stay disabled while this is true.
+    // The toolbar buttons and the New Task command stay disabled while this is true. An attached sheet blocks the
+    // menus inside the window, as OpenDialogUITests shows.
     private(set) var hasPresentation = false
     private let store: TrackerStore
     private let revealWindow: () -> Void
