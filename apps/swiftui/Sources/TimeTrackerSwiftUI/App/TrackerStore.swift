@@ -7,29 +7,14 @@ final class TrackerStore {
     private let features: TrackerFeatures
     // Connection tests go straight to the worker; they don't touch the stores.
     private let worker: TrackerWorker
-    private let menuBarPreferences: UserDefaultsMenuBarPreferences
-    private(set) var showDailyTotalInMenuBar: Bool
-    private(set) var menuTaskOrder: MenuTaskOrder
-    private let keyboardPreferences: UserDefaultsMenuKeyboardPreferences
-    private(set) var menuShortcuts: MenuKeyboardShortcuts
-    private var menuShortcutValidationError: String?
-    private(set) var menuGlobalShortcutError: String?
-    @ObservationIgnored var registerMenuShortcut: ((MenuShortcut) -> String?)?
-    var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
     /// The AppKit status menu reads its content, label and live values here.
     let menu: TrackerMenuPresentationObserver
+    /// The Settings window reads this store through the SwiftUI environment; the status item gets it through `init`.
+    let menuBarPreferences: MenuBarPreferencesStore
     @ObservationIgnored private var lifecycle: MacLifecycleObserver?
 
     init() {
         let launch = TrackerLaunchConfiguration.current
-        menuBarPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
-        // Observable properties are computed, so init reads these locals instead.
-        let showDailyTotal = menuBarPreferences.load()
-        let taskOrder = menuBarPreferences.loadTaskOrder()
-        showDailyTotalInMenuBar = showDailyTotal
-        menuTaskOrder = taskOrder
-        keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
-        menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
         self.worker = worker
         features = TrackerFeatures(
@@ -39,8 +24,15 @@ final class TrackerStore {
             trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
-        menu = TrackerMenuPresentationObserver(
-            sources: features.menuSources, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
+        let savedPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
+        let showDailyTotal = savedPreferences.load()
+        let menu = TrackerMenuPresentationObserver(
+            sources: features.menuSources, showDailyTotal: showDailyTotal, taskOrder: savedPreferences.loadTaskOrder())
+        self.menu = menu
+        menuBarPreferences = MenuBarPreferencesStore(
+            preferences: savedPreferences,
+            keyboardPreferences: UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults),
+            menu: menu, sync: features.sync)
         features.sync.setMenuBarClockEnabled(showDailyTotal)
         lifecycle = MacLifecycleObserver(sync: features.sync)
         lifecycle?.start()
@@ -76,58 +68,7 @@ final class TrackerStore {
     var canStopTracking: Bool { features.trackingAvailability.canStop }
     func canStartTracking(taskID: String) -> Bool { features.trackingAvailability.canStart(taskID: taskID) }
 
-    func setShowDailyTotalInMenuBar(_ enabled: Bool) {
-        guard showDailyTotalInMenuBar != enabled else { return }
-        showDailyTotalInMenuBar = enabled
-        menuBarPreferences.save(enabled)
-        menu.setShowDailyTotal(enabled)
-        features.sync.setMenuBarClockEnabled(enabled)
-    }
-
-    func setMenuTaskOrder(_ order: MenuTaskOrder) {
-        guard menuTaskOrder != order else { return }
-        menuTaskOrder = order
-        menuBarPreferences.saveTaskOrder(order)
-        menu.setTaskOrder(order)
-    }
-
     func setPauseOnScreenLock(_ enabled: Bool) { features.sync.setPauseOnScreenLock(enabled) }
-    func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
-        var candidate = action == .openMenu ? MenuKeyboardShortcuts() : menuShortcuts
-        candidate[action] = shortcut
-        setMenuShortcuts(candidate)
-    }
-
-    func resetMenuShortcuts() { setMenuShortcuts(.defaults, retryGlobal: true) }
-
-    private func setMenuShortcuts(_ candidate: MenuKeyboardShortcuts, retryGlobal: Bool = false) {
-        if let error = candidate.validationError {
-            reportMenuShortcutError(error)
-            return
-        }
-        let changesGlobal = retryGlobal || candidate.openMenu != menuShortcuts.openMenu
-        if changesGlobal {
-            if let error = registerMenuShortcut?(candidate.openMenu) {
-                reportMenuShortcutError(error)
-                return
-            }
-        }
-        menuShortcuts = candidate
-        menuShortcutValidationError = nil
-        if changesGlobal { menuGlobalShortcutError = nil }
-        keyboardPreferences.save(candidate)
-    }
-
-    func reportMenuShortcutError(_ message: String?) {
-        guard menuShortcutValidationError != message else { return }
-        menuShortcutValidationError = message
-    }
-
-    func reportMenuGlobalShortcutError(_ message: String?) {
-        guard menuGlobalShortcutError != message else { return }
-        menuGlobalShortcutError = message
-    }
-
     func menuCopyValue(
         _ action: MenuShortcutAction, taskID: String,
         connection: ConnectionSettings
