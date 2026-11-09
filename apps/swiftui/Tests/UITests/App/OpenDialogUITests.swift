@@ -1,8 +1,7 @@
 import XCTest
 
 /// macOS shows one sheet per window. The task and worklog menus have no check of their own, so these tests show that
-/// an attached sheet or alert blocks them. A menu that opens anyway gets its item clicked, which is the second dialog
-/// these tests rule out.
+/// an attached sheet or alert blocks them.
 @MainActor
 final class OpenDialogUITests: TrackerUITestCase {
     // The alert needs a rejected tracking command, and only the proxy can hold that command for a competing client.
@@ -112,10 +111,9 @@ final class OpenDialogUITests: TrackerUITestCase {
             openDialogElements.contains { $0.frame.contains(entry.target.screenPoint) },
             "\(entry.name) lies under the dialog, so this click cannot reach it.")
         entry.open(entry.target)
-        let item = app.menuItems[entry.item]
-        if item.waitForExistence(timeout: 2) { item.click() }
+        let opened = app.menuItems[entry.item].waitForExistence(timeout: 2)
+        XCTAssertFalse(opened, "\(entry.name) opened behind the dialog.")
         XCTAssertEqual(openDialogCount, 1, "\(entry.name) opened a second dialog.")
-        XCTAssertFalse(element("worklog-correction.start").exists, "\(entry.name) opened the correction editor.")
     }
 
     /// An editor that opened behind the first dialog would show now. One that never shows would keep the flag set and
