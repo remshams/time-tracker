@@ -5,7 +5,7 @@ import TrackerClient
 @Observable
 final class TrackerStore {
     private let features: TrackerFeatures
-    /// Settings tests connections with this client directly; the tests don't touch the stores.
+    /// Settings tests a connection with this client.
     let client: any TrackerClient
     /// The AppKit status menu reads its content, label and live values here.
     let menu: TrackerMenuPresentationObserver
