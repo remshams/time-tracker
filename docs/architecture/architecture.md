@@ -232,6 +232,10 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   from the connection, tracking and catalog stores. `TrackerSync` loads,
   refreshes and polls the stores, runs the display, rollover and menu bar timers, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
+  It hands a loaded task list to the stores in a fixed order through each
+  store's `acceptTaskList` method and passes the values one store needs from
+  another, such as the running worklog before and after the update.
+  `WorklogHistoryStore` decides from them whether to reload or clear its error.
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingStore` starts and
   stops tracking after asking it, and `MenuBarStore` runs the status item's
@@ -262,11 +266,9 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   `ConnectionStore` lets `TrackerSync` switch the connection and refresh.
   Turning the auto-pause on while the screen is locked pauses a running timer.
   No view reads `TrackerSync`.
-  User actions move from `TrackerSync` onto the store of
-  the feature that owns them, step by step in
-  [issue #369](https://github.com/remshams/time-tracker/issues/369). A view reads
-  a moved action's store from the environment, and a package store reaches
-  `TrackerSync` only through a closure that `TrackerFeatures` passes
+  User actions live on the store of the feature that owns them. A view reads
+  that store from the environment, and a package store reaches `TrackerSync`
+  only through a closure that `TrackerFeatures` passes
   ([ADR 0035](adr/0035-put-user-actions-on-feature-stores.md)).
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
