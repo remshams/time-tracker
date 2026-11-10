@@ -21,7 +21,7 @@ final class TrackingAutomationStoreTests: XCTestCase {
         let repository = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: true))
         let store = TrackingAutomationStore(repository: repository)
         let changes = PreferenceChanges()
-        store.pauseOnScreenLockChanged = { changes.count += 1 }
+        store.publishChanges = { changes.count += 1 }
         XCTAssertTrue(store.enabled)
 
         store.setPauseOnScreenLock(true)
@@ -72,6 +72,14 @@ final class TrackingAutomationStoreTests: XCTestCase {
         XCTAssertNil(store.statusText)
         XCTAssertTrue(status.consume())
         XCTAssertFalse(enabled.consume())
+    }
+}
+
+@MainActor
+extension TrackingAutomationStore {
+    /// Builds the store for tests of its preference and bookkeeping, which send no pause or resume request.
+    convenience init(repository: any TrackingPreferencesRepository) {
+        self.init(repository: repository, client: FakeClient(), clock: FakeClock(), tracking: TrackingStore())
     }
 }
 

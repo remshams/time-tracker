@@ -1,8 +1,8 @@
 import Foundation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
-/// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
-/// connection change, and the reloads after dialog writes.
+/// rollover and menu bar timers, window and menu visibility, sleep and wake, the connection change, and the reloads
+/// after dialog writes.
 ///
 /// `TrackerFeatures` creates the stores and passes them in. The stores' closures call the package-internal methods
 /// below, for example to switch the connection, reload the task list or the history, record a failure and publish.
@@ -141,28 +141,6 @@ public final class TrackerSync {
         schedulePolling()
     }
 
-    /// Pauses the running timer when the auto-pause was just turned on while the screen is locked, and publishes.
-    func pauseOnScreenLockChanged() {
-        if automation.enabled && automation.locked { pauseTracking(at: clock.now) }
-        publish()
-    }
-
-    /// Pauses the running timer when the screen locks and resumes its task when the screen unlocks, if the
-    /// auto-pause is on. `date` is when the event happened, which the requests send as their time.
-    public func setScreenLocked(_ locked: Bool, at date: Date) {
-        if locked {
-            guard automation.lock() else { return }
-            if automation.enabled { pauseTracking(at: date) }
-        } else if let resume = automation.unlock(at: date) {
-            Task { [weak self] in
-                guard let self else { return }
-                await resumeTracking(resume)
-                await reloadTaskList()
-            }
-        }
-        publish()
-    }
-
     /// Reloads the task list and, with a report client, today's totals. Publishes on every path, which also shows a
     /// failure recorded before this call.
     func reloadTaskList() async {
@@ -282,34 +260,6 @@ public final class TrackerSync {
         history.request(selectedTaskID: nil)
         tracking.clearError()
         acceptTaskList(resources)
-    }
-
-    private func pauseTracking(at date: Date) {
-        guard let worklog = tracking.active, automation.beginPause() else { return }
-        tracking.clearError()
-        let occurredAt = formatTimestamp(date)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await client.pauseTracking(worklogID: worklog.id, occurredAt: occurredAt)
-                if let resume = automation.paused(taskID: worklog.taskId, didStop: result.didStop) {
-                    await resumeTracking(resume)
-                }
-            } catch {
-                automation.pauseFailed()
-                tracking.recordFailure(error)
-            }
-            await reloadTaskList()
-        }
-    }
-
-    /// Only follows a successful pause, which already cleared the tracking error.
-    private func resumeTracking(_ resume: TrackingAutomationStore.Resume) async {
-        do {
-            _ = try await client.resumeTracking(taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
-        } catch {
-            tracking.recordFailure(error)
-        }
     }
 
     private func finishRefresh() {

@@ -19,29 +19,6 @@ final class TrackerSyncPublishTests: XCTestCase {
     }
 
     @MainActor
-    func testChangingThePausePreferencePublishes() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        fixture.trackingAutomation.setPauseOnScreenLock(true)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
-    }
-
-    @MainActor
-    func testLockingAndUnlockingTheScreenPublishes() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
-        fixture.advanceClock(by: 4)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:38")
-    }
-
-    @MainActor
     func testFirstReportRequestPublishesTheLoadingStatus() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }

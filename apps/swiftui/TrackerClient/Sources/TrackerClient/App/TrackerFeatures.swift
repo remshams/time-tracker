@@ -3,9 +3,8 @@ import Foundation
 /// Creates the stores, `TrackerSync` and the dialog stores, and passes each one what it uses.
 /// It holds them and has no methods: the app runtime and the test fixture read them from here.
 public final class TrackerFeatures {
-    /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
-    /// change, reloads after dialog writes, and publishes the timer text, today's totals, the auto-pause status and the
-    /// recorded errors.
+    /// Loads, refreshes and polls the stores, runs the timers and the connection change, reloads after dialog
+    /// writes, and publishes the timer text, today's totals, the auto-pause status and the recorded errors.
     public let sync: TrackerSync
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
@@ -26,8 +25,8 @@ public final class TrackerFeatures {
     public let menuBar: MenuBarStore
     /// The stores the menu bar observes.
     public let menuSources: TrackerMenuSources
-    /// Views read the auto-pause preference and status here and turn the auto-pause on or off; the sync writes the
-    /// status.
+    /// Views read the auto-pause preference and status here and turn the auto-pause on or off; the lifecycle
+    /// observer reports screen lock events here, and the sync publishes the status.
     public let trackingAutomation: TrackingAutomationStore
     /// The task rename dialog.
     public let taskRename: TaskRenameStore
@@ -52,10 +51,11 @@ public final class TrackerFeatures {
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
         dailyTotals = DailyTotalsStore(calendar: calendar)
-        trackingAutomation = TrackingAutomationStore(repository: trackingPreferences)
         connection = ConnectionStore(settings: settings.load() ?? .local)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
         tracking = TrackingStore(client: client, clock: clock, connection: connection, catalog: taskCatalog)
+        trackingAutomation = TrackingAutomationStore(
+            repository: trackingPreferences, client: client, clock: clock, tracking: tracking)
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
@@ -73,15 +73,17 @@ public final class TrackerFeatures {
         taskCatalog.reloadHistory = { [weak worklogHistory] in worklogHistory?.reload() }
         // A page changes nothing that the sync publishes, so recovering the connection is enough.
         worklogHistory.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
-        // The sync holds the connection and auto-pause stores, so these captures are weak too.
+        // The sync holds the connection store, so these captures are weak too.
         connection.switchConnection = { [weak sync] settings in try await sync?.switchConnection(to: settings) }
         connection.refreshTaskList = { [weak sync] in sync?.refresh() }
-        trackingAutomation.pauseOnScreenLockChanged = { [weak sync] in sync?.pauseOnScreenLockChanged() }
-        // A manual tracking request wins over a pending automatic resume.
-        tracking.cancelAutoResume = { [trackingAutomation] in trackingAutomation.cancel() }
-        // The sync holds the tracking store, so these captures are weak too.
+        // A manual tracking request wins over a pending automatic resume. The auto-pause store holds the tracking
+        // store, so this capture is weak.
+        tracking.cancelAutoResume = { [weak trackingAutomation] in trackingAutomation?.cancel() }
+        // The sync holds the tracking and auto-pause stores, so these captures are weak too.
         tracking.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
         tracking.publishChanges = { [weak sync] in sync?.publish() }
+        trackingAutomation.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
+        trackingAutomation.publishChanges = { [weak sync] in sync?.publish() }
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
