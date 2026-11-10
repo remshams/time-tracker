@@ -33,11 +33,11 @@ After [ADR 0035](0035-put-user-actions-on-feature-stores.md) and [ADR 0037](0037
 
 ### Showing a created task
 
-`TaskCatalogStore.showTask(_:)` changes the tab and selection and reloads the history through the catalog's existing `reloadHistory` closure. `TrackerFeatures` passes it to `TaskCreationStore` through the existing `showTask` closure.
+`TaskCatalogStore.showTask(_:)` changes the tab and selection and reloads the history through the catalog's existing `reloadHistory` closure. `TrackerFeatures` passes it to `TaskCreationStore` through the existing `showTask` closure. ADR 0035 lets a store call another store directly when that forms no cycle, and `TaskCreation` → `TaskCatalog` forms none. The closure stays to keep this change small, and replacing it with a direct catalog dependency is a later choice.
 
 ### Connection change reset
 
-Each store that holds state of the previous connection gets an `acceptConnection` method: `TrackingAutomationStore`, `ConnectionStore` (which takes the new settings), `DailyTotalsStore`, `TaskCatalogStore`, `WorklogHistoryStore` and `TrackingStore`. `TrackerSync` calls them in the old order, saves the settings, and then takes in the task list, as it calls `acceptTaskList`.
+Each store that holds state of the previous connection gets an `acceptConnection` method: `TrackingAutomationStore`, `ConnectionStore` (which takes the new settings), `DailyTotalsStore`, `TaskCatalogStore`, `WorklogHistoryStore` and `TrackingStore`. `TrackerSync` calls them in the old order, saves the settings between the daily totals and the catalog as before, and then takes in the task list, as it calls `acceptTaskList`.
 
 ### What stays in TrackerSync
 
