@@ -101,9 +101,9 @@ final class TrackerStatusItemController: NSObject {
         self.menu.menuOpened()
         let builder = TrackerStatusMenuBuilder(
             menuBar: menuBar, connection: connection.settings, target: self, itemAction: #selector(selected(_:)))
-        let shownMenu = builder.makeMenu(self.menu.content, appearance: NSApplication.shared.effectiveAppearance)
-        let menu = shownMenu.menu
-        self.shownMenu = shownMenu
+        let built = builder.makeMenu(self.menu.content, appearance: NSApplication.shared.effectiveAppearance)
+        let menu = built.menu
+        shownMenu = built
         updateMenuValues(self.menu.values)
         button.highlight(true)
         shortcut?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
