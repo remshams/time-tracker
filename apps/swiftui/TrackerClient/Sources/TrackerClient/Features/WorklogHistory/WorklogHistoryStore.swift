@@ -4,10 +4,10 @@ import Observation
 /// Holds the selected task's worklog pages and the history panel's loading and error state.
 ///
 /// Views read the properties, retry the selected task's first page and load older pages. The task catalog's selection
-/// changes ask the store to reload, and `acceptTaskList` decides whether a task list that `TrackerSync` loaded reloads
-/// it. The store sends those page requests itself. Each property is assigned only when its value changes, so an
-/// unchanged poll redraws nothing and loading another page leaves the "Load older" button alone unless more pages
-/// appear or run out.
+/// changes and `TrackerSync`, after a worklog write or a created task, ask the store to reload. `acceptTaskList`
+/// decides whether a task list that `TrackerSync` loaded reloads it. The store sends those page requests itself. Each
+/// property is assigned only when its value changes, so an unchanged poll redraws nothing and loading another page
+/// leaves the "Load older" button alone unless more pages appear or run out.
 @Observable
 public final class WorklogHistoryStore: ChangeGuardedStore {
     public private(set) var worklogs: [WorklogItem] = []
@@ -78,11 +78,12 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
         set(\.error, nil)
     }
 
-    /// Takes in a loaded task list. Reloads the history when the selected task or its running worklog changed, or
-    /// when the last page request failed while the connection was stale, so that recovering the connection retries
-    /// the history. Otherwise it clears a connection error, unless a failed page request shows its own error.
-    func acceptTaskList(selectionChanged: Bool, connectionWasStale: Bool) {
-        if selectionChanged || (connectionWasStale && unavailable) {
+    /// Takes in a loaded task list. Reloads the history when `historyMayHaveChanged`, which the catalog reports when
+    /// the selected task, its latest start or its running worklog changed. Also reloads a history whose last page
+    /// request failed when the connection was stale before this task list arrived, so that recovering the connection
+    /// retries it. Otherwise clears a connection error, unless a failed page request shows its own error.
+    func acceptTaskList(historyMayHaveChanged: Bool, connectionWasStale: Bool) {
+        if historyMayHaveChanged || (connectionWasStale && unavailable) {
             reload()
         } else if !unavailable {
             set(\.error, nil)
