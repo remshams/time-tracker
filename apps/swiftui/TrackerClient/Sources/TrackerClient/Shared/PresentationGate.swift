@@ -5,7 +5,7 @@ import Observation
 /// A dialog store claims the gate while its sheet shows, and `TrackingStore` claims it while its error alert shows.
 /// Each dialog store's `canOpen` checks `isClaimed`, so a dialog doesn't open behind another one. The main menu isn't
 /// blocked by a sheet, so the New Task command relies on this check. The app reveals the tracker window when a sheet
-/// opens and keeps the window open while the gate is claimed.
+/// opens.
 @Observable
 public final class PresentationGate {
     enum Kind {
@@ -16,7 +16,7 @@ public final class PresentationGate {
     private var claims: [ObjectIdentifier: Kind] = [:]
 
     /// True while a sheet or alert shows.
-    public var isClaimed: Bool { !claims.isEmpty }
+    var isClaimed: Bool { !claims.isEmpty }
 
     /// True while a sheet shows. A tracking error alert alone doesn't count.
     public var showsSheet: Bool { claims.values.contains(.sheet) }

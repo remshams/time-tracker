@@ -43,7 +43,7 @@ public final class TrackerFeatures {
     /// The worklog correction dialog.
     public let worklogCorrection: WorklogCorrectionStore
     /// The dialog stores and the tracking error claim this while their sheet or alert shows. The app reveals the
-    /// tracker window and keeps it open from it.
+    /// tracker window from it.
     public let presentationGate = PresentationGate()
 
     public init(
