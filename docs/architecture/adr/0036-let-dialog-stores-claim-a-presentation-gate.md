@@ -38,7 +38,7 @@ Views and commands read `canOpen` and call `open()`. They don't read the gate, a
 
 `TrackerTaskPresentationCoordinator` observes the gate's `showsSheet` and brings up the tracker window when a sheet opens. A tracking error alone still doesn't open the window. `PresentationSources` and `hasPresentation` are gone.
 
-macOS doesn't close a window that has an attached sheet, so the window no longer sets `windowDismissBehavior`. `OpenDialogUITests` checks that the close button and ⌘W leave the window open while a sheet shows.
+macOS doesn't close a window that has an attached sheet, so the window no longer sets `windowDismissBehavior`. SwiftUI shows the tracking error alert as a sheet too. `OpenDialogUITests` checks that the close button and ⌘W leave the window open while a sheet shows, and that the close button does so while the alert shows.
 
 ### Rejected alternatives
 
@@ -54,7 +54,9 @@ This record replaces these clauses:
 
 ## Consequences
 
-A new dialog store takes the gate and claims it from `isPresented`. `App/` needs no change.
+A new dialog store takes the gate and claims it from `isPresented`. `App/` still adds its sheet and puts the store into the environment, but keeps no availability or presentation bookkeeping.
+
+The controls that read `canOpen` turn off while a dialog shows, including the context menu items and the worklog row's actions button. The window blocked them before too, so only their look changes.
 
 The gate changes in the same run as the store, so buttons update without waiting for an `Observations` loop.
 
