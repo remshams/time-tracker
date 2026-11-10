@@ -234,7 +234,7 @@ such as `Features/WorklogCorrection` in both targets.
   from the connection, tracking and catalog stores. `TrackerSync` loads,
   refreshes and polls the stores, runs the display timer, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
-  On a connection change it calls each store's `acceptConnection` method in a fixed order
+  On a connection change it calls `acceptConnection`, in a fixed order, on each store that holds state of the previous connection
   ([ADR 0038](adr/0038-move-the-remaining-feature-rules-out-of-tracker-sync.md)).
   It hands a loaded task list to the stores in a fixed order through their
   `acceptTaskList` methods and passes the values one store needs from
