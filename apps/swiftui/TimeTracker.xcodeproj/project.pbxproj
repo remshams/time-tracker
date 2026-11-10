@@ -295,7 +295,7 @@
 				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 				F70000000000000000000003 /* ProgressPresentation */,
 				7B61613478C091D18A157689 /* TaskCreation */,
-				7896A35DF77F32F16827239B /* TaskNames */,
+				7896A35DF77F32F16827239B /* TaskEditing */,
 				95106349D1A9FA32ACFC23AF /* TaskRename */,
 				96323D4C37A17D8DDEDEE31F /* TaskArchiving */,
 				BD73674A963DDEAA117CE005 /* BulkTaskArchiving */,
@@ -411,12 +411,12 @@
 			path = TaskCreation;
 			sourceTree = "<group>";
 		};
-		7896A35DF77F32F16827239B /* TaskNames */ = {
+		7896A35DF77F32F16827239B /* TaskEditing */ = {
 			isa = PBXGroup;
 			children = (
 				A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */,
 			);
-			path = TaskNames;
+			path = TaskEditing;
 			sourceTree = "<group>";
 		};
 		95106349D1A9FA32ACFC23AF /* TaskRename */ = {
