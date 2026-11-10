@@ -231,14 +231,17 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   `Observations` loop, and `TrackerMenuSources` computes the running task's name
   from the connection, tracking and catalog stores. `TrackerSync` loads,
   refreshes and polls the stores, runs the display, rollover and menu bar timers, handles visibility, sleep
-  and wake, pauses and resumes tracking when the screen locks and unlocks,
-  switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
+  and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingStore` starts and
   stops tracking after asking it, and `MenuBarStore` runs the status item's
   primary action through `TrackingStore`. `TrackingStore` cancels a pending
   auto-resume, reloads the task list and publishes through closures that
   `TrackerFeatures` sets, so `Tracking` doesn't depend on `TrackingAutomation`.
+  `TrackingAutomationStore` pauses the running timer when the screen locks and
+  resumes its task when the screen unlocks. It reads and records failures on
+  `TrackingStore` directly, and reloads and publishes through closures that
+  `TrackerFeatures` sets.
   `TrackerFeatures`, which `TrackerAppRuntime` and the
   test fixture create, creates and holds the stores, `TrackingAvailability`,
   `TrackerMenuSources` and `TrackerSync`, and passes the
@@ -256,8 +259,9 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   `TrackerSync`, which records connection failures. Views connect and retry
   on `ConnectionStore` and turn the auto-pause on or off on
   `TrackingAutomationStore`. Through closures that `TrackerFeatures` sets,
-  those stores let `TrackerSync` switch the connection, refresh, and pause a
-  running timer when the screen is already locked. No view reads `TrackerSync`.
+  `ConnectionStore` lets `TrackerSync` switch the connection and refresh.
+  Turning the auto-pause on while the screen is locked pauses a running timer.
+  No view reads `TrackerSync`.
   User actions move from `TrackerSync` onto the store of
   the feature that owns them, step by step in
   [issue #369](https://github.com/remshams/time-tracker/issues/369). A view reads
