@@ -49,6 +49,9 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
         load(taskID: taskID, cursor: nextCursor)
     }
 
+    /// Drops the previous connection's pages, cursor and errors.
+    func acceptConnection() { request(selectedTaskID: nil) }
+
     func request(selectedTaskID: String?) {
         if taskID != selectedTaskID {
             set(\.worklogs, [])

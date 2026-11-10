@@ -67,7 +67,7 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(state.totalDuration(active: changed), 75)
         state.fail(BridgeFailure(message: "Report unavailable"))
         XCTAssertEqual(state.totalDuration(active: activeWorklog), 82)
-        state.clear()
+        state.acceptConnection()
         XCTAssertNil(state.totalDuration(active: activeWorklog))
     }
 
@@ -345,7 +345,7 @@ final class DailyTotalsTests: XCTestCase {
         state.fail(BridgeFailure(message: "Offline"))
         XCTAssertEqual(state.loadStatus, .cached)
         XCTAssertEqual(state.duration(taskID: firstTask.id, active: nil), 30)
-        state.clear()
+        state.acceptConnection()
         XCTAssertNil(state.duration(taskID: firstTask.id, active: nil))
         XCTAssertEqual(state.loadStatus, .unavailable)
         XCTAssertNil(state.error)

@@ -127,6 +127,9 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
         if active != nil { pausedTaskID = nil }
     }
 
+    /// Drops a pending auto-resume, which belongs to the previous connection.
+    func acceptConnection() { cancel() }
+
     func cancel() {
         pausedTaskID = nil
         pauseMayResume = false
