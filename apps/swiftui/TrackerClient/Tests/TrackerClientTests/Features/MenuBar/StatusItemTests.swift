@@ -331,6 +331,6 @@ private extension MenuBarStore {
             dailyTotals: DailyTotalsStore(
                 reports: nil, connection: ConnectionStore(settings: settings), clock: FakeClock(),
                 scheduler: FakeScheduler(), calendar: .autoupdatingCurrent),
-            automation: automation)
+            automation: automation, scheduler: FakeScheduler())
     }
 }

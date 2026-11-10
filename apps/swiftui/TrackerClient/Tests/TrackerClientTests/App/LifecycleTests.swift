@@ -68,7 +68,7 @@ final class LifecycleTests: XCTestCase {
     func testMenuBarClockRunsWhileTrackingWithTheSettingOnAndRepublishesEachMinute() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        fixture.sync.setMenuBarClockEnabled(true)
+        fixture.features.menuBar.setClockEnabled(true)
         XCTAssertNil(fixture.scheduler.menuBarClock, "The clock waits for the sync to start.")
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 0)])
@@ -81,12 +81,12 @@ final class LifecycleTests: XCTestCase {
         clock.fire()
         XCTAssertEqual(fixture.features.dailyTotals.dayTotal, 60)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
-        fixture.sync.setMenuBarClockEnabled(false)
+        fixture.features.menuBar.setClockEnabled(false)
         XCTAssertTrue(clock.cancelled)
         XCTAssertNil(fixture.scheduler.menuBarClock)
-        fixture.sync.setMenuBarClockEnabled(true)
+        fixture.features.menuBar.setClockEnabled(true)
         XCTAssertNotNil(fixture.scheduler.menuBarClock)
-        fixture.sync.setMenuBarClockEnabled(true)
+        fixture.features.menuBar.setClockEnabled(true)
         XCTAssertEqual(fixture.scheduler.active.filter { $0.delay == 60 && $0.repeating }.count, 1)
         fixture.sync.refresh()
         let stopped = try await fixture.client.next()
@@ -102,7 +102,7 @@ final class LifecycleTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.sync.setMenuBarClockEnabled(true)
+        fixture.features.menuBar.setClockEnabled(true)
         let clock = try XCTUnwrap(fixture.scheduler.menuBarClock)
         fixture.sync.sleep()
         XCTAssertTrue(clock.cancelled)

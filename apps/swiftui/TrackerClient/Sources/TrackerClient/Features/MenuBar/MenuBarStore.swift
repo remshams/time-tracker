@@ -15,9 +15,9 @@ public extension ConnectionSettings {
 }
 
 /// Holds the menu bar's own state for the whole app: the last tracked task of the current connection. It also runs
-/// the status item's primary action.
+/// the status item's primary action and the menu bar clock.
 ///
-/// The menu reads `lastTrackedTaskID`; `TrackerSync` calls `observe` after each task list. The task is
+/// The menu reads `lastTrackedTaskID`; `TrackerSync` calls `acceptTaskList` after each task list. The task is
 /// remembered per connection and saved to the repository, so switching connections back restores it. The menu's
 /// copy actions, in `MenuTaskClipboard.swift`, read the task and its time today from the stores passed in here.
 @Observable
@@ -30,13 +30,22 @@ public final class MenuBarStore: ChangeGuardedStore {
     let tracking: TrackingStore
     let dailyTotals: DailyTotalsStore
     private let automation: TrackingAutomationStore
+    private let scheduler: any TrackerScheduler
+    /// Shows the daily total and the other derived values. `TrackerFeatures` sets it to `TrackerSync`'s publish.
+    @ObservationIgnored var publishChanges: @MainActor () -> Void = {}
+    // The clock runs between `start` or `wake` and `sleep`, while the setting is on and a timer runs. The scheduler
+    // runs no callback after cancel().
+    @ObservationIgnored private var clock: (any TrackerCancellation)?
+    @ObservationIgnored private var clockEnabled = false
+    @ObservationIgnored private var running = false
     private var availability: TrackingAvailability {
         TrackingAvailability(connection: connection, catalog: catalog, tracking: tracking)
     }
 
     init(
         repository: (any LastTrackedTaskRepository)?, connection: ConnectionStore, catalog: TaskCatalogStore,
-        tracking: TrackingStore, dailyTotals: DailyTotalsStore, automation: TrackingAutomationStore
+        tracking: TrackingStore, dailyTotals: DailyTotalsStore, automation: TrackingAutomationStore,
+        scheduler: any TrackerScheduler
     ) {
         self.repository = repository
         self.connection = connection
@@ -44,10 +53,15 @@ public final class MenuBarStore: ChangeGuardedStore {
         self.tracking = tracking
         self.dailyTotals = dailyTotals
         self.automation = automation
+        self.scheduler = scheduler
         let settings = connection.settings
         let saved = repository?.load(for: settings)
         lastTrackedTaskID = saved
         remembered[settings.trackingIdentityKey] = saved
+    }
+
+    isolated deinit {
+        clock?.cancel()
     }
 
     /// What a click on the status item does now: stop the running worklog, start the last tracked task, or open the
@@ -72,9 +86,33 @@ public final class MenuBarStore: ChangeGuardedStore {
         return action
     }
 
+    /// Republishes once a minute while a timer runs, so the menu bar's daily total keeps counting while no
+    /// window or menu is open. The app turns this on while the menu bar shows the daily total.
+    public func setClockEnabled(_ enabled: Bool) {
+        clockEnabled = enabled
+        updateClock()
+    }
+
+    /// Lets the clock run. `TrackerSync` calls this when it starts.
+    func start() {
+        running = true
+        updateClock()
+    }
+
+    /// Stops the clock while the computer sleeps.
+    func sleep() {
+        running = false
+        updateClock()
+    }
+
+    /// Lets the clock run again after the computer wakes.
+    func wake() { start() }
+
     /// Takes in a loaded task list: records the running task, or else the most recently tracked one, as the last
-    /// tracked task and saves it for the tracker that `settings` point to.
+    /// tracked task and saves it for the tracker that `settings` point to. Starts or stops the clock for the running
+    /// worklog, so `TrackerSync` calls this after the tracking store takes in the list.
     func acceptTaskList(_ resources: TaskListResources, settings: ConnectionSettings) {
+        updateClock()
         let key = settings.trackingIdentityKey
         let stored = remembered[key] ?? repository?.load(for: settings)
         let latest = resources.catalog.value.compactMap { task -> (String, Date)? in
@@ -98,6 +136,18 @@ public final class MenuBarStore: ChangeGuardedStore {
         guard let taskID else { return }
         if stored != taskID { repository?.save(taskID: taskID, for: settings) }
         remembered[key] = taskID
+    }
+
+    private func updateClock() {
+        guard running, clockEnabled, tracking.active != nil else {
+            clock?.cancel()
+            clock = nil
+            return
+        }
+        guard clock == nil else { return }
+        clock = scheduler.schedule(after: 60, repeating: true, tolerance: 5) { [weak self] in
+            self?.publishChanges()
+        }
     }
 
     private func lessRecent(_ left: (String, Date), _ right: (String, Date)) -> Bool {

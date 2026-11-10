@@ -1,8 +1,8 @@
 import Foundation
 
 /// Keeps the stores in step with the tracker: the first load, refreshes, polling, when to load today's report, the
-/// display and menu bar timers, window and menu visibility, sleep and wake, the connection change, and the reloads
-/// after dialog writes.
+/// display timer, window and menu visibility, sleep and wake, the connection change, and the reloads after dialog
+/// writes.
 ///
 /// `TrackerFeatures` creates the stores and passes them in. The stores' closures call the package-internal methods
 /// below, for example to switch the connection, reload the task list or the history, record a failure and publish.
@@ -22,8 +22,6 @@ public final class TrackerSync {
     private let settingsRepository: any ConnectionSettingsRepository
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
-    private var menuBarClock: (any TrackerCancellation)?
-    private var menuBarClockEnabled = false
     // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
     private var started = false
     // One poll at a time: no poll is scheduled while a refresh is waiting.
@@ -54,13 +52,13 @@ public final class TrackerSync {
     isolated deinit {
         displayTimer?.cancel()
         pollTimer?.cancel()
-        menuBarClock?.cancel()
     }
 
     public func start() {
         guard !started else { return }
         started = true
         dailyTotals.start()
+        menuBar.start()
         updateDisplayTimer()
         refreshing = true
         let settings = connection.settings
@@ -88,18 +86,16 @@ public final class TrackerSync {
         visibilityChanged(previouslyVisible: previouslyVisible)
     }
 
-    /// Republishes once a minute while a timer runs, so the menu bar's daily total keeps counting while no
-    /// window or menu is open. The app turns this on while the menu bar shows the daily total.
-    public func setMenuBarClockEnabled(_ enabled: Bool) {
-        menuBarClockEnabled = enabled
-        updateMenuBarClock()
-    }
+    /// Turns the menu bar clock on or off. The app calls `MenuBarStore.setClockEnabled(_:)` after the next commit.
+    public func setMenuBarClockEnabled(_ enabled: Bool) { menuBar.setClockEnabled(enabled) }
 
     public func sleep() {
         guard started else { return }
         sleeping = true
-        cancelTimers()
+        cancelPolling()
+        cancelDisplay()
         dailyTotals.sleep()
+        menuBar.sleep()
     }
 
     public func wake() {
@@ -107,6 +103,7 @@ public final class TrackerSync {
         sleeping = false
         tracking.resetElapsedAnchor()
         dailyTotals.wake()
+        menuBar.wake()
         updateDisplayTimer()
         refresh()
     }
@@ -168,10 +165,10 @@ public final class TrackerSync {
         dailyTotals.acceptTaskList(reportRequested: requestReport)
         let connectionWasStale = connection.stale
         connection.acceptTaskList()
-        menuBar.acceptTaskList(resources, settings: connection.settings)
         let previousActive = tracking.active
         automation.acceptTaskList(active: resources.tracking.value)
         tracking.acceptTaskList(active: resources.tracking.value)
+        menuBar.acceptTaskList(resources, settings: connection.settings)
         let historyMayHaveChanged = catalog.acceptTaskList(
             resources.catalog.value, previousActive: previousActive, active: tracking.active)
         history.acceptTaskList(historyMayHaveChanged: historyMayHaveChanged, connectionWasStale: connectionWasStale)
@@ -224,7 +221,6 @@ public final class TrackerSync {
     }
 
     private func updateDisplayTimer() {
-        updateMenuBarClock()
         let needed = started && !sleeping && uiVisible && tracking.active != nil
         if !needed {
             cancelDisplay()
@@ -236,25 +232,6 @@ public final class TrackerSync {
             dailyTotals.rollOverIfDayEnded()
             publish()
         }
-    }
-
-    private func updateMenuBarClock() {
-        guard started, !sleeping, menuBarClockEnabled, tracking.active != nil else {
-            menuBarClock?.cancel()
-            menuBarClock = nil
-            return
-        }
-        guard menuBarClock == nil else { return }
-        menuBarClock = scheduler.schedule(after: 60, repeating: true, tolerance: 5) { [weak self] in
-            self?.publish()
-        }
-    }
-
-    private func cancelTimers() {
-        cancelPolling()
-        cancelDisplay()
-        menuBarClock?.cancel()
-        menuBarClock = nil
     }
 
     private func cancelPolling() {
