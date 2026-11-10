@@ -139,4 +139,7 @@ public final class TrackingStore: ChangeGuardedStore {
     func recordFailure(_ error: Error) { recordedError = writeFailure(error).localizedDescription }
 
     func clearError() { recordedError = nil }
+
+    /// Drops the previous connection's tracking error.
+    func acceptConnection() { clearError() }
 }

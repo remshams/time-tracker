@@ -208,13 +208,13 @@ public final class TrackerSync {
     }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
-        automation.cancel()
-        connection.apply(settings)
-        dailyTotals.clear()
+        automation.acceptConnection()
+        connection.acceptConnection(settings)
+        dailyTotals.acceptConnection()
         settingsRepository.save(settings)
-        catalog.resetSelections()
-        history.request(selectedTaskID: nil)
-        tracking.clearError()
+        catalog.acceptConnection()
+        history.acceptConnection()
+        tracking.acceptConnection()
         acceptTaskList(resources)
     }
 

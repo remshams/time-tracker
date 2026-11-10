@@ -212,7 +212,7 @@ final class TaskCatalogTests: XCTestCase {
     }
 
     @MainActor
-    func testResetSelectionsClearsBothTabMemoriesBeforeLoadingAnotherSource() async {
+    func testAcceptedConnectionClearsBothTabMemoriesBeforeLoadingItsTaskList() async {
         let state = TaskCatalogStore()
         let otherArchived = TaskItem(
             id: "other-archived-task", name: "Other archived task",
@@ -223,7 +223,7 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertTrue(state.switchTab(to: .archived))
         XCTAssertTrue(state.switchSelection(to: otherArchived.id))
 
-        state.resetSelections()
+        state.acceptConnection()
         XCTAssertNil(state.selectedTaskID)
         XCTAssertEqual(state.tab, .archived)
         XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
@@ -294,7 +294,7 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertEqual(probes.changed(), ["tab", "visibleTasks", "selectedTaskID", "selectedTask"])
         XCTAssertEqual(state.visibleTasks, [archivedTask])
         XCTAssertEqual(state.selectedTask, archivedTask)
-        state.resetSelections()
+        state.acceptConnection()
         XCTAssertEqual(probes.changed(), ["selectedTaskID", "selectedTask"])
         XCTAssertNil(state.selectedTask)
         XCTAssertEqual(state.tab, .archived)

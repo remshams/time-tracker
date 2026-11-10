@@ -53,7 +53,8 @@ public final class ConnectionStore: ChangeGuardedStore {
         set(\.message, "Connection unchanged. \(failure.localizedDescription)")
     }
 
-    func apply(_ settings: ConnectionSettings) { set(\.settings, settings) }
+    /// Takes in the settings of a new connection.
+    func acceptConnection(_ settings: ConnectionSettings) { set(\.settings, settings) }
 
     /// Marks the connection as confirmed and current after the tracker sent a task list: resets the failure count,
     /// lifts an incompatible-server block, shows the connected status and clears the message.
@@ -73,7 +74,6 @@ public final class ConnectionStore: ChangeGuardedStore {
         set(\.statusText, protocolBlocked ? "Incompatible server" : "Unavailable")
         set(\.message, failure.localizedDescription)
     }
-}
 
     /// Whether a read failure marks the connection as failed: the bridge asks for a refresh, or the tracker is
     /// unavailable or speaks another protocol. Callers pass read failures, which the bridge never marks as uncertain.
@@ -81,6 +81,7 @@ public final class ConnectionStore: ChangeGuardedStore {
         guard let failure = failure as? BridgeFailure else { return false }
         return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
     }
+}
 
 public enum TrackerPollingPolicy {
     public static func interval(visible: Bool, failures: Int) -> TimeInterval {

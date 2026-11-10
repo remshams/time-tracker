@@ -66,7 +66,8 @@ public final class TaskCatalogStore: ChangeGuardedStore {
         activeSelection = taskID
     }
 
-    func resetSelections() {
+    /// Forgets both tabs' selections for a new connection. The tab stays.
+    func acceptConnection() {
         activeSelection = nil
         archivedSelection = nil
         set(\.selectedTaskID, nil)

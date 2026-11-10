@@ -161,7 +161,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     }
 
     /// Drops the totals of the previous connection.
-    func clear() {
+    func acceptConnection() {
         day = nil
         updateDay()
     }

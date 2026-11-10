@@ -97,6 +97,15 @@ final class ConnectionStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testAcceptedConnectionTakesItsSettings() async {
+        let store = ConnectionStore(settings: .local)
+
+        store.acceptConnection(serverSettings)
+
+        XCTAssertEqual(store.settings, serverSettings)
+    }
+
+    @MainActor
     func testOnlyRefreshUnavailableAndProtocolFailuresRequireRecovery() async {
         let store = ConnectionStore(settings: .local)
 
