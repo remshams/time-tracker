@@ -817,7 +817,23 @@ final class DailyTotalsAppTests: XCTestCase {
             XCTAssertEqual(fixture.totalsStatus, .unavailable)
             XCTAssertEqual(fixture.features.connection.statusText, "Incompatible server")
             XCTAssertNil(fixture.scheduler.poll)
+            let next = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+            XCTAssertFalse(next === rollover, "The new day must schedule its own rollover without a reload.")
+            XCTAssertEqual(next.delay, 86_400)
         }
+    }
+
+    @MainActor
+    func testStartSchedulesTheRolloverForTheCurrentDayBeforeTheTaskListArrives() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        fixture.advanceClock(by: 86_400 + 3_600)
+        fixture.sync.start()
+        let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        XCTAssertEqual(rollover.delay, 82_800, "The rollover must wait for the end of the day the sync started on.")
+        try await fixture.client.next().succeed(emptyTaskListResources)
+        try await fixture.client.next().succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
+        try await fixture.settled()
     }
 
     @MainActor
@@ -940,6 +956,8 @@ final class DailyTotalsAppTests: XCTestCase {
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         fixture.clock.now.addTimeInterval(300)
         fixture.sync.wake()
+        let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        XCTAssertEqual(rollover.delay, 86_100, "Wake must restart the rollover before the refresh answers.")
         let wake = try await fixture.client.next()
         guard case .report = wake.operation else {
             return XCTFail("Healthy wake must refresh the authoritative report.")
