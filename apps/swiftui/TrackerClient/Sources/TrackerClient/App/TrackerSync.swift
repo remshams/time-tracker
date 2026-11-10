@@ -111,8 +111,8 @@ public final class TrackerSync {
         refresh()
     }
 
-    /// Reloads the task list now unless the sync hasn't started, sleeps or already refreshes. Polling, waking, the
-    /// timers and `ConnectionStore.refresh()` call it.
+    /// Reloads the task list now unless the sync hasn't started, sleeps or already refreshes. Polling, waking,
+    /// `ConnectionStore.refresh()` and `DailyTotalsStore` at midnight call it.
     func refresh() {
         guard started, !sleeping, !refreshing else { return }
         refreshing = true
