@@ -95,6 +95,18 @@ final class ConnectionStoreTests: XCTestCase {
         local.acceptTaskList()
         XCTAssertEqual(local.statusText, "Local database")
     }
+
+    @MainActor
+    func testOnlyRefreshUnavailableAndProtocolFailuresRequireRecovery() async {
+        let store = ConnectionStore(settings: .local)
+
+        XCTAssertTrue(store.requiresRecovery(after: BridgeFailure(message: "Stale", requiresRefresh: true)))
+        XCTAssertTrue(store.requiresRecovery(after: BridgeFailure(message: "Offline", kind: "unavailable")))
+        XCTAssertTrue(store.requiresRecovery(after: BridgeFailure(message: "Unsupported", kind: "protocol")))
+        XCTAssertFalse(store.requiresRecovery(after: BridgeFailure(message: "Rejected", kind: "validation")))
+        XCTAssertFalse(store.requiresRecovery(after: BridgeFailure(message: "Failed")))
+        XCTAssertFalse(store.requiresRecovery(after: CancellationError()))
+    }
 }
 
 private final class ConnectionSwitches {
