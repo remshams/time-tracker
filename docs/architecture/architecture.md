@@ -232,8 +232,8 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   from the connection, tracking and catalog stores. `TrackerSync` loads,
   refreshes and polls the stores, runs the display, rollover and menu bar timers, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
-  It hands a loaded task list to the stores in a fixed order through each
-  store's `acceptTaskList` method and passes the values one store needs from
+  It hands a loaded task list to the stores in a fixed order through their
+  `acceptTaskList` methods and passes the values one store needs from
   another, such as the running worklog before and after the update.
   `WorklogHistoryStore` decides from them whether to reload or clear its error.
   `TrackingAvailability` reads the connection, catalog and tracking stores to
