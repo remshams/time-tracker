@@ -115,7 +115,8 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     /// Takes in a loaded task list. When a report follows, the loaded totals become cached until it arrives.
     func acceptTaskList(reportRequested: Bool) {
         updateDay()
-        if reports != nil && reportRequested { invalidate() }
+        // Only an accepted report sets the request, so totals become cached only with a report client.
+        if reportRequested && request != nil { loadStatus = .cached }
         scheduleRollover()
     }
 
@@ -163,10 +164,6 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     func clear() {
         day = nil
         updateDay()
-    }
-
-    func invalidate() {
-        if request != nil { loadStatus = .cached }
     }
 
     func begin() -> Request? {
