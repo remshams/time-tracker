@@ -255,8 +255,11 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   The dialog stores and `TrackingStore` also share one `Shared/PresentationGate`,
   which a dialog store claims while its sheet shows and `TrackingStore` claims
   while its error alert shows. A dialog store's `canOpen` is false while the
-  gate is claimed, so one dialog shows at a time
+  gate is claimed, so a person can't open a second dialog
   ([ADR 0036](adr/0036-let-dialog-stores-claim-a-presentation-gate.md)).
+  A store that reopens its own dialog after a failed write, such as a failed
+  unarchive, doesn't check the gate, so that dialog can still show behind
+  another one.
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
   Views change the tab and selection on `TaskCatalogStore`, and retry the
