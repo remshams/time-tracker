@@ -17,7 +17,6 @@ SOURCES = "Sources/TrackerClient/"
 TESTS = "Tests/TrackerClientTests/"
 FEATURES = "App/TrackerFeatures.swift"
 SYNC = "App/TrackerSync.swift"
-TRACKING_ACTIONS = "App/TrackingActions.swift"
 MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingStore.swift"
@@ -54,110 +53,112 @@ WRITE_FAILURE = "Shared/WriteFailure.swift"
 # Update this map when a suite gains assertions about another production component.
 TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, CONNECTION, CONNECTION_TESTING, TRACKING, CATALOG, HISTORY, TOTALS,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, CONNECTION, CONNECTION_TESTING, TRACKING, CATALOG, HISTORY, TOTALS,
         AUTOMATION, CREATION,
     ],
-    "App/HistoryPresentationTests.swift": [FEATURES, SYNC, TRACKING_ACTIONS, HISTORY, CATALOG],
+    "App/HistoryPresentationTests.swift": [FEATURES, SYNC, TRACKING_AVAILABILITY, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
         FEATURES, SYNC, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, MENU_BAR_STORE,
     ],
-    "App/ObserverTests.swift": [FEATURES, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
+    "App/ObserverTests.swift": [FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
     "App/RefreshPresentationTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION, MENU_SOURCES,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION, MENU_SOURCES,
     ],
     "App/TrackerSyncPublishTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION,
     ],
     "App/TrackerSyncSelectionAndReloadTests.swift": [FEATURES, SYNC, TRACKING, CATALOG, HISTORY, CONNECTION],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TIME_FORMATTING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CONNECTION_TESTING, CREATION,
-        RENAME, ARCHIVING, CORRECTION, MOVE, DELETION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CONNECTION_TESTING,
+        CREATION, RENAME, ARCHIVING, CORRECTION, MOVE, DELETION,
     ],
     "Features/Connection/ConnectionStoreTests.swift": [CONNECTION, CONNECTION_TESTING],
     "Features/Connection/ConnectionTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, CONNECTION, CONNECTION_TESTING, CATALOG, TRACKING, HISTORY, MENU_SOURCES,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, CONNECTION, CONNECTION_TESTING, CATALOG, TRACKING, HISTORY, MENU_SOURCES,
     ],
     "Features/DailyTotals/DailyTotalsTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING, CATALOG, HISTORY,
-        MENU_BAR_STORE, MENU_CLIPBOARD,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING, CATALOG,
+        HISTORY, MENU_BAR_STORE, MENU_CLIPBOARD,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TOTALS, TRACKING,
-        CONNECTION, CONNECTION_TESTING, CATALOG, MENU_BAR_STORE, INDICATOR,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TOTALS,
+        TRACKING, CONNECTION, CONNECTION_TESTING, CATALOG, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER, MENU_VALUES,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER, MENU_VALUES,
         TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskOrderTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, AUTOMATION, MENU_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
         TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, AUTOMATION, MENU_CLIPBOARD, MENU_SHORTCUTS, MENU_OBSERVER, MENU_SOURCES, MENU,
-        MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_CLIPBOARD, MENU_SHORTCUTS, MENU_OBSERVER, MENU_SOURCES,
+        MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskTrackingActionTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, AUTOMATION, "Features/MenuBar/MenuTaskTrackingAction.swift", MENU_OBSERVER,
-        MENU_SOURCES, MENU, MENU_VALUES, TRACKING, MENU_CLIPBOARD, MENU_SHORTCUTS, TOTALS, CATALOG, CONNECTION,
-        MENU_BAR_STORE, INDICATOR,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, "Features/MenuBar/MenuTaskTrackingAction.swift",
+        MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TRACKING, MENU_CLIPBOARD, MENU_SHORTCUTS, TOTALS, CATALOG,
+        CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, MENU_BAR_STORE, INDICATOR, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
-        TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, AUTOMATION, TOTALS,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, MENU_BAR_STORE, INDICATOR, MENU_OBSERVER, MENU_SOURCES, MENU,
+        MENU_VALUES, TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, AUTOMATION, TOTALS,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
     ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION, MOVE,
-        CONNECTION, DELETION, BULK_ARCHIVING,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION,
+        MOVE, CONNECTION, DELETION, BULK_ARCHIVING,
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, CONNECTION_TESTING,
-        AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION, MENU_BAR_STORE, MENU_CLIPBOARD,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION,
+        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION, MENU_BAR_STORE, MENU_CLIPBOARD,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         FEATURES, SYNC, NAME_POLICY, CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
         CONNECTION_TESTING, NAME_POLICY, MENU_SOURCES, DELETION, MOVE, CORRECTION,
     ],
     "Features/Tracking/TrackingAvailabilityTests.swift": [TRACKING_AVAILABILITY, CONNECTION, CATALOG, TRACKING],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION, RENAME, MENU_SOURCES,
-        CREATION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION, RENAME,
+        MENU_SOURCES, CREATION,
     ],
     "Features/TrackingAutomation/TrackingAutomationStoreTests.swift": [AUTOMATION],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, AUTOMATION, TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, HISTORY,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, HISTORY,
         CREATION,
     ],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION,
         DELETION, MOVE,
     ],
     "Features/WorklogHistory/HistoryTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, HISTORY, TRACKING, CATALOG, CONNECTION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, HISTORY, TRACKING, CATALOG, CONNECTION,
     ],
     "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY, CATALOG, CONNECTION],
     "Features/WorklogMove/WorklogMoveTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
-        MENU_SOURCES, DELETION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION,
+        CORRECTION, MENU_SOURCES, DELETION,
     ],
     "Features/WorklogDeletion/WorklogDeletionTests.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, RENAME,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, RENAME,
         CORRECTION, ARCHIVING, MOVE,
     ],
     "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
-    "Support/FixtureCleanupTests.swift": [FEATURES, SYNC, TRACKING_ACTIONS, TRACKING, CATALOG, HISTORY, CONNECTION],
+    "Support/FixtureCleanupTests.swift": [
+        FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, CONNECTION,
+    ],
 }
 # A suite that exercises a key file also exercises its companions. #257 moved the
 # elapsed time helpers from TrackingState.swift to TimeFormatting.swift, so every
@@ -168,8 +169,6 @@ TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
     **{store: (CHANGE_GUARD,) for store in (
         CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
-    # TrackingActions asks TrackingAvailability before each request.
-    TRACKING_ACTIONS: (TRACKING_AVAILABILITY,),
     # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
     **{
         owner: (WRITE_FAILURE,)
@@ -191,17 +190,49 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    (
+        "#372 drops the fixture's TrackingActions and builds a TrackingStore for state-only tests",
+        (
+            (
+                "    var sync: TrackerSync { features.sync }\n"
+                "    var trackingActions: TrackingActions { features.trackingActions }\n",
+                "    var sync: TrackerSync { features.sync }\n",
+            ),
+            (
+                "@MainActor\nfinal class Fixture {\n",
+                "@MainActor\n"
+                "extension TrackingStore {\n"
+                "    /// Builds the store for tests of its state, which send no tracking request.\n"
+                "    convenience init() {\n"
+                "        self.init(\n"
+                "            client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local),\n"
+                "            catalog: TaskCatalogStore())\n"
+                "    }\n"
+                "}\n"
+                "\n"
+                "@MainActor\nfinal class Fixture {\n",
+            ),
+        ),
+        None,
+        None,
+        ("Features/Tracking/TrackingTests.swift", "Features/MenuBar/StatusItemTests.swift"),
+        (
+            "Features/Tracking/TrackingTests.swift", "Features/Tracking/TrackingStoreTests.swift",
+            "Features/MenuBar/StatusItemTests.swift",
+        ),
+    ),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS,
         AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION, MENU_BAR_STORE,
         MENU_CLIPBOARD,
     ],
     "Support/MenuHarness.swift": [
-        FEATURES, SYNC, TRACKING_ACTIONS, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION, TRACKING,
-        TOTALS, MENU_BAR_STORE, AUTOMATION,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION,
+        TRACKING, TOTALS, MENU_BAR_STORE, AUTOMATION,
     ],
 }
 # A PR that deletes a file and adds its successor in the same diff can map the
@@ -212,7 +243,9 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
-REVIEWED_DELETIONS: frozenset[str] = frozenset()
+REVIEWED_DELETIONS: frozenset[str] = frozenset({
+    SOURCES + "App/TrackingActions.swift",
+})
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
