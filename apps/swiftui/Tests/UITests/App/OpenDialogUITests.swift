@@ -1,7 +1,7 @@
 import XCTest
 
-/// macOS shows one sheet per window. The task and worklog menus have no check of their own, so these tests show that
-/// an attached sheet or alert blocks them.
+/// macOS shows one sheet per window. The task and worklog menus and the toolbar buttons have no open-dialog check of
+/// their own, so these tests show that an attached sheet or alert blocks them and keeps the window open.
 @MainActor
 final class OpenDialogUITests: TrackerUITestCase {
     // The alert needs a rejected tracking command, and only the proxy can hold that command for a competing client.
@@ -29,6 +29,49 @@ final class OpenDialogUITests: TrackerUITestCase {
         }
 
         app.buttons["task-name.cancel"].click()
+        assertNoDialogRemains()
+    }
+
+    /// Start tracking checks only whether tracking can start, so only the window can block it.
+    func testOpenSheetBlocksToolbarButtons() throws {
+        let task = try fixture.create("Toolbar target")
+        launch()
+        select(task)
+        let start = app.buttons["Start tracking"]
+        waitUntil("Start tracking becomes available") { start.exists && start.isEnabled }
+        let target = start.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+
+        openCreation()
+        XCTAssertFalse(
+            openDialogElements.contains { $0.frame.contains(target.screenPoint) },
+            "Start tracking lies under the sheet, so this click cannot reach it.")
+        target.click()
+        XCTAssertFalse(app.buttons["Stop tracking"].waitForExistence(timeout: 2), "Tracking started behind the sheet.")
+        XCTAssertTrue(element("task-name.input").exists, "The click replaced the open sheet.")
+        app.buttons["task-name.cancel"].click()
+        assertNoDialogRemains()
+        XCTAssertFalse(app.buttons["Stop tracking"].waitForExistence(timeout: 2), "Tracking started after the sheet.")
+
+        // The same click starts tracking without a sheet, or the blocked click proves nothing.
+        target.click()
+        XCTAssertTrue(app.buttons["Stop tracking"].waitForExistence(timeout: timeout))
+    }
+
+    func testOpenSheetKeepsTheTrackerWindowOpen() throws {
+        launch()
+        let window = app.windows.containing(.button, identifier: "bulk-archive.open").firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: timeout))
+        openCreation()
+
+        window.buttons[XCUIIdentifierCloseWindow].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        XCTAssertFalse(window.waitForNonExistence(timeout: 2), "The close button closed the window behind the sheet.")
+        XCTAssertTrue(element("task-name.input").exists, "The close button dismissed the sheet.")
+
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertFalse(window.waitForNonExistence(timeout: 2), "Command-W closed the window behind the sheet.")
+
+        let cancel = app.buttons["task-name.cancel"]
+        if cancel.exists { cancel.click() }
         assertNoDialogRemains()
     }
 
