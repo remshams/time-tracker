@@ -3,11 +3,11 @@ import Observation
 
 /// Holds the selected task's worklog pages and the history panel's loading and error state.
 ///
-/// Views read the properties, retry the selected task's first page and load older pages. The task catalog's selection
-/// changes and `TrackerSync`, after a worklog write or a created task, ask the store to reload. `acceptTaskList`
-/// decides whether a task list that `TrackerSync` loaded reloads it. The store sends those page requests itself. Each
-/// property is assigned only when its value changes, so an unchanged poll redraws nothing and loading another page
-/// leaves the "Load older" button alone unless more pages appear or run out.
+/// Views read the properties, retry the selected task's first page and load older pages. The task catalog, after a
+/// selection change or a created task, and `TrackerSync`, after a worklog write, ask the store to reload.
+/// `acceptTaskList` decides whether a task list that `TrackerSync` loaded reloads it. The store sends those page
+/// requests itself. Each property is assigned only when its value changes, so an unchanged poll redraws nothing and
+/// loading another page leaves the "Load older" button alone unless more pages appear or run out.
 @Observable
 public final class WorklogHistoryStore: ChangeGuardedStore {
     public private(set) var worklogs: [WorklogItem] = []

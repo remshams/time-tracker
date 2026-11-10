@@ -83,7 +83,7 @@ public final class TrackerFeatures {
         // A manual tracking request wins over a pending automatic resume. The auto-pause store holds the tracking
         // store, so this capture is weak.
         tracking.cancelAutoResume = { [weak trackingAutomation] in trackingAutomation?.cancel() }
-        // The sync holds the tracking, auto-pause and daily totals stores, so these captures are weak too.
+        // The sync holds the tracking, auto-pause, daily totals and menu bar stores, so these captures are weak too.
         tracking.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
         tracking.publishChanges = { [weak sync] in sync?.publish() }
         trackingAutomation.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
