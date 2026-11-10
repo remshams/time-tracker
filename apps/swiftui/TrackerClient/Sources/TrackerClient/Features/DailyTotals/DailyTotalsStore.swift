@@ -126,8 +126,8 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         rollOver()
     }
 
-    /// Requests today's report, which also returns the task list. Publishes on every path: before a first request,
-    /// through the accepted task list, and after a failure.
+    /// Requests today's report, which also returns the task list. Does nothing without a report client. Otherwise
+    /// publishes on every path: before a first request, through the accepted task list, and after a failure.
     func load() async {
         guard let reports, let requested = begin() else { return }
         // A first request shows the loading status, which the menu reads from the store.
