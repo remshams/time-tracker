@@ -164,7 +164,9 @@ In the Swift app and package, folders in a target must not form a cycle, and
 same-named feature folders in the two targets are separate nodes
 ([ADR 0034](adr/0034-allow-no-cycles-between-folders-in-a-target.md)). `Shared/` holds
 helpers no feature owns and `Contracts/` holds protocols and wire models
-([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
+([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). An app
+feature folder whose store lives in the package uses the package folder's name,
+such as `Features/WorklogCorrection` in both targets.
 
 ### Module responsibilities
 
