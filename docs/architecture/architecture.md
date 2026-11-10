@@ -232,8 +232,10 @@ such as `Features/WorklogCorrection` in both targets.
   the start and stop checks from `TrackingAvailability` through one
   `Observations` loop, and `TrackerMenuSources` computes the running task's name
   from the connection, tracking and catalog stores. `TrackerSync` loads,
-  refreshes and polls the stores, runs the display and menu bar timers, handles visibility, sleep
+  refreshes and polls the stores, runs the display timer, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
+  On a connection change it calls each store's `acceptConnection` method in a fixed order
+  ([ADR 0038](adr/0038-move-the-remaining-feature-rules-out-of-tracker-sync.md)).
   It hands a loaded task list to the stores in a fixed order through their
   `acceptTaskList` methods and passes the values one store needs from
   another, such as the running worklog before and after the update.
@@ -243,7 +245,9 @@ such as `Features/WorklogCorrection` in both targets.
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingStore` starts and
   stops tracking after asking it, and `MenuBarStore` runs the status item's
-  primary action through `TrackingStore`. `TrackingStore` cancels a pending
+  primary action through `TrackingStore`. `MenuBarStore` also runs the menu bar
+  clock, which the app turns on while the menu bar shows the daily total and
+  which republishes once a minute while a worklog runs. `TrackingStore` cancels a pending
   auto-resume, reloads the task list and publishes through closures that
   `TrackerFeatures` sets, so `Tracking` doesn't depend on `TrackingAutomation`.
   `TrackingAutomationStore` pauses the running timer when the screen locks and
@@ -255,7 +259,7 @@ such as `Features/WorklogCorrection` in both targets.
   `TrackerMenuSources` and `TrackerSync`, and passes the
   dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
   `reloadAfterWorklogWrite()` as their reload closures. `TaskCreationStore` also
-  gets `showTask(_:)` and `BulkTaskArchivingStore` gets `recordReadFailure(_:)`.
+  gets `TaskCatalogStore.showTask(_:)` and `BulkTaskArchivingStore` gets `recordReadFailure(_:)`.
   The dialog stores and `TrackingStore` also share one `Shared/PresentationGate`,
   which a dialog store claims while its sheet shows and `TrackingStore` claims
   while its error alert shows. A dialog store's `canOpen` is false while the
@@ -272,7 +276,8 @@ such as `Features/WorklogCorrection` in both targets.
   at `WorklogHistoryStore`. `WorklogHistoryStore` reads the selection from
   `TaskCatalogStore` and the stale connection from `ConnectionStore`, sends its
   own page requests, and reports each failure through a closure to
-  `TrackerSync`, which records connection failures. Views connect and retry
+  `TrackerSync`, which records connection failures that `ConnectionStore`
+  says need recovery. Views connect and retry
   on `ConnectionStore` and turn the auto-pause on or off on
   `TrackingAutomationStore`. Through closures that `TrackerFeatures` sets,
   `ConnectionStore` lets `TrackerSync` switch the connection and refresh.
