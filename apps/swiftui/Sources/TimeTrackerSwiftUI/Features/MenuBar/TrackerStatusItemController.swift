@@ -13,7 +13,7 @@ final class TrackerStatusItemController: NSObject {
     private var statusItem: NSStatusItem?
     private var appearanceObservation: NSKeyValueObservation?
     private var openWindow: (() -> Void)?
-    private var openMenu: TrackerStatusMenu?
+    private var shownMenu: TrackerStatusMenu?
     private var shortcut: GlobalMenuShortcutHandler?
 
     init(
@@ -76,7 +76,7 @@ final class TrackerStatusItemController: NSObject {
     }
 
     @objc private func clicked() {
-        guard openMenu == nil else { return }
+        guard shownMenu == nil else { return }
         let event = NSApplication.shared.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showNativeMenu()
@@ -86,8 +86,8 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func toggleMenu() {
-        if let openMenu {
-            openMenu.menu.cancelTracking()
+        if let shownMenu {
+            shownMenu.menu.cancelTracking()
         } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
             showNativeMenu()
@@ -95,15 +95,15 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func showNativeMenu() {
-        guard openMenu == nil, let statusItem, let button = statusItem.button else { return }
+        guard shownMenu == nil, let statusItem, let button = statusItem.button else { return }
         // The sync publishes first, so the menu captures current values even when no display tick ran.
         sync.setMenuVisible(true)
         self.menu.menuOpened()
         let builder = TrackerStatusMenuBuilder(
             menuBar: menuBar, connection: connection.settings, target: self, itemAction: #selector(selected(_:)))
-        let openMenu = builder.makeMenu(self.menu.content, appearance: NSApplication.shared.effectiveAppearance)
-        let menu = openMenu.menu
-        self.openMenu = openMenu
+        let shownMenu = builder.makeMenu(self.menu.content, appearance: NSApplication.shared.effectiveAppearance)
+        let menu = shownMenu.menu
+        self.shownMenu = shownMenu
         updateMenuValues(self.menu.values)
         button.highlight(true)
         shortcut?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
@@ -112,7 +112,7 @@ final class TrackerStatusItemController: NSObject {
             button.target = self
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            self.openMenu = nil
+            self.shownMenu = nil
             button.highlight(false)
             sync.setMenuVisible(false)
             self.menu.menuClosed()
@@ -124,10 +124,10 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func updateMenuValues(_ values: TrackerMenuValues) {
-        guard let openMenu else { return }
-        openMenu.elapsedField?.update(values.elapsedText ?? "Unavailable")
-        openMenu.totalField?.update(values.totalText, help: values.totalsExplanation)
-        for (taskID, row) in openMenu.taskRows {
+        guard let shownMenu else { return }
+        shownMenu.elapsedField?.update(values.elapsedText ?? "Unavailable")
+        shownMenu.totalField?.update(values.totalText, help: values.totalsExplanation)
+        for (taskID, row) in shownMenu.taskRows {
             guard let duration = values.taskDurationTexts[taskID] else { continue }
             row.update(duration: duration, help: values.totalsExplanation)
         }
