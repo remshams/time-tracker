@@ -15,14 +15,14 @@ public final class TrackingStore: ChangeGuardedStore {
     public private(set) var isSubmitting = false
     /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
     public private(set) var timerText = "Unavailable"
-    // The sync records an error here when a tracking request fails, and `publish` shows it at the next
+    // A failed tracking request or auto-pause records its error here, and `publish` shows it at the next
     // publish, normally the one after the reload.
     @ObservationIgnored private(set) var recordedError: String?
     // The elapsed time is measured from these with the monotonic uptime, so views don't observe them.
     @ObservationIgnored private var timerBase: TimeInterval = 0
     @ObservationIgnored private var timerAnchor: TimeInterval = 0
-    /// Cancels a pending auto-resume before a tracking request. `TrackerFeatures` sets it once, after it creates
-    /// `TrackerSync`, which needs this store.
+    /// Cancels a pending auto-resume before a tracking request. `TrackerFeatures` sets it to
+    /// `TrackingAutomationStore`'s cancel.
     @ObservationIgnored var cancelAutoResume: @MainActor () -> Void = {}
     /// Reloads the task list after a tracking request and publishes on every path. `TrackerFeatures` sets it to
     /// `TrackerSync`'s reload.

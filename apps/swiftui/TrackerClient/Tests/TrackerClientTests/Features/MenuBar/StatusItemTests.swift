@@ -322,14 +322,9 @@ final class StatusItemTests: XCTestCase {
 private extension MenuBarStore {
     /// Builds the store for tests of the remembered task, which read no other store.
     convenience init(repository: (any LastTrackedTaskRepository)?, settings: ConnectionSettings) {
-        let connection = ConnectionStore(settings: settings)
-        let catalog = TaskCatalogStore()
-        let tracking = TrackingStore()
         self.init(
-            repository: repository, connection: connection, catalog: catalog, tracking: tracking,
-            dailyTotals: DailyTotalsStore(calendar: .autoupdatingCurrent),
-            automation: TrackingAutomationStore(repository: MemoryTrackingPreferences()),
-            availability: TrackingAvailability(connection: connection, catalog: catalog, tracking: tracking),
-            clock: FakeClock())
+            repository: repository, connection: ConnectionStore(settings: settings), catalog: TaskCatalogStore(),
+            tracking: TrackingStore(), dailyTotals: DailyTotalsStore(calendar: .autoupdatingCurrent),
+            automation: TrackingAutomationStore(repository: MemoryTrackingPreferences()), clock: FakeClock())
     }
 }

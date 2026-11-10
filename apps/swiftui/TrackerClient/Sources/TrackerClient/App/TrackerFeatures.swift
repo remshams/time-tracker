@@ -59,7 +59,7 @@ public final class TrackerFeatures {
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
-            dailyTotals: dailyTotals, automation: trackingAutomation, availability: trackingAvailability, clock: clock)
+            dailyTotals: dailyTotals, automation: trackingAutomation, clock: clock)
         dailyTotals.updateDay(at: clock.now)
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
@@ -77,9 +77,9 @@ public final class TrackerFeatures {
         connection.switchConnection = { [weak sync] settings in try await sync?.switchConnection(to: settings) }
         connection.refreshTaskList = { [weak sync] in sync?.refresh() }
         trackingAutomation.pauseOnScreenLockChanged = { [weak sync] in sync?.pauseOnScreenLockChanged() }
-        // A manual tracking request wins over a pending automatic resume. The sync holds the tracking store, so
-        // these captures are weak too.
-        tracking.cancelAutoResume = { [weak trackingAutomation] in trackingAutomation?.cancel() }
+        // A manual tracking request wins over a pending automatic resume.
+        tracking.cancelAutoResume = { [trackingAutomation] in trackingAutomation.cancel() }
+        // The sync holds the tracking store, so these captures are weak too.
         tracking.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
         tracking.publishChanges = { [weak sync] in sync?.publish() }
         taskRename = TaskRenameStore(
