@@ -10,6 +10,8 @@ Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-tar
 
 Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) for passive stores, writes into stores only from `App/`, history reloads only at `App/`'s request or on loading more, history failures reported to a caller in `App/`, `TrackerSync` owning auto-pause and the connection change flow, and cross-feature follow-ups only in `App/`; all other decisions remain accepted.
 
+Partially superseded by [ADR 0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) for `TrackerSync` owning the rollover timer; all other decisions remain accepted.
+
 ## Date
 
 2026-10-20
