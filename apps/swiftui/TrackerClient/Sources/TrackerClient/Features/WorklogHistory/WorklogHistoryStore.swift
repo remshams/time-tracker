@@ -90,6 +90,7 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
         }
     }
 
+    /// Shows a connection failure in the history panel, which tells the user why the list may be out of date.
     func showError(_ message: String) {
         set(\.error, message)
     }
