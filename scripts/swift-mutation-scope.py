@@ -220,7 +220,9 @@ REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
         ("Features/Tracking/TrackingTests.swift", "Features/MenuBar/StatusItemTests.swift"),
         (
             "Features/Tracking/TrackingTests.swift", "Features/Tracking/TrackingStoreTests.swift",
-            "Features/MenuBar/StatusItemTests.swift",
+            "Features/Tracking/TrackingAvailabilityTests.swift", "Features/MenuBar/StatusItemTests.swift",
+            "Features/TaskArchiving/TaskArchivingTests.swift",
+            "Features/WorklogCorrection/WorklogCorrectionTests.swift",
         ),
     ),
 )
