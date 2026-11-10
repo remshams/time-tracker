@@ -433,7 +433,7 @@ final class TaskRenameTests: XCTestCase {
             .rename(
                 task: firstTask.id, expectedName: firstTask.name, name: "Renamed while locked",
                 at: "2025-01-01T00:00:00.000Z"))
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         // Wait for the poll to apply, or its reply can land after the pause and restore the running worklog.
         try await fixture.update("the poll") { poll.succeed(resources) }
         let pause = try await fixture.client.next()
@@ -451,7 +451,7 @@ final class TaskRenameTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskRename.isPresented)
         fixture.clock.now.addTimeInterval(30)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: "2025-01-01T00:00:30.000Z"))
         let resumed = WorklogItem(id: "resumed", taskId: firstTask.id, start: "2025-01-01T00:00:30.000Z", end: nil)

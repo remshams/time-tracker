@@ -14,7 +14,7 @@ final class TrackingAutomationTests: XCTestCase {
     }
 
     private func acknowledgePause(_ fixture: Fixture, at date: Date? = nil) async throws {
-        fixture.sync.setScreenLocked(true, at: date ?? fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: date ?? fixture.clock.now)
         let pause = try await fixture.client.next()
         XCTAssertEqual(
             pause.operation,
@@ -31,8 +31,8 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         XCTAssertFalse(fixture.trackingAutomation.enabled)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertEqual(fixture.client.operations.count, 2)
         fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertFalse(fixture.client.hasPendingRequests)
@@ -52,7 +52,7 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.trackingAutomation.statusText, "Paused while screen is locked")
         fixture.clock.now.addTimeInterval(90)
         let unlock = fixture.clock.now
-        fixture.sync.setScreenLocked(false, at: unlock)
+        fixture.trackingAutomation.setScreenLocked(false, at: unlock)
         fixture.clock.now.addTimeInterval(10)
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlock)))
@@ -76,8 +76,8 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(emptyTaskListResources)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertEqual(fixture.client.operations, [.open(.local)])
         XCTAssertNil(fixture.trackingAutomation.statusText)
     }
@@ -86,12 +86,12 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(90)
         let unlockedAt = fixture.clock.now
-        fixture.sync.setScreenLocked(false, at: unlockedAt)
-        fixture.sync.setScreenLocked(false, at: unlockedAt)
+        fixture.trackingAutomation.setScreenLocked(false, at: unlockedAt)
+        fixture.trackingAutomation.setScreenLocked(false, at: unlockedAt)
         fixture.clock.now.addTimeInterval(30)
         pause.paused(idle)
         let resume = try await fixture.client.next()
@@ -126,9 +126,9 @@ final class TrackingAutomationTests: XCTestCase {
             let fixture = Fixture(pauseOnScreenLock: true)
             defer { fixture.cleanup() }
             try await fixture.start(running)
-            fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+            fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
             let pause = try await fixture.client.next()
-            fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+            fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
             if didFail {
                 pause.fail(BridgeFailure(message: "Pause rejected"))
                 let reload = try await fixture.client.next()
@@ -150,7 +150,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(idle)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         fixture.sync.refresh()
         let startedElsewhere = try await fixture.client.next()
         XCTAssertEqual(startedElsewhere.operation, .refresh(.local))
@@ -172,9 +172,9 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: formatTimestamp(fixture.clock.now)))
@@ -223,7 +223,7 @@ final class TrackingAutomationTests: XCTestCase {
         let lock = fixture.clock.now
         fixture.sync.refresh()
         let taskListRequest = try await fixture.client.next()
-        fixture.sync.setScreenLocked(true, at: lock)
+        fixture.trackingAutomation.setScreenLocked(true, at: lock)
         let later = WorklogItem(
             id: "later-worklog", taskId: firstTask.id,
             start: formatTimestamp(lock.addingTimeInterval(1)), end: nil)
@@ -240,12 +240,12 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         pause.paused(idle, didStop: false)
         try await finishHistory(fixture)
         try await fixture.settled()
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertNil(fixture.trackingAutomation.statusText)
         XCTAssertFalse(
             fixture.client.operations.contains {
@@ -257,10 +257,10 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         fixture.trackingAutomation.setPauseOnScreenLock(false)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -276,7 +276,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         fixture.clock.now.addTimeInterval(10)
         fixture.trackingAutomation.setPauseOnScreenLock(true)
         let pause = try await fixture.client.next()
@@ -290,7 +290,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         pause.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reconcile = try await fixture.client.next()
@@ -298,7 +298,7 @@ final class TrackingAutomationTests: XCTestCase {
         reconcile.succeed(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertEqual(
             fixture.features.tracking.recordedError,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
@@ -313,7 +313,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         try await fixture.client.next().fail(BridgeFailure(message: "Pause rejected"))
         try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await fixture.settled()
@@ -325,7 +325,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         fixture.sync.sleep()
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         pause.paused(idle)
         try await finishHistory(fixture)
@@ -347,7 +347,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         try await acknowledgePause(fixture)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         let resume = try await fixture.client.next()
         resume.fail(BridgeFailure(message: "Resume response lost", uncertain: true))
         let reconcile = try await fixture.client.next()
@@ -369,13 +369,13 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let taskListRequest = try await fixture.client.next()
         taskListRequest.fail(BridgeFailure(message: "Offline", kind: "unavailable"))
         let retry = try await fixture.client.next()
         retry.fail(BridgeFailure(message: "Still offline", kind: "unavailable"))
         try await fixture.settled()
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertTrue(fixture.features.connection.stale)
         XCTAssertEqual(fixture.features.tracking.recordedError, "Offline")
         XCTAssertNil(fixture.trackingAutomation.statusText)
@@ -393,7 +393,7 @@ final class TrackingAutomationTests: XCTestCase {
             start: formatTimestamp(fixture.clock.now), end: nil)
         start.succeed(TaskListResources(tasks: idle.catalog.value, active: started))
         try await fixture.settled()
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertNil(fixture.trackingAutomation.statusText)
         XCTAssertFalse(
             fixture.client.operations.contains {
@@ -417,7 +417,7 @@ final class TrackingAutomationTests: XCTestCase {
         idleRefresh.succeed(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertFalse(
             fixture.client.operations.contains {
@@ -429,7 +429,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(emptyTaskListResources)
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         fixture.trackingAutomation.setPauseOnScreenLock(true)
         XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertEqual(fixture.client.operations, [.open(.local)])
@@ -440,16 +440,16 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         let lock = fixture.clock.now
-        fixture.sync.setScreenLocked(true, at: lock)
-        fixture.sync.setScreenLocked(true, at: lock.addingTimeInterval(1))
+        fixture.trackingAutomation.setScreenLocked(true, at: lock)
+        fixture.trackingAutomation.setScreenLocked(true, at: lock.addingTimeInterval(1))
         let pause = try await fixture.client.next()
         XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: formatTimestamp(lock)))
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
         let unlock = lock.addingTimeInterval(30)
-        fixture.sync.setScreenLocked(false, at: unlock)
-        fixture.sync.setScreenLocked(false, at: unlock.addingTimeInterval(1))
+        fixture.trackingAutomation.setScreenLocked(false, at: unlock)
+        fixture.trackingAutomation.setScreenLocked(false, at: unlock.addingTimeInterval(1))
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlock)))
         resume.succeed(running)
@@ -473,7 +473,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.sync.sleep()
         fixture.clock.now.addTimeInterval(30)
         let unlock = fixture.clock.now
-        fixture.sync.setScreenLocked(false, at: unlock)
+        fixture.trackingAutomation.setScreenLocked(false, at: unlock)
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlock)))
         resume.succeed(running)
@@ -504,7 +504,7 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertTrue(fixture.taskCreation.isPresented)
         XCTAssertEqual(fixture.taskCreation.name, "Draft on the old connection")
         XCTAssertNil(fixture.trackingAutomation.statusText)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertFalse(
             fixture.client.operations.contains {
                 if case .resume = $0 { return true }; return false
@@ -542,7 +542,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.features.tracking.dismissError()
         XCTAssertNil(tracking.error)
 
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         pause.paused(idle)
         let history = try await fixture.client.next()
@@ -551,7 +551,7 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.trackingAutomation.statusText, "Paused while screen is locked")
         XCTAssertNil(tracking.active)
 
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertNil(fixture.trackingAutomation.statusText, "Unlocking must clear the status before the resume.")
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(fixture.clock.now)))
@@ -559,5 +559,26 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.client.next().succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(tracking.active, activeWorklog)
+    }
+
+    func testChangingThePausePreferencePublishes() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.advanceClock(by: 4)
+        fixture.trackingAutomation.setPauseOnScreenLock(true)
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+    }
+
+    func testLockingAndUnlockingTheScreenPublishes() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.advanceClock(by: 4)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+        fixture.advanceClock(by: 4)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:38")
     }
 }

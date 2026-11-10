@@ -309,11 +309,11 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.sync.setScreenLocked(true, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
         let count = fixture.client.operations.count
         XCTAssertEqual(fixture.features.menuBar.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.client.operations.count, count)
-        fixture.sync.setScreenLocked(false, at: fixture.clock.now)
+        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
         XCTAssertEqual(fixture.features.menuBar.menuPrimaryAction, .stop(worklogID: activeWorklog.id))
     }
 }
