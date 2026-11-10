@@ -110,10 +110,6 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
         return unlockedAt.map { Resume(taskID: taskID, date: $0) }
     }
 
-    func pauseFailed() {
-        isPausing = false
-    }
-
     /// Returns the task to resume, if the screen-lock pause stopped one.
     func unlock(at date: Date) -> Resume? {
         guard locked else { return nil }
@@ -147,7 +143,7 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
                     await resumeTracking(resume)
                 }
             } catch {
-                pauseFailed()
+                isPausing = false
                 tracking.recordFailure(error)
             }
             await reloadTaskList()
