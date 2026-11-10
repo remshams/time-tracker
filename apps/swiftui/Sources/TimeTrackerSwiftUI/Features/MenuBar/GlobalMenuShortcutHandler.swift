@@ -5,6 +5,7 @@ import TrackerClient
 
 /// Keeps the open menu shortcut registered with macOS. It registers the saved shortcut, registers it again when
 /// the keyboard layout changes, lets the preferences store register a new shortcut, and reports errors there.
+/// Creating it registers the shortcut and replaces the store's `registerMenuShortcut`, so the app creates one.
 final class GlobalMenuShortcutHandler {
     private let preferences: MenuBarPreferencesStore
     private let registration: GlobalMenuShortcutRegistration
