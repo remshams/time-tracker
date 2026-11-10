@@ -75,7 +75,7 @@ final class TrackerAppRuntime {
             preferences: savedPreferences,
             keyboardPreferences: UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults),
             menu: menu, sync: features.sync)
-        lifecycle = MacLifecycleObserver(sync: features.sync)
+        lifecycle = MacLifecycleObserver(sync: features.sync, automation: features.trackingAutomation)
         lifecycle.start()
         features.sync.start()
     }
