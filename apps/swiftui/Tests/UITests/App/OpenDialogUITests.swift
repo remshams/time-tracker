@@ -169,8 +169,8 @@ final class OpenDialogUITests: TrackerUITestCase {
         XCTAssertEqual(openDialogCount, 1, "\(entry.name) opened a second dialog.")
     }
 
-    /// An editor that opened behind the first dialog would show now. One that never shows would keep the flag set and
-    /// leave New task disabled.
+    /// An editor that opened behind the first dialog would show now. One that never shows would keep the gate claimed
+    /// and leave New task disabled.
     private func assertNoDialogRemains() {
         let newTask = app.buttons["New task"]
         waitUntil("All dialogs close and New task returns") { self.openDialogCount == 0 && newTask.isEnabled }
