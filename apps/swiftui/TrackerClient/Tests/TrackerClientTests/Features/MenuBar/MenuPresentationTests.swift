@@ -126,7 +126,7 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
-        fixture.sync.setMenuBarClockEnabled(true)
+        fixture.features.menuBar.setClockEnabled(true)
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
         var changes = 0

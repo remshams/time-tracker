@@ -20,8 +20,8 @@ public final class TrackerFeatures {
     public let tracking: TrackingStore
     /// Views read today's status and task totals here; the store loads them when the sync asks it to.
     public let dailyTotals: DailyTotalsStore
-    /// The menu bar reads the last tracked task and its copy values here and runs the status item's primary action;
-    /// the sync writes the task.
+    /// The menu bar reads the last tracked task and its copy values here, runs the status item's primary action and
+    /// turns the menu bar clock on or off; the sync writes the task.
     public let menuBar: MenuBarStore
     /// The stores the menu bar observes.
     public let menuSources: TrackerMenuSources
@@ -64,7 +64,7 @@ public final class TrackerFeatures {
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
-            dailyTotals: dailyTotals, automation: trackingAutomation)
+            dailyTotals: dailyTotals, automation: trackingAutomation, scheduler: scheduler)
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
@@ -92,6 +92,7 @@ public final class TrackerFeatures {
         dailyTotals.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
         dailyTotals.refreshTaskList = { [weak sync] in sync?.refresh() }
         dailyTotals.publishChanges = { [weak sync] in sync?.publish() }
+        menuBar.publishChanges = { [weak sync] in sync?.publish() }
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
