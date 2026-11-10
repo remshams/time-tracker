@@ -527,7 +527,7 @@ final class DailyTotalsAppTests: XCTestCase {
         let failed = try await fixture.client.next()
         failed.fail(BridgeFailure(message: "Yesterday totals unavailable"))
         try await fixture.settled()
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(1)
         let stoppedResources = TaskListResources(tasks: [firstTask], active: nil)
@@ -841,7 +841,7 @@ final class DailyTotalsAppTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [total(firstTask, 5)])
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         stop.succeed(TaskListResources(tasks: [firstTask], active: nil))
         let report = try await fixture.client.next()

@@ -7,7 +7,7 @@ final class FixtureCleanupTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        fixture.trackingActions.startTracking(taskID: firstTask.id)
+        fixture.features.tracking.startTracking(taskID: firstTask.id)
         let write = try await fixture.client.next()
         XCTAssertEqual(write.operation, .start(task: firstTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))
         let count = fixture.client.operations.count

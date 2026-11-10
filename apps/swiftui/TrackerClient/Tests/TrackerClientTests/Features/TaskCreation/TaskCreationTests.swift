@@ -350,7 +350,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
-        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        fixture.features.tracking.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(start.operation, .start(task: secondTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))
         XCTAssertTrue(fixture.taskCreation.isSubmitting)

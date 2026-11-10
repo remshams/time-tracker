@@ -407,6 +407,16 @@ final class MemorySettings: ConnectionSettingsRepository {
 }
 
 @MainActor
+extension TrackingStore {
+    /// Builds the store for tests of its state, which send no tracking request.
+    convenience init() {
+        self.init(
+            client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local),
+            catalog: TaskCatalogStore())
+    }
+}
+
+@MainActor
 final class Fixture {
     let client = FakeClient()
     let clock = FakeClock()
@@ -414,7 +424,6 @@ final class Fixture {
     let settings: MemorySettings
     let features: TrackerFeatures
     var sync: TrackerSync { features.sync }
-    var trackingActions: TrackingActions { features.trackingActions }
     var trackingAvailability: TrackingAvailability { features.trackingAvailability }
     var trackingAutomation: TrackingAutomationStore { features.trackingAutomation }
     var taskRename: TaskRenameStore { features.taskRename }

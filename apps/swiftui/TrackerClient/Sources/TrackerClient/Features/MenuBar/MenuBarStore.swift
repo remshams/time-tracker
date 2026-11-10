@@ -14,7 +14,8 @@ public extension ConnectionSettings {
     }
 }
 
-/// Holds the menu bar's own state for the whole app: the last tracked task of the current connection.
+/// Holds the menu bar's own state for the whole app: the last tracked task of the current connection. It also runs
+/// the status item's primary action.
 ///
 /// The menu reads `lastTrackedTaskID`; `TrackerSync` calls `observe` after each task list. The task is
 /// remembered per connection and saved to the repository, so switching connections back restores it. The menu's
@@ -29,10 +30,13 @@ public final class MenuBarStore: ChangeGuardedStore {
     let tracking: TrackingStore
     let dailyTotals: DailyTotalsStore
     let clock: any TrackerClock
+    private let automation: TrackingAutomationStore
+    private let availability: TrackingAvailability
 
     init(
         repository: (any LastTrackedTaskRepository)?, connection: ConnectionStore, catalog: TaskCatalogStore,
-        tracking: TrackingStore, dailyTotals: DailyTotalsStore, clock: any TrackerClock
+        tracking: TrackingStore, dailyTotals: DailyTotalsStore, automation: TrackingAutomationStore,
+        availability: TrackingAvailability, clock: any TrackerClock
     ) {
         self.repository = repository
         self.connection = connection
@@ -40,10 +44,34 @@ public final class MenuBarStore: ChangeGuardedStore {
         self.tracking = tracking
         self.dailyTotals = dailyTotals
         self.clock = clock
+        self.automation = automation
+        self.availability = availability
         let settings = connection.settings
         let saved = repository?.load(for: settings)
         lastTrackedTaskID = saved
         remembered[settings.trackingIdentityKey] = saved
+    }
+
+    /// What a click on the status item does now: stop the running worklog, start the last tracked task, or open the
+    /// menu. Disabled while the screen is locked or no tracking request can be sent.
+    var menuPrimaryAction: MenuPrimaryAction {
+        guard !automation.locked, availability.canSend else { return .disabled }
+        if let active = tracking.active { return .stop(worklogID: active.id) }
+        let lastTrackedTask = lastTrackedTaskID.flatMap { id in catalog.tasks.first { $0.id == id } }
+        guard let task = lastTrackedTask, !task.archived else { return .openMenu }
+        return .start(taskID: task.id)
+    }
+
+    /// Runs `menuPrimaryAction` and returns it, so the caller can open the menu for `.openMenu`.
+    @discardableResult
+    public func performMenuPrimaryAction() -> MenuPrimaryAction {
+        let action = menuPrimaryAction
+        switch action {
+        case .stop(let worklogID): tracking.stopTracking(worklogID: worklogID)
+        case .start(let taskID): tracking.startTracking(taskID: taskID)
+        case .openMenu, .disabled: break
+        }
+        return action
     }
 
     func observe(_ resources: TaskListResources, settings: ConnectionSettings) {

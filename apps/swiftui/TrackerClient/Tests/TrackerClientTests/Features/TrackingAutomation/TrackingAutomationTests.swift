@@ -110,7 +110,7 @@ final class TrackingAutomationTests: XCTestCase {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
-        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        fixture.features.tracking.startTracking(taskID: secondTask.id)
         try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
         try await fixture.client.next().succeed(running)
         try await fixture.settled()
@@ -175,7 +175,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)
         let pause = try await fixture.client.next()
         fixture.sync.setScreenLocked(false, at: fixture.clock.now)
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: formatTimestamp(fixture.clock.now)))
         pause.paused(idle)
@@ -386,7 +386,7 @@ final class TrackingAutomationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         try await acknowledgePause(fixture)
-        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        fixture.features.tracking.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
         let started = WorklogItem(
             id: "manual-worklog", taskId: secondTask.id,
@@ -531,7 +531,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.start(running)
         let tracking = fixture.features.tracking
 
-        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        fixture.features.tracking.startTracking(taskID: secondTask.id)
         let write = try await fixture.client.next()
         write.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let confirmation = try await fixture.client.next()
@@ -539,7 +539,7 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(
             tracking.error, "Could not confirm the change. Check the reloaded data before trying again. Response lost")
-        fixture.trackingActions.dismissTrackingError()
+        fixture.features.tracking.dismissError()
         XCTAssertNil(tracking.error)
 
         fixture.sync.setScreenLocked(true, at: fixture.clock.now)

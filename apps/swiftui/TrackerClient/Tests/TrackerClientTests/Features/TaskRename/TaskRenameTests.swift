@@ -301,7 +301,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         stop.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))

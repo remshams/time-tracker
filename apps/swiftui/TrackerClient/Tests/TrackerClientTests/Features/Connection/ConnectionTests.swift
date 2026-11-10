@@ -208,7 +208,7 @@ final class ConnectionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertTrue(fixture.features.worklogHistory.unavailable)
 
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         stop.fail(BridgeFailure(message: "Write failed", uncertain: true))
         let confirmation = try await fixture.client.next()

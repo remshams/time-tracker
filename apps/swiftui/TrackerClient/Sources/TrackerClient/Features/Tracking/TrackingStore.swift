@@ -1,9 +1,11 @@
 import Foundation
 import Observation
 
-/// Holds the running worklog, the tracking error, the in-flight flag and the timer text for the whole app.
+/// Holds the running worklog, the tracking error, the in-flight flag and the timer text for the whole app, and starts
+/// and stops tracking from the window and the menu bar.
 ///
-/// Views read the public properties; `TrackerSync` and `TrackingActions` write them. Each observed property is
+/// Views read the public properties, start and stop tracking and dismiss the error; `TrackerSync` writes the
+/// properties too. `TrackingAvailability` decides which requests are possible right now. Each observed property is
 /// assigned only when its value changes, so a display tick redraws the timer text only when the shown second
 /// changes. The timer text and the error change only when `TrackerSync` publishes.
 @Observable
@@ -19,6 +21,76 @@ public final class TrackingStore: ChangeGuardedStore {
     // The elapsed time is measured from these with the monotonic uptime, so views don't observe them.
     @ObservationIgnored private var timerBase: TimeInterval = 0
     @ObservationIgnored private var timerAnchor: TimeInterval = 0
+    /// Cancels a pending auto-resume before a tracking request. `TrackerFeatures` sets it once, after it creates
+    /// `TrackerSync`, which needs this store.
+    @ObservationIgnored var cancelAutoResume: @MainActor () -> Void = {}
+    /// Reloads the task list after a tracking request and publishes on every path. `TrackerFeatures` sets it to
+    /// `TrackerSync`'s reload.
+    @ObservationIgnored var reloadTaskList: @MainActor () async -> Void = {}
+    /// Shows the timer text, the error and the other derived values. `TrackerFeatures` sets it to `TrackerSync`'s
+    /// publish.
+    @ObservationIgnored var publishChanges: @MainActor () -> Void = {}
+    private let client: any TrackerClient
+    private let clock: any TrackerClock
+    private let connection: ConnectionStore
+    private let catalog: TaskCatalogStore
+
+    init(client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore, catalog: TaskCatalogStore) {
+        self.client = client
+        self.clock = clock
+        self.connection = connection
+        self.catalog = catalog
+    }
+
+    private var availability: TrackingAvailability {
+        TrackingAvailability(connection: connection, catalog: catalog, tracking: self)
+    }
+
+    /// Starts tracking `taskID`, which stops the running worklog first. Does nothing when
+    /// `TrackingAvailability.canStart(taskID:)` is false.
+    public func startTracking(taskID: String) {
+        guard availability.canStart(taskID: taskID) else { return }
+        let expectedActiveID = active?.id
+        let occurredAt = formatTimestamp(clock.now)
+        sendTracking { client in
+            _ = try await client.startTracking(
+                taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
+        }
+    }
+
+    /// Stops the running worklog `worklogID`. Does nothing when another worklog runs or
+    /// `TrackingAvailability.canStop` is false.
+    public func stopTracking(worklogID: String) {
+        guard availability.canStop, active?.id == worklogID else { return }
+        let occurredAt = formatTimestamp(clock.now)
+        sendTracking { client in
+            _ = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
+        }
+    }
+
+    /// Hides the tracking error.
+    public func dismissError() {
+        clearError()
+        publishChanges()
+    }
+
+    private func sendTracking(_ request: @escaping @MainActor (any TrackerClient) async throws -> Void) {
+        cancelAutoResume()
+        clearError()
+        beginSubmitting()
+        publishChanges()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await request(client)
+            } catch {
+                recordFailure(error)
+            }
+            // The reload publishes on every path, which also shows a failure recorded above.
+            await reloadTaskList()
+            endSubmitting()
+        }
+    }
 
     func apply(_ worklog: WorklogItem?, clock: any TrackerClock) {
         let previous = active
@@ -54,7 +126,8 @@ public final class TrackingStore: ChangeGuardedStore {
 
     func endSubmitting() { set(\.isSubmitting, false) }
 
-    func recordError(_ message: String) { recordedError = message }
+    /// Shows the failure of a tracking request at the next publish.
+    func recordFailure(_ error: Error) { recordedError = writeFailure(error).localizedDescription }
 
     func clearError() { recordedError = nil }
 }
