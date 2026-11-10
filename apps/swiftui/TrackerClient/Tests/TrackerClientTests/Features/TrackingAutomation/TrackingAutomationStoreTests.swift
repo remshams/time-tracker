@@ -73,6 +73,28 @@ final class TrackingAutomationStoreTests: XCTestCase {
         XCTAssertTrue(status.consume())
         XCTAssertFalse(enabled.consume())
     }
+
+    @MainActor
+    func testAcceptedTaskListWithARunningWorklogDropsThePausedTask() async {
+        let idle = pausedStore()
+        idle.acceptTaskList(active: nil)
+        XCTAssertEqual(idle.unlock(at: Date(timeIntervalSince1970: 90))?.taskID, firstTask.id)
+
+        let tracking = pausedStore()
+        tracking.acceptTaskList(active: activeWorklog)
+        XCTAssertNil(tracking.unlock(at: Date(timeIntervalSince1970: 90)))
+    }
+
+    /// Returns a store whose screen-lock pause stopped `firstTask` while the screen is locked.
+    @MainActor
+    private func pausedStore() -> TrackingAutomationStore {
+        let store = TrackingAutomationStore(
+            repository: MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: true)))
+        XCTAssertTrue(store.lock())
+        XCTAssertTrue(store.beginPause())
+        XCTAssertNil(store.paused(taskID: firstTask.id, didStop: true))
+        return store
+    }
 }
 
 @MainActor
