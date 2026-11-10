@@ -403,7 +403,7 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
-    func testCorrectionRunsWhileAMoveRuns() async throws {
+    func testCorrectionWaitsUntilTheMoveDialogCloses() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
@@ -421,20 +421,10 @@ final class WorklogMoveTests: XCTestCase {
         fixture.worklogMove.cancel()
         XCTAssertTrue(fixture.worklogMove.isPresented)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
-
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
         fixture.worklogCorrection.open(worklogID: precise.id)
-        fixture.worklogCorrection.setStart(try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z")))
-        fixture.worklogCorrection.submit()
-        let correction = try await fixture.client.next()
-        XCTAssertEqual(
-            correction.operation,
-            .correct(
-                expected: precise, start: "2024-12-30T08:00:00.000Z",
-                end: precise.end, at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
-        XCTAssertTrue(fixture.worklogMove.isSubmitting)
+        XCTAssertFalse(fixture.worklogCorrection.isPresented)
 
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         let afterMove = TaskListResources(tasks: [firstTask, secondTask], active: moved)
@@ -442,15 +432,10 @@ final class WorklogMoveTests: XCTestCase {
         try await finishHistory(fixture, rows: [precise])
         XCTAssertFalse(fixture.worklogMove.isPresented)
         XCTAssertEqual(fixture.features.tracking.active, moved)
-        XCTAssertTrue(fixture.worklogCorrection.isSubmitting)
-
-        let corrected = WorklogItem(
-            id: precise.id, taskId: precise.taskId, start: "2024-12-30T08:00:00.000000Z", end: precise.end)
-        correction.corrected(worklog: corrected, resources: afterMove)
-        try await finishHistory(fixture, rows: [corrected])
-        XCTAssertFalse(fixture.worklogCorrection.isPresented)
-        XCTAssertEqual(fixture.features.worklogHistory.worklogs, [corrected])
         XCTAssertEqual(moves(fixture), 1)
+        XCTAssertTrue(fixture.worklogCorrection.canOpen)
+        fixture.worklogCorrection.open(worklogID: precise.id)
+        XCTAssertTrue(fixture.worklogCorrection.isPresented)
     }
 
     @MainActor
@@ -486,8 +471,13 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertTrue(move.consume())
         XCTAssertTrue(fixture.worklogMove.canOpen)
         fixture.taskCreation.open()
-        fixture.taskCreation.cancel()
+        XCTAssertTrue(move.consume())
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        fixture.taskCreation.setName("Draft")
         XCTAssertFalse(move.consume())
+        fixture.taskCreation.cancel()
+        XCTAssertTrue(move.consume())
+        XCTAssertTrue(fixture.worklogMove.canOpen)
     }
 
     @MainActor
@@ -503,8 +493,6 @@ final class WorklogMoveTests: XCTestCase {
         fixture.worklogMove.cancel()
         XCTAssertTrue(move.consume())
         XCTAssertFalse(content.consume())
-        fixture.taskCreation.open()
-        XCTAssertTrue(fixture.worklogMove.canOpen)
     }
 
     @MainActor

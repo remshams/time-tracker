@@ -57,7 +57,7 @@ final class TaskRenameTests: XCTestCase {
         _ = catalog.acceptTaskList([firstTask], previousActive: nil, active: nil)
         let rename = TaskRenameStore(
             client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local), catalog: catalog,
-            reloadAfterWrite: { _ in })
+            gate: PresentationGate(), reloadAfterWrite: { _ in })
         XCTAssertEqual(catalog.selectedTask, firstTask)
         XCTAssertFalse(rename.canOpen)
         rename.open(taskID: firstTask.id)
@@ -183,7 +183,7 @@ final class TaskRenameTests: XCTestCase {
         fixture.taskRename.setName("Draft name")
         fixture.sync.refresh()
         let poll = try await fixture.client.next()
-        XCTAssertTrue(fixture.taskRename.canOpen)
+        XCTAssertTrue(fixture.taskRename.canSubmit)
         fixture.taskRename.submit()
         fixture.clock.now.addTimeInterval(60)
         fixture.taskRename.submit()
@@ -285,7 +285,7 @@ final class TaskRenameTests: XCTestCase {
     }
 
     @MainActor
-    func testTrackingAndOtherEditorsStayAvailableWhileRenameRuns() async throws {
+    func testTrackingStaysAvailableAndOtherDialogsWaitWhileRenameRuns() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
@@ -295,10 +295,10 @@ final class TaskRenameTests: XCTestCase {
         fixture.taskRename.submit()
         let rename = try await fixture.client.next()
         XCTAssertTrue(fixture.taskRename.isSubmitting)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
@@ -339,17 +339,19 @@ final class TaskRenameTests: XCTestCase {
     }
 
     @MainActor
-    func testEditorsCanBeOpenTogetherAndRenameDraftSurvivesConnectionSwitch() async throws {
+    func testRenameWaitsForCreationAndItsDraftSurvivesConnectionSwitch() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.taskCreation.open()
-        XCTAssertTrue(fixture.taskRename.canOpen)
+        XCTAssertFalse(fixture.taskRename.canOpen)
+        fixture.taskRename.open(taskID: firstTask.id)
+        XCTAssertFalse(fixture.taskRename.isPresented)
+        fixture.taskCreation.cancel()
         fixture.taskRename.open(taskID: firstTask.id)
         fixture.taskRename.setName("Old server draft")
         XCTAssertTrue(fixture.taskRename.isPresented)
-        XCTAssertTrue(fixture.taskCreation.isPresented)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.taskCreation.canOpen)
         let connect = Task { await fixture.features.connection.connect(serverSettings) }
         let connection = try await fixture.client.next()
         connection.succeed(emptyTaskListResources)
@@ -358,6 +360,8 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.taskRename.isPresented)
         XCTAssertEqual(fixture.taskRename.taskID, firstTask.id)
         XCTAssertEqual(fixture.taskRename.name, "Old server draft")
+        // The new server has no tasks, so rename stays unavailable after its sheet closes.
+        fixture.taskRename.cancel()
         XCTAssertFalse(fixture.taskRename.canOpen)
     }
 
@@ -463,15 +467,19 @@ final class TaskRenameTests: XCTestCase {
     }
 
     @MainActor
-    func testCreationSheetDoesNotChangeRenameAvailabilityOrDraft() async throws {
+    func testCreationSheetBlocksRenameWithoutChangingItsDraft() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let rename = ObservationProbe { ViewReads.taskRename(fixture.features) }
         let content = ObservationProbe { ViewReads.content(fixture.features) }
         fixture.taskCreation.open()
-        fixture.taskCreation.cancel()
+        XCTAssertTrue(rename.consume())
+        XCTAssertFalse(fixture.taskRename.canOpen)
+        fixture.taskCreation.setName("Draft")
         XCTAssertFalse(rename.consume())
+        fixture.taskCreation.cancel()
+        XCTAssertTrue(rename.consume())
         XCTAssertTrue(fixture.taskRename.canOpen)
         XCTAssertFalse(fixture.taskRename.isPresented)
         XCTAssertFalse(content.consume())

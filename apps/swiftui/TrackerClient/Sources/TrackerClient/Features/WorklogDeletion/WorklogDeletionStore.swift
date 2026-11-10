@@ -7,7 +7,9 @@ import Observation
 /// because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class WorklogDeletionStore {
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { gate.update(self, isShown: isPresented) }
+    }
     public private(set) var taskName = ""
     public private(set) var original: WorklogItem?
     public private(set) var isSubmitting = false
@@ -17,26 +19,29 @@ public final class WorklogDeletionStore {
     private let connection: ConnectionStore
     private let catalog: TaskCatalogStore
     private let history: WorklogHistoryStore
+    private let gate: PresentationGate
     private let reloadAfterWrite: @MainActor () async -> Void
 
     init(
         client: any TrackerClient, connection: ConnectionStore, catalog: TaskCatalogStore,
-        history: WorklogHistoryStore, reloadAfterWrite: @escaping @MainActor () async -> Void
+        history: WorklogHistoryStore, gate: PresentationGate,
+        reloadAfterWrite: @escaping @MainActor () async -> Void
     ) {
         self.client = client
         self.connection = connection
         self.catalog = catalog
         self.history = history
+        self.gate = gate
         self.reloadAfterWrite = reloadAfterWrite
     }
 
-    public var canOpen: Bool { connection.confirmed }
+    public var canOpen: Bool { connection.confirmed && !gate.isClaimed }
 
     public var canSubmit: Bool { isPresented && !isSubmitting }
 
     public func open(worklogID: String) {
         // Running worklogs cannot be deleted. Stop the timer first.
-        guard canOpen, !isPresented, let worklog = history.worklogs.first(where: { $0.id == worklogID }),
+        guard canOpen, let worklog = history.worklogs.first(where: { $0.id == worklogID }),
             worklog.end != nil
         else { return }
         original = worklog

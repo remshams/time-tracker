@@ -351,13 +351,14 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, requests)
         XCTAssertEqual(fixture.bulkTaskArchiving.daysText, "14")
         XCTAssertTrue(fixture.bulkTaskArchiving.isPresented)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.taskRename.canOpen)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
-        XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
-        XCTAssertTrue(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
+        // The open dialog blocks the other dialogs, but tracking stays usable.
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.taskRename.canOpen)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
+        XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: secondTask.id))
+        XCTAssertFalse(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
         fixture.features.tracking.startTracking(taskID: firstTask.id)
         let start = try await fixture.client.next()
@@ -449,23 +450,22 @@ final class BulkTaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenDialogDoesNotBlockOtherEditorsTrackingOrConnections() async throws {
+    func testOpenDialogBlocksOtherDialogsButNotTrackingOrConnections() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await openPreview(fixture)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.taskRename.canOpen)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
-        XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
-        XCTAssertTrue(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.taskRename.canOpen)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: secondTask.id))
+        XCTAssertFalse(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         XCTAssertTrue(fixture.trackingAvailability.canStop)
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
-        XCTAssertTrue(fixture.taskArchiving.isPresented)
+        XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertTrue(fixture.bulkTaskArchiving.isPresented)
-        fixture.taskArchiving.cancel()
 
         let testing = Task { try await testConnectionSettings(.local, client: fixture.client) }
         let test = try await fixture.client.next()
@@ -602,7 +602,7 @@ final class BulkTaskArchivingTests: XCTestCase {
     func testUnconfirmedConnectionKeepsTheDialogClosed() async throws {
         let client = FakeClient()
         let archiving = BulkTaskArchivingStore(
-            client: client, clock: FakeClock(), connection: ConnectionStore(settings: .local),
+            client: client, clock: FakeClock(), connection: ConnectionStore(settings: .local), gate: PresentationGate(),
             recordPreviewFailure: { _ in }, reloadAfterWrite: { _ in })
         XCTAssertFalse(archiving.canOpen)
         archiving.open()
@@ -635,8 +635,13 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertTrue(sheet.consume())
         XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
         fixture.taskCreation.open()
-        fixture.taskCreation.cancel()
+        XCTAssertTrue(sheet.consume())
+        XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
+        fixture.taskCreation.setName("Draft")
         XCTAssertFalse(sheet.consume())
+        fixture.taskCreation.cancel()
+        XCTAssertTrue(sheet.consume())
+        XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
     }
 
     @MainActor
@@ -664,19 +669,20 @@ final class BulkTaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testBulkDialogOpensWhileOtherEditorsAreOpen() async throws {
+    func testBulkDialogStaysClosedWhileAnotherDialogIsOpen() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.worklogCorrection.open(worklogID: activeWorklog.id)
-        fixture.taskCreation.open()
-        fixture.taskArchiving.openArchive(taskID: secondTask.id)
-        XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
+        XCTAssertTrue(fixture.worklogCorrection.isPresented)
+        XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
+        let requests = fixture.client.operations.count
+        fixture.bulkTaskArchiving.open()
+        XCTAssertFalse(fixture.bulkTaskArchiving.isPresented)
+        XCTAssertEqual(fixture.client.operations.count, requests)
+        fixture.worklogCorrection.cancel()
         try await openPreview(fixture)
         XCTAssertTrue(fixture.bulkTaskArchiving.isPresented)
-        XCTAssertTrue(fixture.worklogCorrection.isPresented)
-        XCTAssertTrue(fixture.taskCreation.isPresented)
-        XCTAssertTrue(fixture.taskArchiving.isPresented)
     }
 
     @MainActor

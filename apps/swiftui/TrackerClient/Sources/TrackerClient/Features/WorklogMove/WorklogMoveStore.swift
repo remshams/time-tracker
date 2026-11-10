@@ -7,7 +7,9 @@ import Observation
 /// because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class WorklogMoveStore {
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { gate.update(self, isShown: isPresented) }
+    }
     public private(set) var original: WorklogItem?
     public private(set) var sourceTaskName = ""
     public private(set) var query = ""
@@ -23,11 +25,12 @@ public final class WorklogMoveStore {
     private let catalog: TaskCatalogStore
     private let history: WorklogHistoryStore
     private let tracking: TrackingStore
+    private let gate: PresentationGate
     private let reloadAfterWrite: @MainActor () async -> Void
 
     init(
         client: any TrackerClient, connection: ConnectionStore, catalog: TaskCatalogStore,
-        history: WorklogHistoryStore, tracking: TrackingStore,
+        history: WorklogHistoryStore, tracking: TrackingStore, gate: PresentationGate,
         reloadAfterWrite: @escaping @MainActor () async -> Void
     ) {
         self.client = client
@@ -35,15 +38,16 @@ public final class WorklogMoveStore {
         self.catalog = catalog
         self.history = history
         self.tracking = tracking
+        self.gate = gate
         self.reloadAfterWrite = reloadAfterWrite
     }
 
-    public var canOpen: Bool { connection.confirmed }
+    public var canOpen: Bool { connection.confirmed && !gate.isClaimed }
     public var canEdit: Bool { isPresented && !isSubmitting }
     public var canSubmit: Bool { canEdit && !isSearching && selectedTaskID != nil }
 
     public func open(worklogID: String) {
-        guard canOpen, !isPresented, let worklog = worklog(withID: worklogID) else { return }
+        guard canOpen, let worklog = worklog(withID: worklogID) else { return }
         original = worklog
         sourceTaskName = catalog.tasks.first { $0.id == worklog.taskId }?.name ?? "Unknown task"
         query = ""

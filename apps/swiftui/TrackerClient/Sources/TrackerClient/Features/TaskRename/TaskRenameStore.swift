@@ -7,7 +7,9 @@ import Observation
 /// content in place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class TaskRenameStore {
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { gate.update(self, isShown: isPresented) }
+    }
     public private(set) var originalName = ""
     public private(set) var name = ""
     public private(set) var isSubmitting = false
@@ -18,20 +20,22 @@ public final class TaskRenameStore {
     private let clock: any TrackerClock
     private let connection: ConnectionStore
     private let catalog: TaskCatalogStore
+    private let gate: PresentationGate
     private let reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
 
     init(
         client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore, catalog: TaskCatalogStore,
-        reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
+        gate: PresentationGate, reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
     ) {
         self.client = client
         self.clock = clock
         self.connection = connection
         self.catalog = catalog
+        self.gate = gate
         self.reloadAfterWrite = reloadAfterWrite
     }
 
-    public var canOpen: Bool { connection.confirmed && catalog.selectedTask != nil }
+    public var canOpen: Bool { connection.confirmed && !gate.isClaimed && catalog.selectedTask != nil }
 
     public var canSubmit: Bool {
         let desired = TaskNameEditingPolicy.normalized(name)
@@ -39,7 +43,7 @@ public final class TaskRenameStore {
     }
 
     public func open(taskID: String) {
-        guard canOpen, !isPresented, let task = catalog.tasks.first(where: { $0.id == taskID }) else { return }
+        guard canOpen, let task = catalog.tasks.first(where: { $0.id == taskID }) else { return }
         self.taskID = task.id
         originalName = task.name
         name = task.name

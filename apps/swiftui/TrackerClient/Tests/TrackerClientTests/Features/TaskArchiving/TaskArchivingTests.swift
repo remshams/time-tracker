@@ -124,6 +124,41 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testCreationRunsWhileAnUnarchiveIsInFlight() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: nil))
+        fixture.taskArchiving.unarchive(taskID: archivedTask.id)
+        let unarchive = try await fixture.client.next()
+        XCTAssertEqual(unarchive.operation, .unarchive(task: archivedTask.id, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertFalse(fixture.taskArchiving.isPresented)
+        // An unarchive shows no dialog, so another dialog can open and send while it runs.
+        XCTAssertTrue(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        fixture.taskCreation.setName(secondTask.name)
+        fixture.taskCreation.submit()
+        let creation = try await fixture.client.next()
+        XCTAssertEqual(creation.operation, .create(name: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
+        let restored = archived(archivedTask, false)
+        let afterCreation = TaskListResources(tasks: [firstTask, restored, secondTask], active: nil)
+        try await fixture.update("the restored task") {
+            unarchive.succeed(TaskListResources(tasks: [firstTask, restored], active: nil))
+        } until: {
+            !fixture.taskArchiving.isSubmitting
+        }
+        XCTAssertTrue(fixture.taskCreation.isSubmitting)
+        try await fixture.update("the created task") {
+            creation.created(taskID: secondTask.id, resources: afterCreation)
+        } until: {
+            !fixture.taskCreation.isSubmitting
+        }
+        XCTAssertFalse(fixture.taskCreation.isPresented)
+        XCTAssertNil(fixture.taskArchiving.error)
+        XCTAssertNil(fixture.taskCreation.error)
+    }
+
+    @MainActor
     func testUnarchiveRunsDirectlyAndRemembersRestoredTaskWithoutSwitchingTabs() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -205,15 +240,16 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
         fixture.taskArchiving.openArchive(taskID: firstTask.id)
         XCTAssertEqual(fixture.taskArchiving.taskID, secondTask.id)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.taskRename.canOpen)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
-        XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
+        // The open dialog blocks the other dialogs, but tracking stays usable.
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.taskRename.canOpen)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
+        XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
         fixture.taskCreation.open()
-        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
         fixture.features.tracking.startTracking(taskID: firstTask.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(start.operation, .start(task: firstTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))
@@ -231,7 +267,7 @@ final class TaskArchivingTests: XCTestCase {
             !fixture.taskArchiving.isSubmitting
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
-        XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertTrue(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
     }
@@ -439,7 +475,7 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testOtherEditorsStayAvailableAndClosingKeepsTheContent() async throws {
+    func testOtherDialogsWaitUntilClosingWhichKeepsTheContent() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
@@ -448,13 +484,17 @@ final class TaskArchivingTests: XCTestCase {
         let content = ObservationProbe { ViewReads.content(fixture.features) }
         fixture.taskArchiving.openArchive(taskID: secondTask.id)
         XCTAssertTrue(archive.consume())
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.bulkTaskArchiving.canOpen)
+        XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: firstTask.id))
+        fixture.taskArchiving.cancel()
+        XCTAssertTrue(archive.consume())
         XCTAssertTrue(fixture.worklogCorrection.canOpen)
         XCTAssertTrue(fixture.worklogMove.canOpen)
         XCTAssertTrue(fixture.taskCreation.canOpen)
         XCTAssertTrue(fixture.bulkTaskArchiving.canOpen)
-        XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: firstTask.id))
-        fixture.taskArchiving.cancel()
-        XCTAssertTrue(archive.consume())
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertEqual(fixture.taskArchiving.taskName, secondTask.name)
         XCTAssertFalse(content.consume())
@@ -483,9 +523,15 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: firstTask.id))
         XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
         XCTAssertTrue(fixture.taskArchiving.canUnarchive(taskID: archivedTask.id))
+        // Another dialog blocks archiving, but its draft edits don't notify.
         fixture.taskCreation.open()
         XCTAssertTrue(fixture.taskCreation.isPresented)
+        XCTAssertTrue(availability.consume())
+        XCTAssertFalse(fixture.taskArchiving.canArchive(taskID: secondTask.id))
+        fixture.taskCreation.setName("Draft")
         XCTAssertFalse(availability.consume())
+        fixture.taskCreation.cancel()
+        XCTAssertTrue(availability.consume())
         XCTAssertTrue(fixture.taskArchiving.canArchive(taskID: secondTask.id))
     }
 
@@ -529,7 +575,7 @@ final class TaskArchivingTests: XCTestCase {
         let client = FakeClient()
         let archiving = TaskArchivingStore(
             client: client, clock: FakeClock(), connection: ConnectionStore(settings: .local), catalog: catalog,
-            tracking: TrackingStore(), reloadAfterWrite: { _ in })
+            tracking: TrackingStore(), gate: PresentationGate(), reloadAfterWrite: { _ in })
         XCTAssertFalse(archiving.canArchive(taskID: firstTask.id))
         XCTAssertFalse(archiving.canUnarchive(taskID: archivedTask.id))
         archiving.openArchive(taskID: firstTask.id)
