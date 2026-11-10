@@ -252,6 +252,11 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
   `reloadAfterWorklogWrite()` as their reload closures. `TaskCreationStore` also
   gets `showTask(_:)` and `BulkTaskArchivingStore` gets `recordReadFailure(_:)`.
+  The dialog stores and `TrackingStore` also share one `Shared/PresentationGate`,
+  which a dialog store claims while its sheet shows and `TrackingStore` claims
+  while its error alert shows. A dialog store's `canOpen` is false while the
+  gate is claimed, so one dialog shows at a time
+  ([ADR 0036](adr/0036-let-dialog-stores-claim-a-presentation-gate.md)).
   Settings checks a connection with the stateless `testConnectionSettings`
   function, which leaves the current connection unchanged.
   Views change the tab and selection on `TaskCatalogStore`, and retry the
