@@ -1,14 +1,12 @@
 import Foundation
 
-/// Creates the stores, `TrackerSync`, `TrackingActions` and the dialog stores, and passes each one what it uses.
+/// Creates the stores, `TrackerSync` and the dialog stores, and passes each one what it uses.
 /// It holds them and has no methods: the app runtime and the test fixture read them from here.
 public final class TrackerFeatures {
     /// Loads, refreshes and polls the stores, runs the timers, the screen-lock auto-pause and the connection
     /// change, reloads after dialog writes, and publishes the timer text, today's totals, the auto-pause status and the
     /// recorded errors.
     public let sync: TrackerSync
-    /// Starts and stops tracking.
-    public let trackingActions: TrackingActions
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
     /// Views read the task list, tab and selection here and change the tab and selection; the sync writes them too.
@@ -18,12 +16,13 @@ public final class TrackerFeatures {
     public let worklogHistory: WorklogHistoryStore
     /// Views read the connection settings and status here, connect and retry; the sync writes the settings and status.
     public let connection: ConnectionStore
-    /// Views read the running worklog, the tracking error and the timer text here; the sync and `trackingActions`
-    /// write them.
-    public let tracking = TrackingStore()
+    /// Views read the running worklog, the tracking error and the timer text here, start and stop tracking and
+    /// dismiss the error; the sync writes them too.
+    public let tracking: TrackingStore
     /// Views read today's status and task totals here; the sync writes them.
     public let dailyTotals: DailyTotalsStore
-    /// The menu bar reads the last tracked task and its copy values here; the sync writes the task.
+    /// The menu bar reads the last tracked task and its copy values here and runs the status item's primary action;
+    /// the sync writes the task.
     public let menuBar: MenuBarStore
     /// The stores the menu bar observes.
     public let menuSources: TrackerMenuSources
@@ -56,11 +55,12 @@ public final class TrackerFeatures {
         trackingAutomation = TrackingAutomationStore(repository: trackingPreferences)
         connection = ConnectionStore(settings: settings.load() ?? .local)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
+        tracking = TrackingStore(client: client, clock: clock, connection: connection, catalog: taskCatalog)
+        trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
-            dailyTotals: dailyTotals, clock: clock)
+            dailyTotals: dailyTotals, automation: trackingAutomation, availability: trackingAvailability, clock: clock)
         dailyTotals.updateDay(at: clock.now)
-        trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
@@ -77,9 +77,11 @@ public final class TrackerFeatures {
         connection.switchConnection = { [weak sync] settings in try await sync?.switchConnection(to: settings) }
         connection.refreshTaskList = { [weak sync] in sync?.refresh() }
         trackingAutomation.pauseOnScreenLockChanged = { [weak sync] in sync?.pauseOnScreenLockChanged() }
-        trackingActions = TrackingActions(
-            client: client, clock: clock, sync: sync, catalog: taskCatalog, availability: trackingAvailability,
-            tracking: tracking, menuBar: menuBar, automation: trackingAutomation)
+        // A manual tracking request wins over a pending automatic resume. The sync holds the tracking store, so
+        // these captures are weak too.
+        tracking.cancelAutoResume = { [weak trackingAutomation] in trackingAutomation?.cancel() }
+        tracking.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
+        tracking.publishChanges = { [weak sync] in sync?.publish() }
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))

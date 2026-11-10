@@ -207,7 +207,7 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertTrue(fixture.worklogMove.canOpen)
         try await fixture.update("the poll result") { poll.succeed(running) }
 
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         let stopped = TaskListResources(tasks: [firstTask, secondTask], active: nil)

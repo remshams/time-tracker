@@ -86,7 +86,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        fixture.trackingActions.startTracking(taskID: firstTask.id)
+        fixture.features.tracking.startTracking(taskID: firstTask.id)
         try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.features.connection.settings))
@@ -103,7 +103,7 @@ final class TrackerSyncPublishTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(running)
         fixture.advanceClock(by: 4)
-        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        fixture.features.tracking.startTracking(taskID: secondTask.id)
         XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
         try await fixture.client.next().succeed(running)
         try await fixture.settled()

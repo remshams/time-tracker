@@ -11,9 +11,9 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         try await fixture.start(resources)
         fixture.sync.refresh()
         let poll = try await fixture.client.next()
-        fixture.trackingActions.startTracking(taskID: secondTask.id)
+        fixture.features.tracking.startTracking(taskID: secondTask.id)
         fixture.clock.now.addTimeInterval(120)
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(
             start.operation,
@@ -46,9 +46,9 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         try await fixture.start(resources)
         fixture.features.worklogHistory.reload()
         let history = try await fixture.client.next()
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         fixture.clock.now.addTimeInterval(90)
-        fixture.trackingActions.stopTracking(worklogID: activeWorklog.id)
+        fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         XCTAssertFalse(fixture.trackingAvailability.canStop)

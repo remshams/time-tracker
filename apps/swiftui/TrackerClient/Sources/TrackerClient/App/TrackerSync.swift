@@ -4,8 +4,8 @@ import Foundation
 /// rollover and menu bar timers, window and menu visibility, sleep and wake, the screen-lock auto-pause, the
 /// connection change, and the reloads after dialog writes.
 ///
-/// `TrackerFeatures` creates the stores and passes them in. `TrackingActions` and the stores' closures call the
-/// package-internal methods below, for example to switch the connection, reload the task list or the history, record a
+/// `TrackerFeatures` creates the stores and passes them in. The stores' closures call the package-internal methods
+/// below, for example to switch the connection, reload the task list or the history, record a
 /// failure and publish.
 ///
 /// Views don't read it. The app delegate starts it from `TrackerFeatures`, and the menu bar and lifecycle classes get
@@ -164,14 +164,6 @@ public final class TrackerSync {
         publish()
     }
 
-    /// Drops a pending automatic resume, because a manual tracking request wins over it.
-    func cancelAutoResume() { automation.cancel() }
-
-    /// Shows the failure of a tracking request at the next publish.
-    func recordTrackingFailure(_ error: Error) {
-        tracking.recordError(writeFailure(error).localizedDescription)
-    }
-
     /// Reloads the task list and, with a report client, today's totals. Publishes on every path, which also shows a
     /// failure recorded before this call.
     func reloadTaskList() async {
@@ -306,7 +298,7 @@ public final class TrackerSync {
                 }
             } catch {
                 automation.pauseFailed()
-                recordTrackingFailure(error)
+                tracking.recordFailure(error)
             }
             await reloadTaskList()
         }
@@ -317,7 +309,7 @@ public final class TrackerSync {
         do {
             _ = try await client.resumeTracking(taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
         } catch {
-            recordTrackingFailure(error)
+            tracking.recordFailure(error)
         }
     }
 

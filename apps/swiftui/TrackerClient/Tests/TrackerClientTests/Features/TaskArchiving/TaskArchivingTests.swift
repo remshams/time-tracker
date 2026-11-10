@@ -214,7 +214,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: firstTask.id))
         fixture.taskCreation.open()
         XCTAssertTrue(fixture.taskCreation.isPresented)
-        fixture.trackingActions.startTracking(taskID: firstTask.id)
+        fixture.features.tracking.startTracking(taskID: firstTask.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(start.operation, .start(task: firstTask.id, expected: nil, at: "2025-01-01T00:00:00.000Z"))
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
