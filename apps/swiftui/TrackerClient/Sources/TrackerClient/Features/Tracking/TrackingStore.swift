@@ -15,7 +15,7 @@ public final class TrackingStore: ChangeGuardedStore {
     public private(set) var isSubmitting = false
     /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
     public private(set) var timerText = "Unavailable"
-    // A failed tracking request or auto-pause records its error here, and `publish` shows it at the next
+    // A failed tracking request, auto-pause or auto-resume records its error here, and `publish` shows it at the next
     // publish, normally the one after the reload.
     @ObservationIgnored private(set) var recordedError: String?
     // The elapsed time is measured from these with the monotonic uptime, so views don't observe them.

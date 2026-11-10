@@ -5,8 +5,7 @@ import Foundation
 /// connection change, and the reloads after dialog writes.
 ///
 /// `TrackerFeatures` creates the stores and passes them in. The stores' closures call the package-internal methods
-/// below, for example to switch the connection, reload the task list or the history, record a
-/// failure and publish.
+/// below, for example to switch the connection, reload the task list or the history, record a failure and publish.
 ///
 /// Views don't read it. The app delegate starts it from `TrackerFeatures`, and the menu bar and lifecycle classes get
 /// it through `init`; all of them only call its methods.
