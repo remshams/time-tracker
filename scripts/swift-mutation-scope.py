@@ -191,41 +191,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    (
-        "#372 drops the fixture's TrackingActions and builds a TrackingStore for state-only tests",
-        (
-            (
-                "    var sync: TrackerSync { features.sync }\n"
-                "    var trackingActions: TrackingActions { features.trackingActions }\n",
-                "    var sync: TrackerSync { features.sync }\n",
-            ),
-            (
-                "@MainActor\nfinal class Fixture {\n",
-                "@MainActor\n"
-                "extension TrackingStore {\n"
-                "    /// Builds the store for tests of its state, which send no tracking request.\n"
-                "    convenience init() {\n"
-                "        self.init(\n"
-                "            client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local),\n"
-                "            catalog: TaskCatalogStore())\n"
-                "    }\n"
-                "}\n"
-                "\n"
-                "@MainActor\nfinal class Fixture {\n",
-            ),
-        ),
-        None,
-        None,
-        ("Features/Tracking/TrackingTests.swift", "Features/MenuBar/StatusItemTests.swift"),
-        (
-            "Features/Tracking/TrackingTests.swift", "Features/Tracking/TrackingStoreTests.swift",
-            "Features/Tracking/TrackingAvailabilityTests.swift", "Features/MenuBar/StatusItemTests.swift",
-            "Features/TaskArchiving/TaskArchivingTests.swift",
-            "Features/WorklogCorrection/WorklogCorrectionTests.swift",
-        ),
-    ),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
@@ -246,9 +212,7 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
-REVIEWED_DELETIONS: frozenset[str] = frozenset({
-    SOURCES + "App/TrackingActions.swift",
-})
+REVIEWED_DELETIONS: frozenset[str] = frozenset()
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
