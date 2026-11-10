@@ -136,7 +136,7 @@ title: Applications
 ---
 flowchart TD
     mac["TimeTrackerSwiftUI<br>apps/swiftui/Sources/TimeTrackerSwiftUI<br>Scenes, views, AppKit integration, TrackerWorker"]:::module
-    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerFeatures, TrackerSync and TrackingActions"]:::module
+    package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerFeatures and TrackerSync"]:::module
     bridge["tracker-swift-bridge<br>apps/swiftui/bridge<br>C ABI, JSON results, Tokio runtime"]:::module
     tui["tracker-tui<br>apps/tui<br>The tt event loop, screens, rendering"]:::module
     cli["tracker-cli<br>apps/cli<br>The tt-cli commands, JSON, exit codes"]:::module
@@ -213,7 +213,7 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   (`tt_bridge_unarchive_task_at`) and bulk archive
   (`tt_bridge_archive_inactive_tasks_at`) carry none.
 - [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerFeatures.swift):
-  feature state, `TrackerFeatures`, `TrackerSync` and `TrackingActions` behind injected client,
+  feature state, `TrackerFeatures` and `TrackerSync` behind injected client,
   report, clock, scheduler and settings interfaces. Each action sends its request right away; each feature
   disables only its own controls while a request runs
   ([ADR 0026](adr/0026-use-swift-observation-for-native-presentation.md),
@@ -234,11 +234,14 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   and wake, pauses and resumes tracking when the screen locks and unlocks,
   switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
   `TrackingAvailability` reads the connection, catalog and tracking stores to
-  decide which tracking requests are possible. `TrackingActions` starts and
-  stops tracking after asking it; `TrackingActions` calls `TrackerSync` to reload
-  and publish, and the sync never calls it. `TrackerFeatures`, which `TrackerAppRuntime` and the
+  decide which tracking requests are possible. `TrackingStore` starts and
+  stops tracking after asking it, and `MenuBarStore` runs the status item's
+  primary action through `TrackingStore`. `TrackingStore` cancels a pending
+  auto-resume, reloads the task list and publishes through closures that
+  `TrackerFeatures` sets, so `Tracking` doesn't depend on `TrackingAutomation`.
+  `TrackerFeatures`, which `TrackerAppRuntime` and the
   test fixture create, creates and holds the stores, `TrackingAvailability`,
-  `TrackerMenuSources`, `TrackerSync` and `TrackingActions`, and passes the
+  `TrackerMenuSources` and `TrackerSync`, and passes the
   dialog stores `TrackerSync`'s `reloadAfterTaskWrite(then:)` or
   `reloadAfterWorklogWrite()` as their reload closures. `TaskCreationStore` also
   gets `showTask(_:)` and `BulkTaskArchivingStore` gets `recordReadFailure(_:)`.
@@ -255,7 +258,7 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   `TrackingAutomationStore`. Through closures that `TrackerFeatures` sets,
   those stores let `TrackerSync` switch the connection, refresh, and pause a
   running timer when the screen is already locked. No view reads `TrackerSync`.
-  User actions move from `TrackerSync` and `TrackingActions` onto the store of
+  User actions move from `TrackerSync` onto the store of
   the feature that owns them, step by step in
   [issue #369](https://github.com/remshams/time-tracker/issues/369). A view reads
   a moved action's store from the environment, and a package store reaches
@@ -276,7 +279,7 @@ title: Starting tracking in the macOS app in remote mode
 sequenceDiagram
     actor User
     participant App as macOS app
-    participant Tracking as TrackingActions and TrackerSync
+    participant Tracking as TrackingStore and TrackerSync
     participant Worker as TrackerWorker and bridge
     participant Remote as tracker-remote
     participant Server as tracker-server
