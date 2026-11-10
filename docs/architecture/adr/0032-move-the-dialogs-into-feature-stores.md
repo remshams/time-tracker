@@ -10,6 +10,8 @@ Partially superseded by [ADR 0034](0034-allow-no-cycles-between-folders-in-a-tar
 
 Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) for the reason that only `TrackerSync` can reload the history, for moving `changeTab(_:)` and `selectTask(_:)` to `TrackerSync`, for `TrackerFeatures` holding `TrackingActions`, and for `TrackingActions` using `TrackingAvailability`; all other decisions remain accepted.
 
+Partially superseded by [ADR 0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) for `TrackerSync` holding `showTask(_:)`; all other decisions remain accepted.
+
 ## Date
 
 2026-11-08

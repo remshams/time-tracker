@@ -8,6 +8,8 @@ Implemented by #370 to #374. The per-store methods for a loaded task list are na
 
 Partially superseded by [ADR 0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) for `TrackerSync` owning the rollover timer and `DailyTotalsStore` having no `acceptTaskList` method; all other decisions remain accepted.
 
+Partially superseded by [ADR 0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) for the menu bar clock setting going to `TrackerSync`, `TrackerSync` owning the menu bar timer and the rule for which failures need recovery, `TrackerSync` resetting the other stores on a connection change, and `showTask` staying in `TrackerSync`; all other decisions remain accepted.
+
 ## Date
 
 2026-11-09
