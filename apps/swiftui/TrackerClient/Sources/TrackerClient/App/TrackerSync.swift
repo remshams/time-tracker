@@ -187,9 +187,9 @@ public final class TrackerSync {
         automation.acceptTaskList(active: resources.tracking.value)
         tracking.acceptTaskList(active: resources.tracking.value, clock: clock)
         if reports != nil && requestReport { dailyTotals.invalidate() }
-        let selectionChanged = catalog.acceptTaskList(
+        let historyMayHaveChanged = catalog.acceptTaskList(
             resources.catalog.value, previousActive: previousActive, active: tracking.active)
-        history.acceptTaskList(selectionChanged: selectionChanged, connectionWasStale: connectionWasStale)
+        history.acceptTaskList(historyMayHaveChanged: historyMayHaveChanged, connectionWasStale: connectionWasStale)
         updateDisplayTimer()
         updateRolloverTimer()
         publish()

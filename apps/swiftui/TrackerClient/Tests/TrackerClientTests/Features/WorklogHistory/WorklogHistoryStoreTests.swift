@@ -137,12 +137,12 @@ final class WorklogHistoryStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testAcceptedTaskListWithAChangedSelectionReloadsTheHistory() async throws {
+    func testAcceptedTaskListThatMayChangeTheHistoryReloadsIt() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let history = makeStore(client: fixture.client).history
 
-        history.acceptTaskList(selectionChanged: true, connectionWasStale: false)
+        history.acceptTaskList(historyMayHaveChanged: true, connectionWasStale: false)
 
         XCTAssertTrue(history.isLoading)
         let page = try await fixture.client.next()
@@ -158,7 +158,7 @@ final class WorklogHistoryStoreTests: XCTestCase {
         let history = makeStore(client: fixture.client).history
         history.fail(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
 
-        history.acceptTaskList(selectionChanged: false, connectionWasStale: true)
+        history.acceptTaskList(historyMayHaveChanged: false, connectionWasStale: true)
 
         XCTAssertFalse(history.unavailable)
         XCTAssertNil(history.error)
@@ -173,7 +173,7 @@ final class WorklogHistoryStoreTests: XCTestCase {
         let history = makeStore(client: FakeClient()).history
         history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
 
-        history.acceptTaskList(selectionChanged: false, connectionWasStale: false)
+        history.acceptTaskList(historyMayHaveChanged: false, connectionWasStale: false)
 
         XCTAssertTrue(history.unavailable)
         XCTAssertEqual(history.error, "History unavailable")
@@ -186,7 +186,7 @@ final class WorklogHistoryStoreTests: XCTestCase {
         let history = makeStore(client: FakeClient()).history
         history.showError("Tracker unavailable")
 
-        history.acceptTaskList(selectionChanged: false, connectionWasStale: true)
+        history.acceptTaskList(historyMayHaveChanged: false, connectionWasStale: true)
 
         XCTAssertNil(history.error)
         // A reload would mark the history as loading before it sends the request.
