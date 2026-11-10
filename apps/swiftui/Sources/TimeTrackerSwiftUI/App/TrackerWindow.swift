@@ -171,7 +171,6 @@ private struct TrackerSidebarToolbar: View {
 
 private struct TrackerTaskToolbar: View {
     let availability: TrackingAvailability
-    @Environment(TrackingActions.self) private var trackingActions
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskArchivingStore.self) private var archiving
     @Environment(TaskRenameStore.self) private var rename
@@ -222,9 +221,9 @@ private struct TrackerTaskToolbar: View {
                 Button {
                     guard canTrack else { return }
                     if let active = tracking.active, active.taskId == task.id {
-                        trackingActions.stopTracking(worklogID: active.id)
+                        tracking.stopTracking(worklogID: active.id)
                     } else {
-                        trackingActions.startTracking(taskID: task.id)
+                        tracking.startTracking(taskID: task.id)
                     }
                 } label: {
                     Label(

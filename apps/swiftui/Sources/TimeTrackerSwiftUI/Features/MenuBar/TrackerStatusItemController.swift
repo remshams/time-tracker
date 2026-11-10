@@ -5,7 +5,7 @@ import TrackerClient
 
 final class TrackerStatusItemController: NSObject {
     private let sync: TrackerSync
-    private let trackingActions: TrackingActions
+    private let tracking: TrackingStore
     private let menuBar: MenuBarStore
     private let connection: ConnectionStore
     private let menu: TrackerMenuPresentationObserver
@@ -21,11 +21,11 @@ final class TrackerStatusItemController: NSObject {
     private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
     init(
-        sync: TrackerSync, trackingActions: TrackingActions, menuBar: MenuBarStore, connection: ConnectionStore,
+        sync: TrackerSync, tracking: TrackingStore, menuBar: MenuBarStore, connection: ConnectionStore,
         menu: TrackerMenuPresentationObserver, preferences: MenuBarPreferencesStore
     ) {
         self.sync = sync
-        self.trackingActions = trackingActions
+        self.tracking = tracking
         self.menuBar = menuBar
         self.connection = connection
         self.menu = menu
@@ -106,7 +106,7 @@ final class TrackerStatusItemController: NSObject {
         let event = NSApplication.shared.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showNativeMenu()
-        } else if case .openMenu = trackingActions.performMenuPrimaryAction() {
+        } else if case .openMenu = menuBar.performMenuPrimaryAction() {
             showNativeMenu()
         }
     }
@@ -384,14 +384,14 @@ final class TrackerStatusItemController: NSObject {
 
     @objc private func selected(_ item: NSMenuItem) {
         guard item.isEnabled, let command = item.representedObject as? MenuCommand else { return }
-        // `TrackingActions` also validates the captured task and worklog against the current state.
+        // `TrackingStore` also validates the captured task and worklog against the current state.
         switch command.action {
         case .start(let id):
             guard command.connection == connection.settings else { return }
-            trackingActions.startTracking(taskID: id)
+            tracking.startTracking(taskID: id)
         case .stop(let id):
             guard command.connection == connection.settings else { return }
-            trackingActions.stopTracking(worklogID: id)
+            tracking.stopTracking(worklogID: id)
         case .copy(let copyAction, let taskID):
             copyValue(copyAction, taskID: taskID, connection: command.connection)
         case .openWindow:
