@@ -4,7 +4,7 @@
 
 Accepted. It partially supersedes the clauses of ADR 0030, ADR 0032 and ADR 0034 listed under [Superseded clauses](#superseded-clauses). All other decisions in those records remain accepted.
 
-Implemented by #370 to #374. The per-store methods for a loaded task list are named `acceptTaskList`, because `accept` already names other methods on the history and daily totals stores. `DailyTotalsStore` has none, because whether to invalidate the report depends on loading details that `TrackerSync` owns.
+Implemented by #370 to #374. The per-store methods for a loaded task list are named `acceptTaskList`, because `accept` already names other methods on the history and daily totals stores. `DailyTotalsStore` had none at first, because whether to invalidate the report depended on loading details that `TrackerSync` owned. #383 moved the report loading and the rollover timer into `DailyTotalsStore`, which then got an `acceptTaskList` method too.
 
 ## Date
 
