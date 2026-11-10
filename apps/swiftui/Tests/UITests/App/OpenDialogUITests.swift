@@ -1,7 +1,7 @@
 import XCTest
 
-/// macOS shows one sheet per window. The task and worklog menus and the toolbar buttons have no open-dialog check of
-/// their own, so these tests show that an attached sheet or alert blocks them, and that a sheet keeps the window open.
+/// macOS shows one sheet per window. The context menus and Start tracking open without an open-dialog check, so these
+/// tests show that an attached sheet or alert blocks them and keeps the window open.
 @MainActor
 final class OpenDialogUITests: TrackerUITestCase {
     // The alert needs a rejected tracking command, and only the proxy can hold that command for a competing client.
@@ -105,6 +105,10 @@ final class OpenDialogUITests: TrackerUITestCase {
             XCTAssertFalse(element("task-name.input").exists, "\(entry.name) opened the rename editor.")
         }
 
+        let window = app.windows.containing(.button, identifier: "bulk-archive.open").firstMatch
+        window.buttons[XCUIIdentifierCloseWindow].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        XCTAssertFalse(window.waitForNonExistence(timeout: 2), "The close button closed the window behind the alert.")
+
         dismissTrackingFailure(containing: "changed")
         assertNoDialogRemains()
     }
@@ -134,6 +138,7 @@ final class OpenDialogUITests: TrackerUITestCase {
                 name: "The worklog context menu",
                 target: row.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
                 open: { $0.rightClick() }, item: "Edit times..."),
+            // Its button also turns off while a dialog shows, because no worklog dialog can open then.
             MenuEntry(
                 name: "The worklog actions menu",
                 target: element("worklog-history.actions.\(log.id)").coordinate(withNormalizedOffset: center),
