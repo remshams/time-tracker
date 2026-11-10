@@ -299,8 +299,9 @@ flowchart TD
     UI -->|menu bar clock setting| Sync
     TrackerFeatures --> Sync
     Features -->|closures set by TrackerFeatures| Sync
-    TrackerFeatures & Sync --> Features[Connection, task catalog, task creation, task renaming, tracking, daily totals and history state]
-    Lifecycle[AppKit notifications] --> Sync
+    TrackerFeatures & Sync --> Features[Connection, task catalog, task creation, task renaming, tracking, auto-pause, daily totals and history state]
+    Lifecycle[AppKit notifications] -->|sleep, wake and visibility| Sync
+    Lifecycle -->|screen lock| Features
     TrackerFeatures & Sync & Features --> Port[Injected TrackerClient and ReportClient interfaces]
     Port --> Worker[Serial background connection worker]
     Worker --> ABI[Task-list and totals refreshes, separate resource JSON and focused command outcomes]
