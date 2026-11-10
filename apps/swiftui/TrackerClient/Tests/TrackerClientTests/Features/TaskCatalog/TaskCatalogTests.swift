@@ -234,7 +234,8 @@ final class TaskCatalogTests: XCTestCase {
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2025-01-01T00:00:00.000Z")
 
-        XCTAssertFalse(state.acceptTaskList([firstTask, secondTask, renamedArchived], previousActive: nil, active: nil))
+        XCTAssertFalse(
+            state.acceptTaskList([firstTask, secondTask, renamedArchived], previousActive: nil, active: nil))
         XCTAssertEqual(probes.changed(), ["tasks"])
         XCTAssertFalse(
             state.acceptTaskList([firstTask, updatedOther, renamedArchived], previousActive: nil, active: nil))
