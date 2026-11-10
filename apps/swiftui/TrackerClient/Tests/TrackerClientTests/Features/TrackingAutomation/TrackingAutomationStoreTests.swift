@@ -76,7 +76,7 @@ final class TrackingAutomationStoreTests: XCTestCase {
 }
 
 @MainActor
-extension TrackingAutomationStore {
+private extension TrackingAutomationStore {
     /// Builds the store for tests of its preference and bookkeeping, which send no pause or resume request.
     convenience init(repository: any TrackingPreferencesRepository) {
         self.init(repository: repository, client: FakeClient(), clock: FakeClock(), tracking: TrackingStore())

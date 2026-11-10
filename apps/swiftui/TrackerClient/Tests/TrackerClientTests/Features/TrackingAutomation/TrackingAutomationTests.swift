@@ -582,3 +582,11 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.features.tracking.timerText, "00:00:38")
     }
 }
+
+@MainActor
+private extension TrackingAutomationStore {
+    /// Builds the store for tests of its bookkeeping, which send no pause or resume request.
+    convenience init(repository: any TrackingPreferencesRepository) {
+        self.init(repository: repository, client: FakeClient(), clock: FakeClock(), tracking: TrackingStore())
+    }
+}
