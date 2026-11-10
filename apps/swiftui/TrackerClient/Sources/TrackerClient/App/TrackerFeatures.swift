@@ -99,8 +99,8 @@ public final class TrackerFeatures {
             client: client, clock: clock, connection: connection, catalog: taskCatalog, tracking: tracking,
             gate: presentationGate, reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         taskCreation = TaskCreationStore(
-            client: client, clock: clock, connection: connection, gate: presentationGate, showTask: sync.showTask(_:),
-            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+            client: client, clock: clock, connection: connection, gate: presentationGate,
+            showTask: taskCatalog.showTask(_:), reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         worklogDeletion = WorklogDeletionStore(
             client: client, connection: connection, catalog: taskCatalog, history: worklogHistory,
             gate: presentationGate, reloadAfterWrite: sync.reloadAfterWorklogWrite)

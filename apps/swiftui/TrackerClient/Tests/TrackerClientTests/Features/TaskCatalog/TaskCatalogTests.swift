@@ -174,6 +174,44 @@ final class TaskCatalogTests: XCTestCase {
     }
 
     @MainActor
+    func testShowingACreatedTaskReloadsTheHistoryOnlyWhenTheTabOrSelectionChanges() async {
+        let state = TaskCatalogStore()
+        let reloads = HistoryReloads()
+        state.reloadHistory = { reloads.count += 1 }
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+
+        state.showTask(firstTask)
+        XCTAssertEqual(reloads.count, 0)
+        XCTAssertEqual(state.tab, .active)
+        XCTAssertEqual(state.selectedTaskID, firstTask.id)
+
+        state.showTask(secondTask)
+        XCTAssertEqual(reloads.count, 1, "A new selection in the same tab reloads the history.")
+        XCTAssertEqual(state.tab, .active)
+        XCTAssertEqual(state.selectedTaskID, secondTask.id)
+    }
+
+    @MainActor
+    func testShowingACreatedTaskTakesItsTabFromTheCatalogAndOtherwiseFromTheCreatedTask() async {
+        let state = TaskCatalogStore()
+        let reloads = HistoryReloads()
+        state.reloadHistory = { reloads.count += 1 }
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        let outdated = TaskItem(id: archivedTask.id, name: archivedTask.name, archived: false, latestStart: nil)
+
+        state.showTask(outdated)
+        XCTAssertEqual(reloads.count, 1)
+        XCTAssertEqual(state.tab, .archived, "The catalog's copy of the task decides the tab.")
+        XCTAssertEqual(state.selectedTaskID, archivedTask.id)
+
+        let missing = TaskItem(id: "missing-task", name: "Missing task", archived: false, latestStart: nil)
+        state.showTask(missing)
+        XCTAssertEqual(reloads.count, 2)
+        XCTAssertEqual(state.tab, .active, "Without a catalog copy, the created task decides the tab.")
+        XCTAssertEqual(state.selectedTaskID, firstTask.id, "The tab restores its remembered selection.")
+    }
+
+    @MainActor
     func testResetSelectionsClearsBothTabMemoriesBeforeLoadingAnotherSource() async {
         let state = TaskCatalogStore()
         let otherArchived = TaskItem(
