@@ -525,7 +525,7 @@ final class TaskArchivingTests: XCTestCase {
     @MainActor
     func testUnconfirmedConnectionBlocksBothActionsEvenWithLoadedTasks() async throws {
         let catalog = TaskCatalogStore()
-        _ = catalog.apply([firstTask, archivedTask], previousActive: nil, active: nil)
+        _ = catalog.acceptTaskList([firstTask, archivedTask], previousActive: nil, active: nil)
         let client = FakeClient()
         let archiving = TaskArchivingStore(
             client: client, clock: FakeClock(), connection: ConnectionStore(settings: .local), catalog: catalog,

@@ -92,7 +92,9 @@ public final class TrackingStore: ChangeGuardedStore {
         }
     }
 
-    func apply(_ worklog: WorklogItem?, clock: any TrackerClock) {
+    /// Takes in the running worklog of a loaded task list, and restarts the elapsed time when another worklog runs or
+    /// its start changed.
+    func acceptTaskList(active worklog: WorklogItem?, clock: any TrackerClock) {
         let previous = active
         set(\.active, worklog)
         if previous?.id != active?.id || previous?.start != active?.start {

@@ -55,6 +55,7 @@ public final class ConnectionStore: ChangeGuardedStore {
 
     func apply(_ settings: ConnectionSettings) { set(\.settings, settings) }
 
+    /// Marks the connection as confirmed and current after the tracker sent a task list, and resets the failure count.
     func acceptTaskList() {
         set(\.confirmed, true)
         set(\.stale, false)

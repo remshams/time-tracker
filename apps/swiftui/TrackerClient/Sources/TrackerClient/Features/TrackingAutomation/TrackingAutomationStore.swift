@@ -121,7 +121,9 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
         return nil
     }
 
-    func observeActive(_ active: WorklogItem?) {
+    /// Takes in the running worklog of a loaded task list. A running worklog means the user tracks again, so the
+    /// auto-pause no longer resumes the task it stopped.
+    func acceptTaskList(active: WorklogItem?) {
         if active != nil { pausedTaskID = nil }
     }
 

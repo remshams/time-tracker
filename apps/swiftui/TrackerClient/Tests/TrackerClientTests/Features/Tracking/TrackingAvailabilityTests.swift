@@ -14,8 +14,9 @@ final class TrackingAvailabilityTests: XCTestCase {
         /// A confirmed connection with `firstTask` running, so every check passes until a test changes one input.
         init() {
             connection.acceptTaskList()
-            _ = catalog.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: activeWorklog)
-            tracking.apply(activeWorklog, clock: FakeClock())
+            _ = catalog.acceptTaskList(
+                [firstTask, secondTask, archivedTask], previousActive: nil, active: activeWorklog)
+            tracking.acceptTaskList(active: activeWorklog, clock: FakeClock())
         }
     }
 
@@ -74,7 +75,7 @@ final class TrackingAvailabilityTests: XCTestCase {
         XCTAssertFalse(stores.availability.canStart(taskID: archivedTask.id))
         XCTAssertFalse(stores.availability.canStart(taskID: "missing-task"))
 
-        stores.tracking.apply(nil, clock: FakeClock())
+        stores.tracking.acceptTaskList(active: nil, clock: FakeClock())
         XCTAssertTrue(stores.availability.canStart(taskID: firstTask.id))
     }
 
@@ -82,7 +83,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     func testStopNeedsARunningWorklog() async {
         let stores = Stores()
 
-        stores.tracking.apply(nil, clock: FakeClock())
+        stores.tracking.acceptTaskList(active: nil, clock: FakeClock())
 
         XCTAssertTrue(stores.availability.canSend)
         XCTAssertFalse(stores.availability.canStop)
@@ -108,7 +109,7 @@ final class TrackingAvailabilityTests: XCTestCase {
         stores.connection.acceptTaskList()
         XCTAssertTrue(probe.consume())
 
-        _ = stores.catalog.apply([firstTask], previousActive: activeWorklog, active: activeWorklog)
+        _ = stores.catalog.acceptTaskList([firstTask], previousActive: activeWorklog, active: activeWorklog)
         XCTAssertTrue(probe.consume())
     }
 }

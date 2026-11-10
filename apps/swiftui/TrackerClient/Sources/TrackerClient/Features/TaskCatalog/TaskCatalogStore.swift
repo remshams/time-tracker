@@ -63,7 +63,10 @@ public final class TaskCatalogStore: ChangeGuardedStore {
         updateDerivedValues()
     }
 
-    func apply(_ newTasks: [TaskItem], previousActive: WorklogItem?, active: WorklogItem?) -> Bool {
+    /// Takes in the tasks of a loaded task list and keeps the selection while it exists in the tab. Returns whether the
+    /// selected task's history may have changed: the selection, its latest start, or its running worklog before
+    /// (`previousActive`) and after (`active`) the update.
+    func acceptTaskList(_ newTasks: [TaskItem], previousActive: WorklogItem?, active: WorklogItem?) -> Bool {
         let previousTask = selectedTaskID
         let previousLatest = selectedTask?.latestStart
         set(\.tasks, newTasks)

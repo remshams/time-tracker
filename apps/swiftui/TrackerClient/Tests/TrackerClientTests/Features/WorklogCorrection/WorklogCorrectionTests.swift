@@ -50,7 +50,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let clock = FakeClock()
         let client = FakeClient()
         let tracking = TrackingStore()
-        tracking.apply(activeWorklog, clock: clock)
+        tracking.acceptTaskList(active: activeWorklog, clock: clock)
         let connection = ConnectionStore(settings: .local)
         let catalog = TaskCatalogStore()
         let correction = WorklogCorrectionStore(
