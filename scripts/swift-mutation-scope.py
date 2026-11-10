@@ -169,7 +169,8 @@ TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
     **{store: (CHANGE_GUARD,) for store in (
         CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
-    # The dialog flows and the sync's tracking failures explain uncertain writes the same way.
+    # The dialog flows and the tracking failures explain uncertain writes the same way. The sync's suites cover
+    # the tracking failures, which TrackingStore records for the requests and the auto-pause.
     **{
         owner: (WRITE_FAILURE,)
         for owner in (SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION)
