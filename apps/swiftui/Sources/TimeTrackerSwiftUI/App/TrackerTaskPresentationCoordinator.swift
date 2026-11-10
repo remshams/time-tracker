@@ -76,7 +76,6 @@ private struct PresentationSources {
 
 struct TrackerDetailPresentation: View {
     @Environment(TrackingStore.self) private var tracking
-    @Environment(TrackingActions.self) private var trackingActions
     @Environment(TaskCreationStore.self) private var taskCreation
     @Environment(TaskRenameStore.self) private var taskRename
     @Environment(WorklogCorrectionStore.self) private var worklogCorrection
@@ -89,7 +88,7 @@ struct TrackerDetailPresentation: View {
         Binding(
             get: { tracking.error != nil },
             set: {
-                if !$0 { trackingActions.dismissTrackingError() }
+                if !$0 { tracking.dismissError() }
             })
     }
 
@@ -140,7 +139,7 @@ struct TrackerDetailPresentation: View {
                 }
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
-                Button("OK", role: .cancel) { trackingActions.dismissTrackingError() }
+                Button("OK", role: .cancel) { tracking.dismissError() }
             } message: {
                 Text(tracking.error ?? "Please try again.")
             }

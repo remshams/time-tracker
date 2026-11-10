@@ -9,7 +9,6 @@ struct TimeTrackerApp: App {
         // A Window scene exists at most once, so opening it again focuses the existing window.
         Window("Time Tracker", id: TrackerSceneID.tracker) {
             TrackerWindow(runtime: delegate.runtime)
-                .environment(delegate.runtime.features.trackingActions)
                 .environment(delegate.runtime.features.taskCatalog)
                 .environment(delegate.runtime.features.worklogHistory)
                 .environment(delegate.runtime.features.connection)

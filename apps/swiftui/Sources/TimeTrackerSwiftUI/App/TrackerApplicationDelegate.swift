@@ -41,7 +41,7 @@ final class TrackerAppRuntime {
     private let menu: TrackerMenuPresentationObserver
     private let lifecycle: MacLifecycleObserver
     private lazy var statusItem = TrackerStatusItemController(
-        sync: features.sync, trackingActions: features.trackingActions, menuBar: features.menuBar,
+        sync: features.sync, tracking: features.tracking, menuBar: features.menuBar,
         connection: features.connection, menu: menu, preferences: menuBarPreferences)
     lazy var presentation = TrackerTaskPresentationCoordinator(
         taskCreation: features.taskCreation, taskRename: features.taskRename,
