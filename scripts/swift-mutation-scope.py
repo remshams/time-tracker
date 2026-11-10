@@ -48,6 +48,7 @@ INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
 TIME_FORMATTING = "Shared/TimeFormatting.swift"
 CHANGE_GUARD = "Shared/ChangeGuardedStore.swift"
 WRITE_FAILURE = "Shared/WriteFailure.swift"
+PRESENTATION_GATE = "Shared/PresentationGate.swift"
 
 # Map each suite's assertions to complete files, including the code that creates and syncs its stores.
 # Update this map when a suite gains assertions about another production component.
@@ -155,6 +156,10 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, RENAME,
         CORRECTION, ARCHIVING, MOVE,
     ],
+    "Shared/PresentationGateTests.swift": [
+        PRESENTATION_GATE, FEATURES, SYNC, TRACKING_AVAILABILITY, CREATION, RENAME, ARCHIVING, BULK_ARCHIVING,
+        CORRECTION, MOVE, DELETION, TRACKING, CATALOG, HISTORY, CONNECTION,
+    ],
     "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
     "Support/FixtureCleanupTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, CONNECTION,
@@ -163,17 +168,18 @@ TEST_PRODUCTION = {
 # A suite that exercises a key file also exercises its companions. #257 moved the
 # elapsed time helpers from TrackingState.swift to TimeFormatting.swift, so every
 # suite mapped to TRACKING runs them. The observable stores assign through the
-# shared change-guarded helper. A direct change to a key file still selects only
-# that file.
+# shared change-guarded helper. The dialog stores and the tracking error claim the
+# presentation gate. A direct change to a key file still selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
-    TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
+    TRACKING: (TIME_FORMATTING, CHANGE_GUARD, PRESENTATION_GATE),
     **{store: (CHANGE_GUARD,) for store in (
         CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
     # The dialog flows and the tracking failures explain uncertain writes the same way. The sync's suites cover
     # the tracking failures, which TrackingStore records for the requests and the auto-pause.
+    SYNC: (WRITE_FAILURE,),
     **{
-        owner: (WRITE_FAILURE,)
-        for owner in (SYNC, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION)
+        owner: (WRITE_FAILURE, PRESENTATION_GATE)
+        for owner in (RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION)
     },
 }
 
@@ -191,7 +197,28 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    (
+        "#385 passes a presentation gate to the TrackingStore that state-only tests build",
+        (
+            (
+                "            catalog: TaskCatalogStore())\n",
+                "            catalog: TaskCatalogStore(), gate: PresentationGate())\n",
+            ),
+        ),
+        None,
+        None,
+        ("Features/TaskArchiving/TaskArchivingTests.swift", "Features/WorklogCorrection/WorklogCorrectionTests.swift"),
+        (
+            "Features/Tracking/TrackingTests.swift", "Features/Tracking/TrackingStoreTests.swift",
+            "Features/Tracking/TrackingAvailabilityTests.swift", "Features/MenuBar/StatusItemTests.swift",
+            "Features/TaskArchiving/TaskArchivingTests.swift",
+            "Features/WorklogCorrection/WorklogCorrectionTests.swift",
+            "Features/TrackingAutomation/TrackingAutomationStoreTests.swift",
+            "Features/TrackingAutomation/TrackingAutomationTests.swift",
+        ),
+    ),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
