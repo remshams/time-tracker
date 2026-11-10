@@ -19,6 +19,6 @@ extension MenuBarStore {
 
     /// Computed from the clock on each read, so copying from the menu uses the current time.
     func dailyDuration(taskID: String) -> TimeInterval? {
-        dailyTotals.duration(taskID: taskID, active: tracking.active, clock: clock)
+        dailyTotals.duration(taskID: taskID, active: tracking.active)
     }
 }

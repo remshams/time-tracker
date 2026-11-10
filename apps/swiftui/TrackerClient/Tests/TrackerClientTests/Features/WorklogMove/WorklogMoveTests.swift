@@ -166,14 +166,14 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
-        let elapsed = fixture.features.tracking.elapsed(clock: fixture.clock)
+        let elapsed = fixture.features.tracking.elapsed()
         fixture.worklogMove.submit()
         let command = try await fixture.client.next()
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         try await finishHistory(fixture)
         XCTAssertEqual(fixture.features.tracking.active, moved)
-        XCTAssertEqual(fixture.features.tracking.elapsed(clock: fixture.clock), elapsed)
+        XCTAssertEqual(fixture.features.tracking.elapsed(), elapsed)
         XCTAssertEqual(fixture.features.menuSources.read().runningTaskName, secondTask.name)
     }
 

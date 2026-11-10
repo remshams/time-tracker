@@ -18,7 +18,7 @@ public final class TrackerFeatures {
     /// Views read the running worklog, the tracking error and the timer text here, start and stop tracking and
     /// dismiss the error; the sync writes them too.
     public let tracking: TrackingStore
-    /// Views read today's status and task totals here; the sync writes them.
+    /// Views read today's status and task totals here; the store loads them when the sync asks it to.
     public let dailyTotals: DailyTotalsStore
     /// The menu bar reads the last tracked task and its copy values here and runs the status item's primary action;
     /// the sync writes the task.
@@ -53,8 +53,9 @@ public final class TrackerFeatures {
         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
-        dailyTotals = DailyTotalsStore(calendar: calendar)
         connection = ConnectionStore(settings: settings.load() ?? .local)
+        dailyTotals = DailyTotalsStore(
+            reports: reports, connection: connection, clock: clock, scheduler: scheduler, calendar: calendar)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
         tracking = TrackingStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate)
@@ -63,13 +64,12 @@ public final class TrackerFeatures {
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
-            dailyTotals: dailyTotals, automation: trackingAutomation, clock: clock)
-        dailyTotals.updateDay(at: clock.now)
+            dailyTotals: dailyTotals, automation: trackingAutomation)
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
         sync = TrackerSync(
-            client: client, reports: reports, clock: clock, scheduler: scheduler, catalog: taskCatalog,
+            client: client, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, settings: settings)
         // The history needs the catalog and the sync needs the history, so these closures are set once both exist.
@@ -83,11 +83,15 @@ public final class TrackerFeatures {
         // A manual tracking request wins over a pending automatic resume. The auto-pause store holds the tracking
         // store, so this capture is weak.
         tracking.cancelAutoResume = { [weak trackingAutomation] in trackingAutomation?.cancel() }
-        // The sync holds the tracking and auto-pause stores, so these captures are weak too.
+        // The sync holds the tracking, auto-pause and daily totals stores, so these captures are weak too.
         tracking.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
         tracking.publishChanges = { [weak sync] in sync?.publish() }
         trackingAutomation.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
         trackingAutomation.publishChanges = { [weak sync] in sync?.publish() }
+        dailyTotals.acceptReportedTaskList = { [weak sync] resources in sync?.acceptReportedTaskList(resources) }
+        dailyTotals.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
+        dailyTotals.refreshTaskList = { [weak sync] in sync?.refresh() }
+        dailyTotals.publishChanges = { [weak sync] in sync?.publish() }
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))

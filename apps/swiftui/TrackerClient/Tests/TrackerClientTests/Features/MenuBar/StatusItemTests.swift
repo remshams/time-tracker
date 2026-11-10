@@ -327,7 +327,10 @@ private extension MenuBarStore {
             tracking: TrackingStore())
         self.init(
             repository: repository, connection: ConnectionStore(settings: settings), catalog: TaskCatalogStore(),
-            tracking: TrackingStore(), dailyTotals: DailyTotalsStore(calendar: .autoupdatingCurrent),
-            automation: automation, clock: FakeClock())
+            tracking: TrackingStore(),
+            dailyTotals: DailyTotalsStore(
+                reports: nil, connection: ConnectionStore(settings: settings), clock: FakeClock(),
+                scheduler: FakeScheduler(), calendar: .autoupdatingCurrent),
+            automation: automation)
     }
 }
