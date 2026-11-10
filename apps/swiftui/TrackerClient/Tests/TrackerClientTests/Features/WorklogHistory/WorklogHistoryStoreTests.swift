@@ -137,12 +137,69 @@ final class WorklogHistoryStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testAcceptedTaskListWithAChangedSelectionReloadsTheHistory() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let history = makeStore(client: fixture.client).history
+
+        history.acceptTaskList(selectionChanged: true, connectionWasStale: false)
+
+        XCTAssertTrue(history.isLoading)
+        let page = try await fixture.client.next()
+        XCTAssertEqual(page.operation, .history(task: firstTask.id, cursor: nil))
+        page.succeed(emptyPage)
+        try await settled(fixture, history)
+    }
+
+    @MainActor
+    func testAcceptedTaskListAfterAStaleConnectionRetriesAFailedHistory() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let history = makeStore(client: fixture.client).history
+        history.fail(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
+
+        history.acceptTaskList(selectionChanged: false, connectionWasStale: true)
+
+        XCTAssertFalse(history.unavailable)
+        XCTAssertNil(history.error)
+        let page = try await fixture.client.next()
+        XCTAssertEqual(page.operation, .history(task: firstTask.id, cursor: nil))
+        page.succeed(emptyPage)
+        try await settled(fixture, history)
+    }
+
+    @MainActor
+    func testAcceptedTaskListKeepsAFailedHistoryWhileTheConnectionWasCurrent() async {
+        let history = makeStore(client: FakeClient()).history
+        history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
+
+        history.acceptTaskList(selectionChanged: false, connectionWasStale: false)
+
+        XCTAssertTrue(history.unavailable)
+        XCTAssertEqual(history.error, "History unavailable")
+        // A reload would mark the history as loading before it sends the request.
+        XCTAssertFalse(history.isLoading)
+    }
+
+    @MainActor
+    func testAcceptedTaskListClearsAConnectionErrorWithoutReloading() async {
+        let history = makeStore(client: FakeClient()).history
+        history.showError("Tracker unavailable")
+
+        history.acceptTaskList(selectionChanged: false, connectionWasStale: true)
+
+        XCTAssertNil(history.error)
+        // A reload would mark the history as loading before it sends the request.
+        XCTAssertFalse(history.isLoading)
+    }
+
+    @MainActor
     private func makeStore(
         client: FakeClient
     ) -> (history: WorklogHistoryStore, catalog: TaskCatalogStore, connection: ConnectionStore) {
         let catalog = TaskCatalogStore()
         // Selects the first task.
-        _ = catalog.apply([firstTask, secondTask], previousActive: nil, active: nil)
+        _ = catalog.acceptTaskList([firstTask, secondTask], previousActive: nil, active: nil)
         let connection = ConnectionStore(settings: .local)
         return (WorklogHistoryStore(client: client, catalog: catalog, connection: connection), catalog, connection)
     }

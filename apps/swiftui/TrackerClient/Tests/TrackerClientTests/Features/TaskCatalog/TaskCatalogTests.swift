@@ -5,7 +5,7 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testRememberedRestoredTaskIgnoresMissingAndArchivedTasks() async {
         let state = TaskCatalogStore()
-        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
         XCTAssertTrue(state.switchTab(to: .archived))
         state.rememberRestoredTask(secondTask.id)
         state.rememberRestoredTask("missing-task")
@@ -19,12 +19,12 @@ final class TaskCatalogTests: XCTestCase {
     func testChangingSelectedWorklogStartReloadsHistoryWithoutChangingItsID() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: activeWorklog))
         let corrected = WorklogItem(
             id: activeWorklog.id, taskId: firstTask.id,
             start: "2025-01-01T00:00:00.000Z", end: nil)
 
-        XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: corrected))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: activeWorklog, active: corrected))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
     }
 
@@ -32,12 +32,12 @@ final class TaskCatalogTests: XCTestCase {
     func testReplacingSelectedWorklogReloadsHistoryEvenWhenStartIsUnchanged() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: activeWorklog))
         let replacement = WorklogItem(
             id: "replacement-worklog", taskId: firstTask.id,
             start: activeWorklog.start, end: nil)
 
-        XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: replacement))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: activeWorklog, active: replacement))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
     }
 
@@ -45,16 +45,16 @@ final class TaskCatalogTests: XCTestCase {
     func testSelectedHistoryReloadsWhenTrackingStartsStopsOrMovesToAnotherTask() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         let other = WorklogItem(
             id: "other-worklog", taskId: secondTask.id,
             start: "2025-01-01T00:00:00.000Z", end: nil)
 
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
-        XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: nil))
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
-        XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: other))
-        XCTAssertTrue(state.apply(tasks, previousActive: other, active: activeWorklog))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: activeWorklog))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: activeWorklog, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: activeWorklog))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: activeWorklog, active: other))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: other, active: activeWorklog))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
     }
 
@@ -62,7 +62,7 @@ final class TaskCatalogTests: XCTestCase {
     func testUnrelatedTrackingChangesDoNotReloadSelectedHistory() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         let previous = WorklogItem(
             id: "other-worklog", taskId: secondTask.id,
             start: activeWorklog.start, end: nil)
@@ -70,9 +70,9 @@ final class TaskCatalogTests: XCTestCase {
             id: "new-other-worklog", taskId: secondTask.id,
             start: "2025-01-01T00:00:00.000Z", end: nil)
 
-        XCTAssertFalse(state.apply(tasks, previousActive: nil, active: previous))
-        XCTAssertFalse(state.apply(tasks, previousActive: previous, active: replacement))
-        XCTAssertFalse(state.apply(tasks, previousActive: replacement, active: nil))
+        XCTAssertFalse(state.acceptTaskList(tasks, previousActive: nil, active: previous))
+        XCTAssertFalse(state.acceptTaskList(tasks, previousActive: previous, active: replacement))
+        XCTAssertFalse(state.acceptTaskList(tasks, previousActive: replacement, active: nil))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
     }
 
@@ -80,9 +80,9 @@ final class TaskCatalogTests: XCTestCase {
     func testStableCatalogAndWorklogDoNotReloadHistory() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: activeWorklog))
 
-        XCTAssertFalse(state.apply(tasks, previousActive: activeWorklog, active: activeWorklog))
+        XCTAssertFalse(state.acceptTaskList(tasks, previousActive: activeWorklog, active: activeWorklog))
         XCTAssertEqual(state.selectedTask, firstTask)
         XCTAssertEqual(state.visibleTasks, tasks)
     }
@@ -90,7 +90,7 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testLatestStartReloadsOnlyTheSelectedTaskHistory() async {
         let state = TaskCatalogStore()
-        XCTAssertTrue(state.apply([firstTask, secondTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask], previousActive: nil, active: nil))
         let updatedOther = TaskItem(
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2025-01-01T00:00:00.000Z")
@@ -98,16 +98,16 @@ final class TaskCatalogTests: XCTestCase {
             id: firstTask.id, name: firstTask.name, archived: false,
             latestStart: "2025-01-01T01:00:00.000Z")
 
-        XCTAssertFalse(state.apply([firstTask, updatedOther], previousActive: nil, active: nil))
-        XCTAssertTrue(state.apply([updatedSelected, updatedOther], previousActive: nil, active: nil))
+        XCTAssertFalse(state.acceptTaskList([firstTask, updatedOther], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([updatedSelected, updatedOther], previousActive: nil, active: nil))
         XCTAssertEqual(state.selectedTask, updatedSelected)
-        XCTAssertTrue(state.apply([firstTask, updatedOther], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, updatedOther], previousActive: nil, active: nil))
     }
 
     @MainActor
     func testNilUnknownHiddenAndRepeatedSelectionsLeaveCatalogUnchanged() async {
         let state = TaskCatalogStore()
-        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
 
         XCTAssertFalse(state.switchSelection(to: nil))
         XCTAssertFalse(state.switchSelection(to: "missing-task"))
@@ -130,7 +130,7 @@ final class TaskCatalogTests: XCTestCase {
             id: "other-archived-task", name: "Other archived task",
             archived: true, latestStart: nil)
         let tasks = [firstTask, secondTask, archivedTask, otherArchived]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.switchSelection(to: secondTask.id))
         XCTAssertTrue(state.switchTab(to: .archived))
         XCTAssertTrue(state.switchSelection(to: otherArchived.id))
@@ -140,11 +140,11 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertEqual(state.selectedTaskID, otherArchived.id)
         XCTAssertTrue(state.switchTab(to: .active))
 
-        XCTAssertTrue(state.apply([firstTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, archivedTask], previousActive: nil, active: nil))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
         XCTAssertTrue(state.switchTab(to: .archived))
         XCTAssertEqual(state.selectedTaskID, archivedTask.id)
-        XCTAssertTrue(state.apply([firstTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask], previousActive: nil, active: nil))
         XCTAssertNil(state.selectedTaskID)
         XCTAssertNil(state.selectedTask)
         XCTAssertTrue(state.visibleTasks.isEmpty)
@@ -155,7 +155,7 @@ final class TaskCatalogTests: XCTestCase {
         let state = TaskCatalogStore()
         let reloads = HistoryReloads()
         state.reloadHistory = { reloads.count += 1 }
-        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
 
         state.select(firstTask.id)
         state.select(nil)
@@ -180,7 +180,7 @@ final class TaskCatalogTests: XCTestCase {
             id: "other-archived-task", name: "Other archived task",
             archived: true, latestStart: nil)
         let tasks = [firstTask, secondTask, archivedTask, otherArchived]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.switchSelection(to: secondTask.id))
         XCTAssertTrue(state.switchTab(to: .archived))
         XCTAssertTrue(state.switchSelection(to: otherArchived.id))
@@ -188,7 +188,7 @@ final class TaskCatalogTests: XCTestCase {
         state.resetSelections()
         XCTAssertNil(state.selectedTaskID)
         XCTAssertEqual(state.tab, .archived)
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         XCTAssertEqual(state.selectedTaskID, archivedTask.id)
         XCTAssertTrue(state.switchTab(to: .active))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
@@ -198,13 +198,13 @@ final class TaskCatalogTests: XCTestCase {
     func testRestoredTaskDoesNotReplaceTheFallbackSelectionRememberedForItsTab() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask, archivedTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.switchSelection(to: secondTask.id))
-        XCTAssertTrue(state.apply([firstTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, archivedTask], previousActive: nil, active: nil))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
         XCTAssertTrue(state.switchTab(to: .archived))
 
-        XCTAssertFalse(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertFalse(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.switchTab(to: .active))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
     }
@@ -213,10 +213,10 @@ final class TaskCatalogTests: XCTestCase {
     func testUnchangedCatalogAndRepeatedSelectionsNotifyNoReader() async {
         let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask, archivedTask]
-        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         let probes = CatalogProbes(state)
 
-        XCTAssertFalse(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertFalse(state.acceptTaskList(tasks, previousActive: nil, active: nil))
         XCTAssertFalse(state.switchSelection(to: firstTask.id))
         XCTAssertFalse(state.switchTab(to: .active))
         state.rememberRestoredTask(secondTask.id)
@@ -226,7 +226,7 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testAnotherTaskChangeNotifiesOnlyTheReadersOfItsList() async {
         let state = TaskCatalogStore()
-        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
         let probes = CatalogProbes(state)
         let renamedArchived = TaskItem(
             id: archivedTask.id, name: "Renamed archived task", archived: true, latestStart: nil)
@@ -234,9 +234,10 @@ final class TaskCatalogTests: XCTestCase {
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2025-01-01T00:00:00.000Z")
 
-        XCTAssertFalse(state.apply([firstTask, secondTask, renamedArchived], previousActive: nil, active: nil))
+        XCTAssertFalse(state.acceptTaskList([firstTask, secondTask, renamedArchived], previousActive: nil, active: nil))
         XCTAssertEqual(probes.changed(), ["tasks"])
-        XCTAssertFalse(state.apply([firstTask, updatedOther, renamedArchived], previousActive: nil, active: nil))
+        XCTAssertFalse(
+            state.acceptTaskList([firstTask, updatedOther, renamedArchived], previousActive: nil, active: nil))
         XCTAssertEqual(probes.changed(), ["tasks", "visibleTasks"])
         XCTAssertEqual(state.visibleTasks, [firstTask, updatedOther])
     }
@@ -244,7 +245,7 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testSelectionAndTabChangesNotifyTheirReaders() async {
         let state = TaskCatalogStore()
-        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
         let probes = CatalogProbes(state)
 
         XCTAssertTrue(state.switchSelection(to: secondTask.id))
@@ -263,11 +264,11 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testSelectedTaskChangeNotifiesItsReadersWithoutChangingTheSelection() async {
         let state = TaskCatalogStore()
-        XCTAssertTrue(state.apply([firstTask, secondTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask], previousActive: nil, active: nil))
         let probes = CatalogProbes(state)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
 
-        XCTAssertFalse(state.apply([renamed, secondTask], previousActive: nil, active: nil))
+        XCTAssertFalse(state.acceptTaskList([renamed, secondTask], previousActive: nil, active: nil))
         XCTAssertEqual(probes.changed(), ["tasks", "visibleTasks", "selectedTask"])
         XCTAssertEqual(state.selectedTask, renamed)
         XCTAssertEqual(state.selectedTaskID, firstTask.id)

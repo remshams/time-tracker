@@ -75,7 +75,9 @@ public final class MenuBarStore: ChangeGuardedStore {
         return action
     }
 
-    func observe(_ resources: TaskListResources, settings: ConnectionSettings) {
+    /// Takes in a loaded task list: records the running task, or else the most recently tracked one, as the last
+    /// tracked task and saves it for the tracker that `settings` point to.
+    func acceptTaskList(_ resources: TaskListResources, settings: ConnectionSettings) {
         let key = settings.trackingIdentityKey
         let stored = remembered[key] ?? repository?.load(for: settings)
         let latest = resources.catalog.value.compactMap { task -> (String, Date)? in

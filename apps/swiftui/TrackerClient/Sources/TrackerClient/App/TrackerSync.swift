@@ -180,20 +180,16 @@ public final class TrackerSync {
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
         dailyTotals.updateDay(at: clock.now)
-        let retryFailedHistory = connection.stale && history.unavailable
+        let connectionWasStale = connection.stale
         connection.acceptTaskList()
-        menuBar.observe(resources, settings: connection.settings)
+        menuBar.acceptTaskList(resources, settings: connection.settings)
         let previousActive = tracking.active
-        automation.observeActive(resources.tracking.value)
-        tracking.apply(resources.tracking.value, clock: clock)
+        automation.acceptTaskList(active: resources.tracking.value)
+        tracking.acceptTaskList(active: resources.tracking.value, clock: clock)
         if reports != nil && requestReport { dailyTotals.invalidate() }
-        let selectionChanged = catalog.apply(
+        let selectionChanged = catalog.acceptTaskList(
             resources.catalog.value, previousActive: previousActive, active: tracking.active)
-        if selectionChanged || retryFailedHistory {
-            history.reload()
-        } else if !history.unavailable {
-            history.clearError()
-        }
+        history.acceptTaskList(selectionChanged: selectionChanged, connectionWasStale: connectionWasStale)
         updateDisplayTimer()
         updateRolloverTimer()
         publish()

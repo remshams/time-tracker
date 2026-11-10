@@ -39,10 +39,10 @@ final class StatusItemTests: XCTestCase {
         let repository = MemoryLastTrackedTasks()
         let state = MenuBarStore(repository: repository, settings: .local)
         XCTAssertNil(state.lastTrackedTaskID)
-        state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+        state.acceptTaskList(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
         XCTAssertEqual(state.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(repository.writes.count, 1)
-        state.observe(TaskListResources(tasks: [firstTask], active: nil), settings: .local)
+        state.acceptTaskList(TaskListResources(tasks: [firstTask], active: nil), settings: .local)
         XCTAssertEqual(state.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(repository.writes.count, 1)
     }
@@ -51,11 +51,11 @@ final class StatusItemTests: XCTestCase {
     func testStoreNotifiesMenuReadersOnlyWhenTheLastTaskChanges() async {
         let store = MenuBarStore(repository: nil, settings: .local)
         let probe = ObservationProbe { _ = store.lastTrackedTaskID }
-        store.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+        store.acceptTaskList(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
         XCTAssertTrue(probe.consume())
-        store.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+        store.acceptTaskList(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
         XCTAssertFalse(probe.consume(), "An unchanged task list must not redraw the menu bar.")
-        store.observe(emptyTaskListResources, settings: serverSettings)
+        store.acceptTaskList(emptyTaskListResources, settings: serverSettings)
         XCTAssertTrue(probe.consume())
         XCTAssertNil(store.lastTrackedTaskID)
     }
@@ -68,7 +68,7 @@ final class StatusItemTests: XCTestCase {
         let latest = TaskItem(id: "latest", name: "Latest", archived: true, latestStart: "2024-12-31T12:00:00.000Z")
         let tied = TaskItem(id: "aaa", name: "Tied", archived: false, latestStart: latest.latestStart)
         let invalid = TaskItem(id: "invalid", name: "Invalid", archived: false, latestStart: "invalid")
-        state.observe(
+        state.acceptTaskList(
             TaskListResources(tasks: [earlier, latest, tied, invalid, firstTask], active: nil), settings: .local)
         XCTAssertEqual(state.lastTrackedTaskID, tied.id)
         XCTAssertEqual(repository.writes.last?.1, tied.id)
@@ -85,13 +85,13 @@ final class StatusItemTests: XCTestCase {
         let newer = TaskItem(
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2024-12-31T12:00:00.000Z")
-        state.observe(TaskListResources(tasks: [previous, newer], active: nil), settings: serverSettings)
+        state.acceptTaskList(TaskListResources(tasks: [previous, newer], active: nil), settings: serverSettings)
         XCTAssertEqual(state.lastTrackedTaskID, secondTask.id)
         XCTAssertEqual(repository.load(for: serverSettings), secondTask.id)
         let tied = TaskItem(id: "aaa", name: "Tied", archived: false, latestStart: newer.latestStart)
-        state.observe(TaskListResources(tasks: [previous, newer, tied], active: nil), settings: serverSettings)
+        state.acceptTaskList(TaskListResources(tasks: [previous, newer, tied], active: nil), settings: serverSettings)
         XCTAssertEqual(state.lastTrackedTaskID, secondTask.id, "Equal timestamps must not replace a known last task.")
-        state.observe(TaskListResources(tasks: [previous, tied], active: nil), settings: serverSettings)
+        state.acceptTaskList(TaskListResources(tasks: [previous, tied], active: nil), settings: serverSettings)
         XCTAssertEqual(
             state.lastTrackedTaskID, secondTask.id, "Deleted last tasks keep their identity for the menu fallback.")
     }
@@ -99,11 +99,11 @@ final class StatusItemTests: XCTestCase {
     @MainActor
     func testConfirmedDatedTaskSupersedesRememberedTaskWithoutDate() {
         let state = MenuBarStore(repository: nil, settings: .local)
-        state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+        state.acceptTaskList(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
         let newer = TaskItem(
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2024-12-31T12:00:00.000Z")
-        state.observe(TaskListResources(tasks: [firstTask, newer], active: nil), settings: .local)
+        state.acceptTaskList(TaskListResources(tasks: [firstTask, newer], active: nil), settings: .local)
         XCTAssertEqual(state.lastTrackedTaskID, secondTask.id)
     }
 
@@ -112,12 +112,12 @@ final class StatusItemTests: XCTestCase {
         let repository = MemoryLastTrackedTasks()
         for persistence in [nil, repository] as [(any LastTrackedTaskRepository)?] {
             let state = MenuBarStore(repository: persistence, settings: .local)
-            state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
-            state.observe(emptyTaskListResources, settings: serverSettings)
+            state.acceptTaskList(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+            state.acceptTaskList(emptyTaskListResources, settings: serverSettings)
             XCTAssertNil(state.lastTrackedTaskID)
             let remoteActive = WorklogItem(id: "remote", taskId: secondTask.id, start: activeWorklog.start, end: nil)
-            state.observe(TaskListResources(tasks: [secondTask], active: remoteActive), settings: serverSettings)
-            state.observe(TaskListResources(tasks: [firstTask], active: nil), settings: .local)
+            state.acceptTaskList(TaskListResources(tasks: [secondTask], active: remoteActive), settings: serverSettings)
+            state.acceptTaskList(TaskListResources(tasks: [firstTask], active: nil), settings: .local)
             XCTAssertEqual(state.lastTrackedTaskID, firstTask.id)
         }
         XCTAssertEqual(MenuBarStore(repository: repository, settings: .local).lastTrackedTaskID, firstTask.id)

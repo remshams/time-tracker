@@ -54,7 +54,7 @@ final class TaskRenameTests: XCTestCase {
     @MainActor
     func testUnconfirmedConnectionKeepsTheDialogClosedEvenWithASelectedTask() async throws {
         let catalog = TaskCatalogStore()
-        _ = catalog.apply([firstTask], previousActive: nil, active: nil)
+        _ = catalog.acceptTaskList([firstTask], previousActive: nil, active: nil)
         let rename = TaskRenameStore(
             client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local), catalog: catalog,
             reloadAfterWrite: { _ in })
