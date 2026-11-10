@@ -61,7 +61,7 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         archivedHistory.succeed(emptyPage)
         try await fixture.settled()
 
-        fixture.sync.showTask(secondTask)
+        fixture.features.taskCatalog.showTask(secondTask)
 
         XCTAssertEqual(fixture.features.taskCatalog.tab, .active)
         XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
