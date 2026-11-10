@@ -969,6 +969,20 @@ final class DailyTotalsAppTests: XCTestCase {
     }
 
     @MainActor
+    func testWakeAfterMidnightSchedulesTheRolloverForTheNewDay() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        fixture.sync.sleep()
+        fixture.advanceClock(by: 86_400 + 600)
+        fixture.sync.wake()
+        let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        XCTAssertEqual(rollover.delay, 85_800, "The rollover must wait for the end of the day the Mac woke on.")
+        try await fixture.client.next().succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
+        try await fixture.settled()
+    }
+
+    @MainActor
     func testUnchangedHealthyPollDoesNotNotifyContentOrDailyTotalsAndFailureNotifiesStatus() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
