@@ -6,6 +6,8 @@ Accepted. It partially supersedes the Swift session clauses listed under [Supers
 
 Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the Rust adapter's preflights, which ADR 0031 removes; all other decisions remain proposed.
 
+Partially superseded by [ADR 0036](0036-let-dialog-stores-claim-a-presentation-gate.md) for where the one-dialog-at-a-time rule lives: the dialog stores enforce it through a presentation gate.
+
 ## Date
 
 2026-10-18
