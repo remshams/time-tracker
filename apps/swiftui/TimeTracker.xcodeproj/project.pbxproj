@@ -529,17 +529,41 @@
 				14EF98127689B46304F81590 /* TaskRename */,
 				63FA8BB8CCB9C6F22D3CAD2A /* Tracking */,
 				F6AF1148E71820FCA4542967 /* WorklogHistory */,
+				B26979347C508C0544B722B8 /* WorklogCorrection */,
+				F834347BAA6FED751809F6AB /* WorklogMove */,
+				5639DEDC30E8877EB36D8B99 /* WorklogDeletion */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		5639DEDC30E8877EB36D8B99 /* WorklogDeletion */ = {
+			isa = PBXGroup;
+			children = (
+				1B9302CBE784C495573CC162 /* WorklogDeletionUITests.swift */,
+			);
+			path = WorklogDeletion;
+			sourceTree = "<group>";
+		};
+		F834347BAA6FED751809F6AB /* WorklogMove */ = {
+			isa = PBXGroup;
+			children = (
+				497BEDD3FC9242AA26F3F6D5 /* WorklogMoveUITests.swift */,
+			);
+			path = WorklogMove;
+			sourceTree = "<group>";
+		};
+		B26979347C508C0544B722B8 /* WorklogCorrection */ = {
+			isa = PBXGroup;
+			children = (
+				159FCA19B14C578400C291DC /* WorklogCorrectionUITests.swift */,
+			);
+			path = WorklogCorrection;
 			sourceTree = "<group>";
 		};
 		F6AF1148E71820FCA4542967 /* WorklogHistory */ = {
 			isa = PBXGroup;
 			children = (
-				159FCA19B14C578400C291DC /* WorklogCorrectionUITests.swift */,
 				F3E20D30926C26B66C91D265 /* WorklogHistoryUITests.swift */,
-				497BEDD3FC9242AA26F3F6D5 /* WorklogMoveUITests.swift */,
-				1B9302CBE784C495573CC162 /* WorklogDeletionUITests.swift */,
 				32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */,
 			);
 			path = WorklogHistory;
