@@ -10,11 +10,9 @@ struct TrackerWindow: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(TaskCatalogStore.self) private var catalog
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    private let presentation: TrackerTaskPresentationCoordinator
 
     init(runtime: TrackerAppRuntime) {
         self.runtime = runtime
-        presentation = runtime.presentation
     }
 
     @ViewBuilder var body: some View {
@@ -48,10 +46,8 @@ struct TrackerWindow: View {
                     }
                 }
         }
-        .environment(presentation)
         .navigationTitle(catalog.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
-        .windowDismissBehavior(presentation.canCloseWindow ? .enabled : .disabled)
         .onAppear { runtime.installSceneOpener(openWindow) }
     }
 }
@@ -135,10 +131,6 @@ private struct TrackerSidebarToolbar: View {
     @Environment(TaskCreationStore.self) private var creation
     @Environment(BulkTaskArchivingStore.self) private var bulkArchiving
     @Environment(\.openWindow) private var openWindow
-    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
-
-    private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
-    private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen && !presentation.hasPresentation }
 
     var body: some View {
         Button {
@@ -149,21 +141,19 @@ private struct TrackerSidebarToolbar: View {
         .help("Settings")
 
         Button {
-            guard canCreate else { return }
             creation.open()
         } label: {
             Label("New task", systemImage: "plus")
         }
-        .disabled(!canCreate)
+        .disabled(!creation.canOpen)
         .help("New task")
 
         Button {
-            guard canOpenBulkArchiving else { return }
             bulkArchiving.open()
         } label: {
             Label("Archive inactive tasks", systemImage: "archivebox")
         }
-        .disabled(!canOpenBulkArchiving)
+        .disabled(!bulkArchiving.canOpen)
         .help("Archive inactive tasks")
         .accessibilityIdentifier("bulk-archive.open")
     }
@@ -174,28 +164,23 @@ private struct TrackerTaskToolbar: View {
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskArchivingStore.self) private var archiving
     @Environment(TaskRenameStore.self) private var rename
-    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
     @Environment(TaskCatalogStore.self) private var catalog
 
     var body: some View {
         if let task = catalog.selectedTask {
-            let canRename = rename.canOpen && !presentation.hasPresentation
             Button {
-                guard canRename else { return }
                 rename.open(taskID: task.id)
             } label: {
                 Label("Edit task name", systemImage: "pencil")
             }
-            .disabled(!canRename)
+            .disabled(!rename.canOpen)
             .help("Edit task name")
 
             let canChangeArchive =
-                !presentation.hasPresentation
-                && (task.archived
-                    ? archiving.canUnarchive(taskID: task.id)
-                    : archiving.canArchive(taskID: task.id))
+                task.archived
+                ? archiving.canUnarchive(taskID: task.id)
+                : archiving.canArchive(taskID: task.id)
             Button {
-                guard canChangeArchive else { return }
                 if task.archived {
                     archiving.unarchive(taskID: task.id)
                 } else {
@@ -219,7 +204,6 @@ private struct TrackerTaskToolbar: View {
                     ? availability.canStop
                     : availability.canStart(taskID: task.id)
                 Button {
-                    guard canTrack else { return }
                     if let active = tracking.active, active.taskId == task.id {
                         tracking.stopTracking(worklogID: active.id)
                     } else {
