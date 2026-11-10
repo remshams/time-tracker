@@ -303,9 +303,36 @@
 				DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */,
 				8E70C3CFF05EE0815A3B9AD4 /* Tracking */,
 				3ABD701C8406AD405352A72E /* WorklogHistory */,
+				9A6DCC50E7FA3188BD6E8B9E /* WorklogCorrection */,
+				CEE7A060F0949D596710891F /* WorklogMove */,
+				2644D45AE1FF02C7DD9E6EDC /* WorklogDeletion */,
 				DC27D51D3BAB4404B6E435C9 /* Settings */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		2644D45AE1FF02C7DD9E6EDC /* WorklogDeletion */ = {
+			isa = PBXGroup;
+			children = (
+				DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */,
+			);
+			path = WorklogDeletion;
+			sourceTree = "<group>";
+		};
+		CEE7A060F0949D596710891F /* WorklogMove */ = {
+			isa = PBXGroup;
+			children = (
+				B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */,
+			);
+			path = WorklogMove;
+			sourceTree = "<group>";
+		};
+		9A6DCC50E7FA3188BD6E8B9E /* WorklogCorrection */ = {
+			isa = PBXGroup;
+			children = (
+				C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */,
+			);
+			path = WorklogCorrection;
 			sourceTree = "<group>";
 		};
 		BC2C72DE80FA70B4405D048F /* Connection */ = {
@@ -342,9 +369,6 @@
 		3ABD701C8406AD405352A72E /* WorklogHistory */ = {
 			isa = PBXGroup;
 			children = (
-				C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */,
-				B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */,
-				DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */,
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
 				E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */,
