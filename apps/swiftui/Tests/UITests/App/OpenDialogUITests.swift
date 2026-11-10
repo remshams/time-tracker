@@ -1,7 +1,7 @@
 import XCTest
 
 /// macOS shows one sheet per window. The task and worklog menus and the toolbar buttons have no open-dialog check of
-/// their own, so these tests show that an attached sheet or alert blocks them and keeps the window open.
+/// their own, so these tests show that an attached sheet or alert blocks them, and that a sheet keeps the window open.
 @MainActor
 final class OpenDialogUITests: TrackerUITestCase {
     // The alert needs a rejected tracking command, and only the proxy can hold that command for a competing client.
