@@ -235,9 +235,9 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   It hands a loaded task list to the stores in a fixed order through their
   `acceptTaskList` methods and passes the values one store needs from
   another, such as the running worklog before and after the update.
+  `WorklogHistoryStore` decides from them whether to reload or clear its error.
   `DailyTotalsStore` requests and checks today's report when `TrackerSync` asks it to, runs the
   midnight rollover timer, and hands the task list that comes with the report back to `TrackerSync`.
-  `WorklogHistoryStore` decides from them whether to reload or clear its error.
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingStore` starts and
   stops tracking after asking it, and `MenuBarStore` runs the status item's
