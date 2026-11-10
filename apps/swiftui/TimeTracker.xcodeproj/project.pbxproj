@@ -42,6 +42,8 @@
 		571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */; };
 		42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */; };
 		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
+		68E73DACB8ACF07BE1A99DD5 /* TrackerTaskToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3FCDEBF0A25204E12035A8 /* TrackerTaskToolbar.swift */; };
+		2BD055F47D4E288A69EDFEF4 /* TrackerSidebarToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1114FD27618CA688748B0C4F /* TrackerSidebarToolbar.swift */; };
 		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
 		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
 		B07D1A488A4B2B6C53B5598D /* TrackerStatusMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51467D9D4A762216810BD475 /* TrackerStatusMenuBuilder.swift */; };
@@ -141,6 +143,8 @@
 		A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNameSheet.swift; sourceTree = "<group>"; };
 		88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameView.swift; sourceTree = "<group>"; };
 		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
+		2E3FCDEBF0A25204E12035A8 /* TrackerTaskToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskToolbar.swift; sourceTree = "<group>"; };
+		1114FD27618CA688748B0C4F /* TrackerSidebarToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebarToolbar.swift; sourceTree = "<group>"; };
 		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
 		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 		51467D9D4A762216810BD475 /* TrackerStatusMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusMenuBuilder.swift; sourceTree = "<group>"; };
@@ -352,6 +356,8 @@
 			children = (
 				484979169FE35618CB437645 /* TrackerSidebar.swift */,
 				8778858BF38637F9573E8E50 /* TaskContextMenu.swift */,
+				2E3FCDEBF0A25204E12035A8 /* TrackerTaskToolbar.swift */,
+				1114FD27618CA688748B0C4F /* TrackerSidebarToolbar.swift */,
 				06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */,
 			);
 			path = TaskCatalog;
@@ -803,6 +809,8 @@
 				25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
+				68E73DACB8ACF07BE1A99DD5 /* TrackerTaskToolbar.swift in Sources */,
+				2BD055F47D4E288A69EDFEF4 /* TrackerSidebarToolbar.swift in Sources */,
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
 				571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */,
 				F70000000000000000000001 /* DelayedProgress.swift in Sources */,
