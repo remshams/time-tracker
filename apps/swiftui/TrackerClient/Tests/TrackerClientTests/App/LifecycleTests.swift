@@ -140,7 +140,7 @@ final class LifecycleTests: XCTestCase {
         try await fixture.settled()
         fixture.clock.uptime += 7
         fixture.clock.now.addTimeInterval(3_600)
-        XCTAssertEqual(fixture.features.tracking.elapsed(clock: fixture.clock), 37)
+        XCTAssertEqual(fixture.features.tracking.elapsed(), 37)
         fixture.sync.sleep()
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         let count = fixture.client.operations.count
@@ -150,7 +150,7 @@ final class LifecycleTests: XCTestCase {
         fixture.sync.wake()
         let wake = try await fixture.client.next()
         XCTAssertEqual(wake.operation, .refresh(.local))
-        XCTAssertEqual(fixture.features.tracking.elapsed(clock: fixture.clock), 3_930)
+        XCTAssertEqual(fixture.features.tracking.elapsed(), 3_930)
         wake.succeed(resources)
         try await fixture.settled()
         XCTAssertNotNil(fixture.scheduler.display)

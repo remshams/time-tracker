@@ -176,15 +176,15 @@ func assertPublished(_ fixture: Fixture, file: StaticString = #filePath, line: U
     let automation = features.trackingAutomation
     XCTAssertEqual(automation.statusText, automation.pausedStatusText, file: file, line: line)
     let totals = features.dailyTotals
-    XCTAssertEqual(totals.status, totals.shownStatus(clock: fixture.clock), file: file, line: line)
+    XCTAssertEqual(totals.status, totals.shownStatus(), file: file, line: line)
     XCTAssertEqual(
-        totals.dayTotal, totals.totalDuration(active: features.tracking.active, clock: fixture.clock),
+        totals.dayTotal, totals.totalDuration(active: features.tracking.active),
         file: file, line: line)
-    let explanation = totals.explanation(clock: fixture.clock)
+    let explanation = totals.explanation()
     XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
     XCTAssertEqual(
         features.tracking.timerText,
-        features.tracking.displayText(clock: fixture.clock, confirmed: features.connection.confirmed),
+        features.tracking.displayText(confirmed: features.connection.confirmed),
         file: file, line: line)
     for task in features.taskCatalog.tasks {
         XCTAssertEqual(

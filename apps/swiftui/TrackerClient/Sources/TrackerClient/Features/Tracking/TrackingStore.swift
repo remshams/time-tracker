@@ -101,33 +101,33 @@ public final class TrackingStore: ChangeGuardedStore {
 
     /// Takes in the running worklog of a loaded task list, and restarts the elapsed time when another worklog runs or
     /// its start changed.
-    func acceptTaskList(active worklog: WorklogItem?, clock: any TrackerClock) {
+    func acceptTaskList(active worklog: WorklogItem?) {
         let previous = active
         set(\.active, worklog)
         if previous?.id != active?.id || previous?.start != active?.start {
-            resetElapsedAnchor(clock: clock)
+            resetElapsedAnchor()
         }
     }
 
-    func resetElapsedAnchor(clock: any TrackerClock) {
+    func resetElapsedAnchor() {
         let now = clock.now
         timerBase = max(0, now.timeIntervalSince(parseTimestamp(active?.start) ?? now))
         timerAnchor = clock.uptime
     }
 
-    func elapsed(clock: any TrackerClock) -> TimeInterval? {
+    func elapsed() -> TimeInterval? {
         guard active != nil else { return nil }
         return timerBase + max(0, clock.uptime - timerAnchor)
     }
 
-    func displayText(clock: any TrackerClock, confirmed: Bool) -> String {
+    func displayText(confirmed: Bool) -> String {
         guard confirmed else { return "Unavailable" }
-        return elapsed(clock: clock).map(formatClockDuration) ?? "Idle"
+        return elapsed().map(formatClockDuration) ?? "Idle"
     }
 
     /// Shows the recorded error and the current timer text. `TrackerSync` calls this each time it publishes.
-    func publish(clock: any TrackerClock, confirmed: Bool) {
-        set(\.timerText, displayText(clock: clock, confirmed: confirmed))
+    func publish(confirmed: Bool) {
+        set(\.timerText, displayText(confirmed: confirmed))
         set(\.error, recordedError)
     }
 

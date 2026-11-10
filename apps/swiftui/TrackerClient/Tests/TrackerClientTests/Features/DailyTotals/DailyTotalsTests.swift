@@ -19,94 +19,94 @@ final class DailyTotalsTests: XCTestCase {
     @MainActor
     func testAggregateHandlesMicrosecondSumAboveInt64WithoutOverflow() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         let rows = [firstTask, secondTask].map {
             TaskReportTotal(taskId: $0.id, durationMicroseconds: Int64.max)
         }
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask, secondTask], active: nil), rows: rows),
-            requested: request, clock: clock)
-        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 18_446_744_073_709.55)
+            requested: request)
+        XCTAssertEqual(state.totalDuration(active: nil), 18_446_744_073_709.55)
     }
 
     @MainActor
     func testAggregateDistinguishesUnavailableDataFromLoadedEmptyAndCachedEmptyReports() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        XCTAssertNil(state.totalDuration(active: nil, clock: clock))
-        let request = try XCTUnwrap(state.begin(clock: clock))
-        XCTAssertNil(state.totalDuration(active: nil, clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        XCTAssertNil(state.totalDuration(active: nil))
+        let request = try XCTUnwrap(state.begin())
+        XCTAssertNil(state.totalDuration(active: nil))
         state.accept(
-            TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []), requested: request, clock: clock)
-        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 0)
-        state.fail(BridgeFailure(message: "Report unavailable"), clock: clock)
+            TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []), requested: request)
+        XCTAssertEqual(state.totalDuration(active: nil), 0)
+        state.fail(BridgeFailure(message: "Report unavailable"))
         XCTAssertEqual(state.loadStatus, .cached)
-        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 0)
+        XCTAssertEqual(state.totalDuration(active: nil), 0)
         clock.now.addTimeInterval(86_400)
-        XCTAssertNil(state.totalDuration(active: nil, clock: clock))
+        XCTAssertNil(state.totalDuration(active: nil))
     }
 
     @MainActor
     func testAggregateIncludesArchivedRowsAndProjectsTheMatchingRunningWorklogOnce() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog),
                 rows: [total(firstTask, 20), total(secondTask, 5), total(archivedTask, 50)]),
-            requested: request, clock: clock)
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 75)
+            requested: request)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog), 75)
         clock.now.addTimeInterval(7)
         clock.uptime += 7
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 82)
-        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 75)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog), 82)
+        XCTAssertEqual(state.totalDuration(active: nil), 75)
         let changed = WorklogItem(id: "changed-worklog", taskId: firstTask.id, start: activeWorklog.start, end: nil)
-        XCTAssertEqual(state.totalDuration(active: changed, clock: clock), 75)
-        state.fail(BridgeFailure(message: "Report unavailable"), clock: clock)
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 82)
-        state.clear(at: clock.now)
-        XCTAssertNil(state.totalDuration(active: activeWorklog, clock: clock))
+        XCTAssertEqual(state.totalDuration(active: changed), 75)
+        state.fail(BridgeFailure(message: "Report unavailable"))
+        XCTAssertEqual(state.totalDuration(active: activeWorklog), 82)
+        state.clear()
+        XCTAssertNil(state.totalDuration(active: activeWorklog))
     }
 
     @MainActor
     func testPublishedMenuValuesNotifyOnlyWhenTheyChange() async throws {
         let clock = FakeClock()
-        let store = DailyTotalsStore(calendar: dailyCalendar())
+        let store = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
         let tasks = [firstTask, secondTask]
         let probe = ObservationProbe {
             _ = store.dayTotal
             _ = store.totalsExplanation
             _ = store.taskDurations
         }
-        store.publish(tasks: tasks, active: activeWorklog, clock: clock)
+        store.publish(tasks: tasks, active: activeWorklog)
         XCTAssertFalse(probe.consume(), "Totals without a report keep their initial values.")
         XCTAssertNil(store.dayTotal)
         XCTAssertEqual(store.totalsExplanation, "Today's total is unavailable")
         XCTAssertEqual(store.taskDurations, [:])
-        let request = try XCTUnwrap(store.begin(clock: clock))
+        let request = try XCTUnwrap(store.begin())
         store.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: tasks, active: activeWorklog),
                 rows: [total(firstTask, 20), total(archivedTask, 50)]),
-            requested: request, clock: clock)
-        store.publish(tasks: tasks, active: activeWorklog, clock: clock)
+            requested: request)
+        store.publish(tasks: tasks, active: activeWorklog)
         XCTAssertTrue(probe.consume())
         XCTAssertEqual(store.dayTotal, 70)
         XCTAssertEqual(store.totalsExplanation, "Time logged today in your local time zone")
         XCTAssertEqual(store.taskDurations, [firstTask.id: 20, secondTask.id: 0])
-        store.publish(tasks: tasks, active: activeWorklog, clock: clock)
+        store.publish(tasks: tasks, active: activeWorklog)
         XCTAssertFalse(probe.consume(), "An unchanged publish must not redraw the menu bar.")
         clock.now.addTimeInterval(7)
         clock.uptime += 7
-        store.publish(tasks: tasks, active: activeWorklog, clock: clock)
+        store.publish(tasks: tasks, active: activeWorklog)
         XCTAssertTrue(probe.consume())
         XCTAssertEqual(store.dayTotal, 77)
         XCTAssertEqual(store.taskDurations[firstTask.id], 27)
-        store.fail(BridgeFailure(message: "Report unavailable"), clock: clock)
-        store.publish(tasks: tasks, active: activeWorklog, clock: clock)
+        store.fail(BridgeFailure(message: "Report unavailable"))
+        store.publish(tasks: tasks, active: activeWorklog)
         XCTAssertTrue(probe.consume())
         XCTAssertEqual(
             store.totalsExplanation, "Today's total uses cached tracker state. Running time may be unconfirmed.")
@@ -115,45 +115,45 @@ final class DailyTotalsTests: XCTestCase {
     @MainActor
     func testAggregateProjectsRunningTaskWhenItsReportRowIsAbsent() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask, archivedTask], active: activeWorklog),
-                rows: [total(archivedTask, 50)]), requested: request, clock: clock)
+                rows: [total(archivedTask, 50)]), requested: request)
         clock.uptime += 3
         clock.now.addTimeInterval(3)
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 53)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog), 53)
     }
 
     @MainActor
     func testReportIncludesRunningTimeOnceAndAddsOnlyTimeAfterCapturedCutoff() async throws {
         let clock = FakeClock()
         clock.now = dailyDate("2025-01-01T12:00:00.123Z")
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         XCTAssertEqual(request.now, "2025-01-01T12:00:00.123Z")
         clock.uptime += 7
         clock.now.addTimeInterval(7)
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask], active: activeWorklog),
-                rows: [total(firstTask, 43_200)]), requested: request, clock: clock)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock), 43_207)
-        XCTAssertEqual(state.duration(taskID: secondTask.id, active: activeWorklog, clock: clock), 0)
+                rows: [total(firstTask, 43_200)]), requested: request)
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog), 43_207)
+        XCTAssertEqual(state.duration(taskID: secondTask.id, active: activeWorklog), 0)
     }
 
     @MainActor
     func testLocalDayIntervalsUseTwentyThreeAndTwentyFiveHoursAcrossDaylightSaving() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar("Europe/Berlin"))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar("Europe/Berlin"))
         clock.now = dailyDate("2025-03-30T12:00:00.000Z")
-        let spring = try XCTUnwrap(state.begin(clock: clock))
+        let spring = try XCTUnwrap(state.begin())
         XCTAssertEqual(spring.start, "2025-03-29T23:00:00.000Z")
         XCTAssertEqual(spring.end, "2025-03-30T22:00:00.000Z")
         XCTAssertEqual(spring.day.duration, 23 * 3_600)
         clock.now = dailyDate("2025-10-26T12:00:00.000Z")
-        let autumn = try XCTUnwrap(state.begin(clock: clock))
+        let autumn = try XCTUnwrap(state.begin())
         XCTAssertEqual(autumn.start, "2025-10-25T22:00:00.000Z")
         XCTAssertEqual(autumn.end, "2025-10-26T23:00:00.000Z")
         XCTAssertEqual(autumn.day.duration, 25 * 3_600)
@@ -162,25 +162,25 @@ final class DailyTotalsTests: XCTestCase {
     @MainActor
     func testFutureStartAndMismatchedRunningWorklogDoNotAddTime() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
         let future = WorklogItem(id: "future", taskId: firstTask.id, start: "2025-01-01T00:00:10.000Z", end: nil)
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let request = try XCTUnwrap(state.begin())
         state.accept(
             TaskListTotalsRefresh(taskList: TaskListResources(tasks: [firstTask], active: future), rows: []),
-            requested: request, clock: clock)
+            requested: request)
         clock.uptime += 5
         clock.now.addTimeInterval(5)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: future, clock: clock), 0)
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: future), 0)
         clock.uptime += 8
         clock.now.addTimeInterval(8)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: future, clock: clock), 3)
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: future), 3)
         for changed in [
             WorklogItem(id: "other", taskId: firstTask.id, start: future.start, end: nil),
             WorklogItem(id: future.id, taskId: secondTask.id, start: future.start, end: nil),
             WorklogItem(id: future.id, taskId: firstTask.id, start: "2025-01-01T00:00:11.000Z", end: nil),
             WorklogItem(id: future.id, taskId: firstTask.id, start: future.start, end: "2025-01-01T00:00:12.000Z"),
         ] {
-            XCTAssertEqual(state.duration(taskID: firstTask.id, active: changed, clock: clock), 0)
+            XCTAssertEqual(state.duration(taskID: firstTask.id, active: changed), 0)
         }
     }
 
@@ -188,50 +188,50 @@ final class DailyTotalsTests: XCTestCase {
     func testDayRolloverDiscardsYesterdayAndRejectsDelayedYesterdayReport() async throws {
         let clock = FakeClock()
         clock.now = dailyDate("2025-01-01T23:59:59.000Z")
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         let report = TaskListTotalsRefresh(
             taskList: TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 80)])
-        state.accept(report, requested: request, clock: clock)
+        state.accept(report, requested: request)
         clock.uptime += 2
         clock.now.addTimeInterval(2)
-        XCTAssertNil(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock))
-        state.accept(report, requested: request, clock: clock)
+        XCTAssertNil(state.duration(taskID: firstTask.id, active: activeWorklog))
+        state.accept(report, requested: request)
         XCTAssertEqual(state.loadStatus, .unavailable)
-        XCTAssertNil(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock))
+        XCTAssertNil(state.duration(taskID: firstTask.id, active: activeWorklog))
     }
 
     @MainActor
     func testProjectionCapsAtDayEndWhenWallClockMovesBackward() async throws {
         let clock = FakeClock()
         clock.now = dailyDate("2025-01-01T23:59:59.000Z")
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 10)]),
-            requested: request, clock: clock)
+            requested: request)
         clock.uptime += 10
         clock.now.addTimeInterval(-100)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock), 11)
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog), 11)
     }
 
     @MainActor
     func testWakeReanchorsToWallTimeAndPreservesReportBaseline() async throws {
         let clock = FakeClock()
         clock.now = dailyDate("2025-01-01T12:00:00.000Z")
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 4)]),
-            requested: request, clock: clock)
+            requested: request)
         clock.now.addTimeInterval(300)
-        state.reanchor(clock: clock)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock), 304)
+        state.reanchor()
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog), 304)
         clock.now.addTimeInterval(-400)
-        state.reanchor(clock: clock)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock), 4)
+        state.reanchor()
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog), 4)
     }
 
     @MainActor
@@ -264,32 +264,32 @@ final class DailyTotalsTests: XCTestCase {
     @MainActor
     func testTotalsRemainValidAndProjectRunningTimeWhenTaskMetadataIsMissing() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let requested = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let requested = try XCTUnwrap(state.begin())
         let report = TaskListTotalsRefresh(
             taskList: TaskListResources(tasks: [], active: activeWorklog), rows: [total(secondTask, 12)],
             now: requested.now)
         try state.validate(report)
-        state.accept(report, requested: requested, clock: clock)
+        state.accept(report, requested: requested)
         clock.uptime += 8
         clock.now.addTimeInterval(8)
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 20)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog), 20)
         XCTAssertEqual(state.loadStatus, .current)
     }
 
     @MainActor
     func testProjectionUsesEchoedCutoff() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let requested = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let requested = try XCTUnwrap(state.begin())
         let resources = TaskListResources(tasks: [], active: activeWorklog)
         let cutoff = formatTimestamp(clock.now.addingTimeInterval(2))
         let report = TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 5)], now: cutoff)
         try state.validate(report)
-        state.accept(report, requested: requested, clock: clock)
+        state.accept(report, requested: requested)
         clock.uptime += 3
         clock.now.addTimeInterval(3)
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 8)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog), 8)
         XCTAssertEqual(state.loadStatus, .current)
         XCTAssertThrowsError(
             try state.validate(
@@ -300,41 +300,53 @@ final class DailyTotalsTests: XCTestCase {
     @MainActor
     func testReportRequestedBeforeWakeRetainsSleepTimeWhenAcceptedAfterReanchor() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin())
         clock.now.addTimeInterval(300)
-        state.reanchor(clock: clock)
+        state.reanchor()
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 4)]),
-            requested: request, clock: clock)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock), 304)
+            requested: request)
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog), 304)
         clock.uptime += 3
         clock.now.addTimeInterval(3)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock), 307)
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: activeWorklog), 307)
+    }
+
+    @MainActor
+    func testEndedDayHidesItsErrorFromTheExplanation() async {
+        let clock = FakeClock()
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        _ = state.begin()
+        state.fail(BridgeFailure(message: "No totals"))
+        XCTAssertEqual(state.explanation(), "No totals")
+        clock.now.addTimeInterval(86_400)
+        XCTAssertEqual(state.shownStatus(), .unavailable)
+        XCTAssertEqual(state.explanation(), "Today's total is unavailable")
     }
 
     @MainActor
     func testUnavailableFailureCachedFailureAndSourceClearHaveDistinctStates() async throws {
         let clock = FakeClock()
-        let state = DailyTotalsStore(calendar: dailyCalendar())
-        XCTAssertNil(state.duration(taskID: firstTask.id, active: nil, clock: clock))
-        _ = state.begin(clock: clock)
+        let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        XCTAssertNil(state.duration(taskID: firstTask.id, active: nil))
+        _ = state.begin()
         XCTAssertEqual(state.loadStatus, .loading)
-        state.fail(BridgeFailure(message: "No totals"), clock: clock)
+        state.fail(BridgeFailure(message: "No totals"))
         XCTAssertEqual(state.loadStatus, .unavailable)
-        let request = try XCTUnwrap(state.begin(clock: clock))
+        let request = try XCTUnwrap(state.begin())
         state.accept(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask], active: nil), rows: [total(firstTask, 30)]),
-            requested: request, clock: clock)
-        _ = state.begin(clock: clock)
+            requested: request)
+        _ = state.begin()
         XCTAssertEqual(state.loadStatus, .current)
-        state.fail(BridgeFailure(message: "Offline"), clock: clock)
+        state.fail(BridgeFailure(message: "Offline"))
         XCTAssertEqual(state.loadStatus, .cached)
-        XCTAssertEqual(state.duration(taskID: firstTask.id, active: nil, clock: clock), 30)
-        state.clear(at: clock.now)
-        XCTAssertNil(state.duration(taskID: firstTask.id, active: nil, clock: clock))
+        XCTAssertEqual(state.duration(taskID: firstTask.id, active: nil), 30)
+        state.clear()
+        XCTAssertNil(state.duration(taskID: firstTask.id, active: nil))
         XCTAssertEqual(state.loadStatus, .unavailable)
         XCTAssertNil(state.error)
     }
@@ -493,7 +505,7 @@ final class DailyTotalsAppTests: XCTestCase {
     }
 
     @MainActor
-    func testStaleRefreshClearsYesterdayDayAndErrorBeforeItsResponseArrives() async throws {
+    func testStaleRefreshHidesYesterdayErrorBeforeItsResponseArrives() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
@@ -506,12 +518,15 @@ final class DailyTotalsAppTests: XCTestCase {
         fixture.clock.now.addTimeInterval(86_400)
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
-        XCTAssertEqual(fixture.totalsDayStart, fixture.clock.now)
-        XCTAssertNil(fixture.totalsError)
+        fixture.sync.publish()
+        XCTAssertEqual(fixture.features.dailyTotals.status, .unavailable)
+        XCTAssertEqual(fixture.features.dailyTotals.totalsExplanation, "Today's total is unavailable")
         XCTAssertTrue(fixture.todayTasks.isEmpty)
         XCTAssertEqual(refresh.operation, .refresh(.local))
         refresh.succeed(resources)
         let report = try await fixture.client.next()
+        XCTAssertEqual(fixture.totalsDayStart, fixture.clock.now)
+        XCTAssertNil(fixture.totalsError)
         report.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
         try await fixture.settled()
     }
@@ -988,11 +1003,11 @@ final class DailyTotalsAppTests: XCTestCase {
 
 /// Daily totals computed from the clock on each read, so a test can check them without a publish.
 private extension Fixture {
-    var totalsStatus: DailyTotalsStatus { features.dailyTotals.shownStatus(clock: clock) }
+    var totalsStatus: DailyTotalsStatus { features.dailyTotals.shownStatus() }
     var totalsError: String? { features.dailyTotals.error }
     var totalsDayStart: Date? { features.dailyTotals.day?.start }
     var totalDuration: TimeInterval? {
-        features.dailyTotals.totalDuration(active: features.tracking.active, clock: clock)
+        features.dailyTotals.totalDuration(active: features.tracking.active)
     }
     var totalDurationText: String { totalDuration.map(formatClockDuration) ?? "Unavailable" }
     /// Tasks with time logged today, in task list order.
@@ -1002,5 +1017,15 @@ private extension Fixture {
 
     func durationText(taskID: String) -> String {
         features.menuBar.dailyDuration(taskID: taskID).map(formatClockDuration) ?? "Unavailable"
+    }
+}
+
+@MainActor
+private extension DailyTotalsStore {
+    /// Builds the store for tests of its totals, which load no report and run no rollover timer.
+    convenience init(clock: FakeClock = FakeClock(), calendar: Calendar) {
+        self.init(
+            reports: nil, connection: ConnectionStore(settings: .local), clock: clock, scheduler: FakeScheduler(),
+            calendar: calendar)
     }
 }

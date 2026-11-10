@@ -1,7 +1,7 @@
 import Foundation
 
-/// Keeps the stores in step with the tracker: the first load, refreshes, polling, today's report, the display,
-/// rollover and menu bar timers, window and menu visibility, sleep and wake, the connection change, and the reloads
+/// Keeps the stores in step with the tracker: the first load, refreshes, polling, when to load today's report, the
+/// display and menu bar timers, window and menu visibility, sleep and wake, the connection change, and the reloads
 /// after dialog writes.
 ///
 /// `TrackerFeatures` creates the stores and passes them in. The stores' closures call the package-internal methods
@@ -11,8 +11,6 @@ import Foundation
 /// it through `init`; all of them only call its methods.
 public final class TrackerSync {
     private let client: any TrackerClient
-    private let reports: (any ReportClient)?
-    private let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
     private let catalog: TaskCatalogStore
     private let history: WorklogHistoryStore
@@ -24,7 +22,6 @@ public final class TrackerSync {
     private let settingsRepository: any ConnectionSettingsRepository
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
-    private var rolloverTimer: (any TrackerCancellation)?
     private var menuBarClock: (any TrackerCancellation)?
     private var menuBarClockEnabled = false
     // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
@@ -37,14 +34,12 @@ public final class TrackerSync {
     private var uiVisible: Bool { windowVisible || menuOpen }
 
     init(
-        client: any TrackerClient, reports: (any ReportClient)?, clock: any TrackerClock,
-        scheduler: any TrackerScheduler, catalog: TaskCatalogStore, history: WorklogHistoryStore,
-        connection: ConnectionStore, tracking: TrackingStore, dailyTotals: DailyTotalsStore,
-        menuBar: MenuBarStore, automation: TrackingAutomationStore, settings: any ConnectionSettingsRepository
+        client: any TrackerClient, scheduler: any TrackerScheduler, catalog: TaskCatalogStore,
+        history: WorklogHistoryStore, connection: ConnectionStore, tracking: TrackingStore,
+        dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
+        settings: any ConnectionSettingsRepository
     ) {
         self.client = client
-        self.reports = reports
-        self.clock = clock
         self.scheduler = scheduler
         self.catalog = catalog
         self.history = history
@@ -59,15 +54,13 @@ public final class TrackerSync {
     isolated deinit {
         displayTimer?.cancel()
         pollTimer?.cancel()
-        rolloverTimer?.cancel()
         menuBarClock?.cancel()
     }
 
     public func start() {
         guard !started else { return }
         started = true
-        dailyTotals.updateDay(at: clock.now)
-        updateRolloverTimer()
+        dailyTotals.start()
         updateDisplayTimer()
         refreshing = true
         let settings = connection.settings
@@ -75,7 +68,7 @@ public final class TrackerSync {
             guard let self else { return }
             do {
                 acceptTaskList(try await client.openConfigured(settings))
-                await loadReport()
+                await dailyTotals.load()
             } catch {
                 recordConnectionFailure(error)
             }
@@ -106,16 +99,15 @@ public final class TrackerSync {
         guard started else { return }
         sleeping = true
         cancelTimers()
+        dailyTotals.sleep()
     }
 
     public func wake() {
         guard started else { return }
         sleeping = false
-        tracking.resetElapsedAnchor(clock: clock)
-        dailyTotals.updateDay(at: clock.now)
-        dailyTotals.reanchor(clock: clock)
+        tracking.resetElapsedAnchor()
+        dailyTotals.wake()
         updateDisplayTimer()
-        updateRolloverTimer()
         refresh()
     }
 
@@ -137,15 +129,14 @@ public final class TrackerSync {
     /// while it marks the change as running.
     func switchConnection(to settings: ConnectionSettings) async throws {
         finishConnection(try await client.connect(settings), settings: settings)
-        await loadReport()
+        await dailyTotals.load()
         schedulePolling()
     }
 
     /// Reloads the task list and, with a report client, today's totals. Publishes on every path, which also shows a
     /// failure recorded before this call.
     func reloadTaskList() async {
-        dailyTotals.updateDay(at: clock.now)
-        if reports == nil || !connection.confirmed || connection.stale {
+        if !dailyTotals.loadsTaskList || !connection.confirmed || connection.stale {
             do {
                 acceptTaskList(try await client.refreshTaskList(settings: connection.settings))
             } catch {
@@ -153,7 +144,7 @@ public final class TrackerSync {
                 return
             }
         }
-        await loadReport()
+        await dailyTotals.load()
     }
 
     /// Reloads the task list, then runs `then`, which changes only the tab, the selection or the history.
@@ -178,39 +169,24 @@ public final class TrackerSync {
         if changedTab || changedSelection { history.reload() }
     }
 
+    /// Takes in the task list that came with today's report and publishes. `DailyTotalsStore` calls it.
+    func acceptReportedTaskList(_ resources: TaskListResources) {
+        acceptTaskList(resources, requestReport: false)
+    }
+
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
-        dailyTotals.updateDay(at: clock.now)
+        dailyTotals.acceptTaskList(reportRequested: requestReport)
         let connectionWasStale = connection.stale
         connection.acceptTaskList()
         menuBar.acceptTaskList(resources, settings: connection.settings)
         let previousActive = tracking.active
         automation.acceptTaskList(active: resources.tracking.value)
-        tracking.acceptTaskList(active: resources.tracking.value, clock: clock)
-        if reports != nil && requestReport { dailyTotals.invalidate() }
+        tracking.acceptTaskList(active: resources.tracking.value)
         let historyMayHaveChanged = catalog.acceptTaskList(
             resources.catalog.value, previousActive: previousActive, active: tracking.active)
         history.acceptTaskList(historyMayHaveChanged: historyMayHaveChanged, connectionWasStale: connectionWasStale)
         updateDisplayTimer()
-        updateRolloverTimer()
         publish()
-    }
-
-    private func loadReport() async {
-        guard let reports, let requested = dailyTotals.begin(clock: clock) else { return }
-        // A first request shows the loading status, which the menu reads from the store.
-        publish()
-        do {
-            let refreshed = try await reports.refreshTaskListWithTotals(
-                settings: connection.settings, start: requested.start,
-                end: requested.end, now: requested.now)
-            try dailyTotals.validate(refreshed)
-            dailyTotals.accept(refreshed, requested: requested, clock: clock)
-            acceptTaskList(refreshed.taskList, requestReport: false)
-        } catch {
-            dailyTotals.fail(error, clock: clock)
-            recordReadFailure(error)
-            publish()
-        }
     }
 
     private func recordConnectionFailure(_ failure: Error) {
@@ -242,15 +218,15 @@ public final class TrackerSync {
     }
 
     func publish() {
-        tracking.publish(clock: clock, confirmed: connection.confirmed)
+        tracking.publish(confirmed: connection.confirmed)
         automation.publish()
-        dailyTotals.publish(tasks: catalog.tasks, active: tracking.active, clock: clock)
+        dailyTotals.publish(tasks: catalog.tasks, active: tracking.active)
     }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
         automation.cancel()
         connection.apply(settings)
-        dailyTotals.clear(at: clock.now)
+        dailyTotals.clear()
         settingsRepository.save(settings)
         catalog.resetSelections()
         history.request(selectedTaskID: nil)
@@ -273,10 +249,7 @@ public final class TrackerSync {
         guard displayTimer == nil else { return }
         displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
             guard let self else { return }
-            if reports != nil, dailyTotals.updateDay(at: clock.now) {
-                updateRolloverTimer()
-                if !connection.protocolBlocked { refresh() }
-            }
+            dailyTotals.rollOverIfDayEnded()
             publish()
         }
     }
@@ -298,24 +271,6 @@ public final class TrackerSync {
         cancelDisplay()
         menuBarClock?.cancel()
         menuBarClock = nil
-        rolloverTimer?.cancel()
-        rolloverTimer = nil
-    }
-
-    private func updateRolloverTimer() {
-        rolloverTimer?.cancel()
-        rolloverTimer = nil
-        guard reports != nil, started, !sleeping, let day = dailyTotals.day else { return }
-        rolloverTimer = scheduler.schedule(
-            after: max(0.001, day.end.timeIntervalSince(clock.now)),
-            repeating: false, tolerance: 0
-        ) { [weak self] in
-            guard let self else { return }
-            dailyTotals.updateDay(at: clock.now)
-            updateRolloverTimer()
-            if !connection.protocolBlocked { refresh() }
-            publish()
-        }
     }
 
     private func cancelPolling() {

@@ -16,7 +16,7 @@ final class TrackingAvailabilityTests: XCTestCase {
             connection.acceptTaskList()
             _ = catalog.acceptTaskList(
                 [firstTask, secondTask, archivedTask], previousActive: nil, active: activeWorklog)
-            tracking.acceptTaskList(active: activeWorklog, clock: FakeClock())
+            tracking.acceptTaskList(active: activeWorklog)
         }
     }
 
@@ -75,7 +75,7 @@ final class TrackingAvailabilityTests: XCTestCase {
         XCTAssertFalse(stores.availability.canStart(taskID: archivedTask.id))
         XCTAssertFalse(stores.availability.canStart(taskID: "missing-task"))
 
-        stores.tracking.acceptTaskList(active: nil, clock: FakeClock())
+        stores.tracking.acceptTaskList(active: nil)
         XCTAssertTrue(stores.availability.canStart(taskID: firstTask.id))
     }
 
@@ -83,7 +83,7 @@ final class TrackingAvailabilityTests: XCTestCase {
     func testStopNeedsARunningWorklog() async {
         let stores = Stores()
 
-        stores.tracking.acceptTaskList(active: nil, clock: FakeClock())
+        stores.tracking.acceptTaskList(active: nil)
 
         XCTAssertTrue(stores.availability.canSend)
         XCTAssertFalse(stores.availability.canStop)

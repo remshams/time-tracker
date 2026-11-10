@@ -50,7 +50,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let clock = FakeClock()
         let client = FakeClient()
         let tracking = TrackingStore()
-        tracking.acceptTaskList(active: activeWorklog, clock: clock)
+        tracking.acceptTaskList(active: activeWorklog)
         let connection = ConnectionStore(settings: .local)
         let catalog = TaskCatalogStore()
         let correction = WorklogCorrectionStore(
@@ -213,7 +213,7 @@ final class WorklogCorrectionTests: XCTestCase {
             start: "2024-12-31T23:58:00.000000Z", end: nil)
         command.corrected(worklog: corrected, resources: TaskListResources(tasks: [firstTask], active: corrected))
         try await fixture.waitUntil("the corrected timer") { fixture.features.tracking.active == corrected }
-        XCTAssertEqual(fixture.features.tracking.elapsed(clock: fixture.clock), 120)
+        XCTAssertEqual(fixture.features.tracking.elapsed(), 120)
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
     }
 
