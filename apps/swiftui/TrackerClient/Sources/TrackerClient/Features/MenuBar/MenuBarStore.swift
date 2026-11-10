@@ -31,12 +31,14 @@ public final class MenuBarStore: ChangeGuardedStore {
     let dailyTotals: DailyTotalsStore
     let clock: any TrackerClock
     private let automation: TrackingAutomationStore
-    private let availability: TrackingAvailability
+    private var availability: TrackingAvailability {
+        TrackingAvailability(connection: connection, catalog: catalog, tracking: tracking)
+    }
 
     init(
         repository: (any LastTrackedTaskRepository)?, connection: ConnectionStore, catalog: TaskCatalogStore,
         tracking: TrackingStore, dailyTotals: DailyTotalsStore, automation: TrackingAutomationStore,
-        availability: TrackingAvailability, clock: any TrackerClock
+        clock: any TrackerClock
     ) {
         self.repository = repository
         self.connection = connection
@@ -45,7 +47,6 @@ public final class MenuBarStore: ChangeGuardedStore {
         self.dailyTotals = dailyTotals
         self.clock = clock
         self.automation = automation
-        self.availability = availability
         let settings = connection.settings
         let saved = repository?.load(for: settings)
         lastTrackedTaskID = saved
