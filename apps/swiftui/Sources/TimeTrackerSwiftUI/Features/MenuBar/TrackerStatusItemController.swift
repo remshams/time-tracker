@@ -1,8 +1,8 @@
 import AppKit
-import Combine
-import Carbon
 import TrackerClient
 
+/// Owns the status item: it draws the button, opens and closes the menu, updates its live values, and runs the
+/// commands its items send.
 final class TrackerStatusItemController: NSObject {
     private let sync: TrackerSync
     private let tracking: TrackingStore
@@ -11,14 +11,10 @@ final class TrackerStatusItemController: NSObject {
     private let menu: TrackerMenuPresentationObserver
     private let preferences: MenuBarPreferencesStore
     private var statusItem: NSStatusItem?
-    private var subscriptions = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
     private var openWindow: (() -> Void)?
-    private var nativeMenu: NSMenu?
-    private var elapsedField: MenuValueField?
-    private var totalField: MenuValueField?
-    private var taskRows: [String: MenuTaskRow] = [:]
-    private var shortcutRegistration: GlobalMenuShortcutRegistration?
+    private var openMenu: TrackerStatusMenu?
+    private var shortcut: GlobalMenuShortcutHandler?
 
     init(
         sync: TrackerSync, tracking: TrackingStore, menuBar: MenuBarStore, connection: ConnectionStore,
@@ -53,29 +49,9 @@ final class TrackerStatusItemController: NSObject {
             guard let self else { return }
             updateMenuValues(menu.values)
         }
-        let registration = GlobalMenuShortcutRegistration { [weak self] in self?.toggleMenu() }
-        shortcutRegistration = registration
-        preferences.registerMenuShortcut = { [weak registration] shortcut in
-            do {
-                try registration?.register(shortcut)
-                return nil
-            } catch { return error.localizedDescription }
-        }
-        do { try registration.register(preferences.menuShortcuts.openMenu) } catch {
-            preferences.reportMenuGlobalShortcutError(error.localizedDescription)
-        }
-        DistributedNotificationCenter.default()
-            .publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    do {
-                        try self.shortcutRegistration?.register(self.preferences.menuShortcuts.openMenu)
-                        self.preferences.reportMenuGlobalShortcutError(nil)
-                    } catch { self.preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
-                }
-            }.store(in: &subscriptions)
+        let shortcut = GlobalMenuShortcutHandler(preferences: preferences) { [weak self] in self?.toggleMenu() }
+        self.shortcut = shortcut
+        shortcut.start()
         updateLabel()
     }
 
@@ -102,7 +78,7 @@ final class TrackerStatusItemController: NSObject {
     }
 
     @objc private func clicked() {
-        guard nativeMenu == nil else { return }
+        guard openMenu == nil else { return }
         let event = NSApplication.shared.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showNativeMenu()
@@ -112,8 +88,8 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func toggleMenu() {
-        if let nativeMenu {
-            nativeMenu.cancelTracking()
+        if let openMenu {
+            openMenu.menu.cancelTracking()
         } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
             showNativeMenu()
@@ -121,48 +97,39 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func showNativeMenu() {
-        guard nativeMenu == nil, let statusItem, let button = statusItem.button else { return }
+        guard openMenu == nil, let statusItem, let button = statusItem.button else { return }
         // The sync publishes first, so the menu captures current values even when no display tick ran.
         sync.setMenuVisible(true)
         self.menu.menuOpened()
-        let content = self.menu.content
-        let menu = makeMenu(content, appearance: NSApplication.shared.effectiveAppearance)
-        nativeMenu = menu
+        let builder = TrackerStatusMenuBuilder(
+            menuBar: menuBar, connection: connection.settings, target: self, itemAction: #selector(selected(_:)))
+        let openMenu = builder.makeMenu(self.menu.content, appearance: NSApplication.shared.effectiveAppearance)
+        let menu = openMenu.menu
+        self.openMenu = openMenu
         updateMenuValues(self.menu.values)
         button.highlight(true)
-        shortcutRegistration?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
+        shortcut?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
         defer {
             statusItem.menu = nil
             button.target = self
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            nativeMenu = nil
-            clearMenuValues()
+            self.openMenu = nil
             button.highlight(false)
             sync.setMenuVisible(false)
             self.menu.menuClosed()
-            do {
-                if try shortcutRegistration?.endMenuTracking() == true {
-                    preferences.reportMenuGlobalShortcutError(nil)
-                }
-            } catch { preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
+            shortcut?.endMenuTracking()
         }
         // AppKit positions status-item menus below the menu bar, including their outer padding.
         statusItem.menu = menu
         button.performClick(nil)
     }
 
-    private func clearMenuValues() {
-        elapsedField = nil
-        totalField = nil
-        taskRows.removeAll()
-    }
-
     private func updateMenuValues(_ values: TrackerMenuValues) {
-        guard nativeMenu != nil else { return }
-        elapsedField?.update(values.elapsedText ?? "Unavailable")
-        totalField?.update(values.totalText, help: values.totalsExplanation)
-        for (taskID, row) in taskRows {
+        guard let openMenu else { return }
+        openMenu.elapsedField?.update(values.elapsedText ?? "Unavailable")
+        openMenu.totalField?.update(values.totalText, help: values.totalsExplanation)
+        for (taskID, row) in openMenu.taskRows {
             guard let duration = values.taskDurationTexts[taskID] else { continue }
             row.update(duration: duration, help: values.totalsExplanation)
         }
@@ -178,212 +145,8 @@ final class TrackerStatusItemController: NSObject {
         if !pasteboard.setString(value, forType: .string) { NSSound.beep() }
     }
 
-    private func makeMenu(_ content: TrackerMenuContent, appearance: NSAppearance) -> NSMenu {
-        let menu = NSMenu()
-        menu.appearance = appearance
-        menu.autoenablesItems = false
-        let connection = self.connection.settings
-        let serverURL =
-            connection.mode == .server
-            ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-        addText(content.connectionStatusText, value: serverURL, to: menu)
-        if content.isStale { addText("Showing last confirmed state", to: menu) }
-        elapsedField = addText(content.runningTaskName, value: content.elapsedText, to: menu, liveValue: true)
-        if let status = content.autoPauseStatusText { addText(status, to: menu) }
-        if let error = content.trackingError { addText(error, to: menu) }
-        menu.addItem(.separator())
-        addText(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today", to: menu)
-        totalField = addText(
-            "Total", value: content.totalText, to: menu,
-            help: content.totalsExplanation, liveValue: true)
-        menu.addItem(.separator())
-        for entry in content.todayTasks {
-            let item = addTask(
-                entry, title: MenuTaskRow.title(entry, duration: entry.durationText),
-                help: content.totalsExplanation, content: content,
-                appearance: appearance, to: menu)
-            let row = MenuTaskRow(item: item, entry: entry, isStale: content.isStale)
-            taskRows[entry.id] = row
-            row.setDurationFont(entry.durationText)
-            menu.minimumWidth = max(menu.minimumWidth, row.reservedWidth)
-        }
-        if content.todayTasks.isEmpty {
-            let empty: String
-            switch content.dailyTotalsStatus {
-            case .current: empty = "No time logged today"
-            case .cached: empty = "Last confirmed totals are empty"
-            case .loading: empty = "Loading today's totals"
-            case .unavailable: empty = "Today's totals are unavailable"
-            }
-            addText(empty, to: menu)
-        }
-        if !content.otherTasks.isEmpty {
-            let submenu = NSMenu(title: "Start tracking")
-            submenu.appearance = appearance
-            submenu.autoenablesItems = false
-            for entry in content.otherTasks {
-                addTask(
-                    entry, title: entry.task.name, help: nil, content: content,
-                    appearance: appearance, to: submenu)
-            }
-            let parent = NSMenuItem(title: "Start tracking", action: nil, keyEquivalent: "")
-            parent.submenu = submenu
-            parent.isEnabled = true
-            menu.addItem(parent)
-        }
-        menu.addItem(.separator())
-        addAction("Open Time Tracker", action: .openWindow, to: menu)
-        addAction("Quit Time Tracker", action: .quit, to: menu)
-        return menu
-    }
-
-    @discardableResult
-    private func addTask(
-        _ entry: TrackerMenuTask, title: String, help: String?,
-        content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu
-    ) -> NSMenuItem {
-        let isRunning = entry.isRunning && !content.isStale
-        let trackingAction = entry.trackingAction(in: content).map { action -> MenuAction in
-            switch action {
-            case .start(let taskID): return .start(taskID)
-            case .stop(let worklogID): return .stop(worklogID)
-            }
-        }
-        let submenu = NSMenu(title: entry.task.name)
-        submenu.appearance = appearance
-        submenu.autoenablesItems = false
-        addAction(
-            entry.isRunning ? "Stop tracking" : "Start tracking",
-            action: trackingAction, enabled: trackingAction != nil, to: submenu)
-        submenu.addItem(.separator())
-        for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
-            let available =
-                menuBar.menuCopyValue(
-                    action, taskID: entry.id,
-                    connection: connection.settings) != nil
-            let item = addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
-            item.setAccessibilityIdentifier("menu.copy.\(entry.id).\(action.rawValue)")
-        }
-        let item = addAction(title, action: trackingAction, to: menu)
-        item.setAccessibilityIdentifier("menu.task.\(entry.id)")
-        item.setAccessibilityValue("Task color: \(TaskColor.forTaskID(entry.id).rawValue)")
-        item.submenu = submenu
-        if trackingAction != nil {
-            // Setting a submenu assigns submenuAction; restore the row's tracking action afterward.
-            item.target = self
-            item.action = #selector(selected(_:))
-        }
-        if isRunning {
-            item.attributedTitle = NSAttributedString(
-                string: title,
-                attributes: [
-                    .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)
-                ])
-        }
-        item.image = TaskDotImage.make(
-            color: TaskColor.forTaskID(entry.id),
-            isRunning: isRunning, appearance: appearance)
-        item.preferredImageVisibility = .visible
-        item.toolTip =
-            trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
-        let status = MenuTaskRow.accessibilityStatus(isRunning: entry.isRunning, isStale: content.isStale)
-        item.setAccessibilityLabel("\(title), \(status)")
-        return item
-    }
-
-    @discardableResult
-    private func addText(
-        _ title: String, value: String? = nil, to menu: NSMenu,
-        help: String? = nil, liveValue: Bool = false
-    ) -> MenuValueField? {
-        let text = value.map { "\(title), \($0)" } ?? title
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        let label = NSTextField(labelWithString: title)
-        label.font = .menuFont(ofSize: 0)
-        label.textColor = .labelColor
-        label.lineBreakMode = .byTruncatingMiddle
-        label.toolTip = help ?? title
-        label.setAccessibilityLabel(title)
-        let valueLabel = value.map { NSTextField(labelWithString: $0) }
-        valueLabel?.font =
-            liveValue
-            ? NSFont.monospacedDigitSystemFont(
-                ofSize: NSFont.menuFont(ofSize: 0).pointSize,
-                weight: .regular) : label.font
-        valueLabel?.textColor = .labelColor
-        valueLabel?.alignment = .right
-        valueLabel?.lineBreakMode = .byTruncatingMiddle
-        valueLabel?.toolTip = help ?? value
-        valueLabel?.setAccessibilityLabel(value ?? "")
-        let valueSize = valueLabel?.fittingSize ?? .zero
-        let valueWidth =
-            liveValue && valueLabel != nil
-            ? max(
-                valueSize.width,
-                NSAttributedString(
-                    string: "~000000:00:00",
-                    attributes: [
-                        .font: valueLabel?.font ?? NSFont.menuFont(ofSize: 0)
-                    ]
-                ).size().width) : valueSize.width
-        let width = min(480, label.fittingSize.width + valueWidth + (value == nil ? 40 : 56))
-        let height = max(label.fittingSize.height, valueSize.height) + 8
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        view.appearance = menu.appearance
-        view.autoresizingMask = [.width]
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-        ])
-        if let valueLabel {
-            valueLabel.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(valueLabel)
-            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            NSLayoutConstraint.activate([
-                valueLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-                valueLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: valueLabel.leadingAnchor, constant: -16),
-            ])
-            if liveValue {
-                valueLabel.widthAnchor.constraint(equalToConstant: valueWidth).isActive = true
-            } else {
-                valueLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.65).isActive = true
-            }
-        } else {
-            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20).isActive = true
-        }
-        item.view = view
-        menu.addItem(item)
-        return valueLabel.map { MenuValueField(item: item, label: $0, titleLabel: label, title: title) }
-    }
-
-    @discardableResult
-    private func addAction(
-        _ title: String, action: MenuAction?, enabled: Bool = true,
-        to menu: NSMenu
-    ) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: #selector(selected(_:)), keyEquivalent: "")
-        item.target = self
-        item.representedObject = action.map { MenuCommand(action: $0, connection: connection.settings) }
-        item.isEnabled = enabled
-        menu.addItem(item)
-        return item
-    }
-
-    private enum MenuAction {
-        case start(String), stop(String), copy(MenuShortcutAction, String), openWindow, quit
-    }
-
-    private struct MenuCommand {
-        let action: MenuAction
-        let connection: ConnectionSettings
-    }
-
     @objc private func selected(_ item: NSMenuItem) {
-        guard item.isEnabled, let command = item.representedObject as? MenuCommand else { return }
+        guard item.isEnabled, let command = item.representedObject as? TrackerMenuCommand else { return }
         // `TrackingStore` also validates the captured task and worklog against the current state.
         switch command.action {
         case .start(let id):
@@ -399,43 +162,5 @@ final class TrackerStatusItemController: NSObject {
             openWindow?()
         case .quit: NSApplication.shared.terminate(nil)
         }
-    }
-}
-
-private extension TaskColor {
-    var nativeColor: NSColor {
-        switch self {
-        case .blue: return .systemBlue
-        case .teal: return .systemTeal
-        case .green: return .systemGreen
-        case .orange: return .systemOrange
-        case .red: return .systemRed
-        case .purple: return .systemPurple
-        case .pink: return .systemPink
-        }
-    }
-}
-
-private enum TaskDotImage {
-    static func make(color: TaskColor?, isRunning: Bool, appearance: NSAppearance) -> NSImage {
-        var resolvedColor = color?.nativeColor ?? .secondaryLabelColor
-        appearance.performAsCurrentDrawingAppearance {
-            resolvedColor = resolvedColor.usingColorSpace(.deviceRGB) ?? resolvedColor
-        }
-        let drawingColor = resolvedColor
-        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
-            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 3, dy: 3))
-            if isRunning {
-                drawingColor.setFill()
-                circle.fill()
-            } else {
-                drawingColor.setStroke()
-                circle.lineWidth = 1.8
-                circle.stroke()
-            }
-            return true
-        }
-        image.isTemplate = false
-        return image
     }
 }
