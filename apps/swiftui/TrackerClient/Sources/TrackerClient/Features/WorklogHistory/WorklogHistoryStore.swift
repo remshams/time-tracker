@@ -79,9 +79,9 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
     }
 
     /// Takes in a loaded task list. Reloads the history when `historyMayHaveChanged`, which the catalog reports when
-    /// the selected task, its latest start or its running worklog changed. Also reloads a history whose last page
-    /// request failed when the connection was stale before this task list arrived, so that recovering the connection
-    /// retries it. Otherwise clears a connection error, unless a failed page request shows its own error.
+    /// the selected task, its latest start or its running worklog changed. When this task list ends a stale connection,
+    /// also reloads the history if its last page request failed, for whatever reason. Otherwise clears a connection
+    /// error, unless a failed page request shows its own error.
     func acceptTaskList(historyMayHaveChanged: Bool, connectionWasStale: Bool) {
         if historyMayHaveChanged || (connectionWasStale && unavailable) {
             reload()
