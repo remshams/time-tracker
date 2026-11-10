@@ -198,13 +198,7 @@ public final class TrackerSync {
 
     /// Recovers the connection when a read failure calls for it.
     func recordReadFailure(_ error: Error) {
-        if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
-    }
-
-    /// Callers pass read failures, which the bridge never marks as uncertain.
-    private func requiresConnectionRecovery(_ error: Error) -> Bool {
-        guard let failure = error as? BridgeFailure else { return false }
-        return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
+        if connection.requiresRecovery(after: error) { recordConnectionFailure(error) }
     }
 
     private func schedulePolling() {

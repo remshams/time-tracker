@@ -75,6 +75,13 @@ public final class ConnectionStore: ChangeGuardedStore {
     }
 }
 
+    /// Whether a read failure marks the connection as failed: the bridge asks for a refresh, or the tracker is
+    /// unavailable or speaks another protocol. Callers pass read failures, which the bridge never marks as uncertain.
+    func requiresRecovery(after failure: Error) -> Bool {
+        guard let failure = failure as? BridgeFailure else { return false }
+        return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
+    }
+
 public enum TrackerPollingPolicy {
     public static func interval(visible: Bool, failures: Int) -> TimeInterval {
         let base: TimeInterval = visible ? 5 : 60
