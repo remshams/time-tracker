@@ -12,10 +12,8 @@ final class GlobalMenuShortcutHandler {
 
     init(preferences: MenuBarPreferencesStore, toggleMenu: @escaping @MainActor () -> Void) {
         self.preferences = preferences
-        registration = GlobalMenuShortcutRegistration(action: toggleMenu)
-    }
-
-    func start() {
+        let registration = GlobalMenuShortcutRegistration(action: toggleMenu)
+        self.registration = registration
         preferences.registerMenuShortcut = { [weak registration] shortcut in
             do {
                 try registration?.register(shortcut)
