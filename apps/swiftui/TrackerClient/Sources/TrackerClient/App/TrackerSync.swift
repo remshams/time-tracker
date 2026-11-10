@@ -86,9 +86,6 @@ public final class TrackerSync {
         visibilityChanged(previouslyVisible: previouslyVisible)
     }
 
-    /// Turns the menu bar clock on or off. The app calls `MenuBarStore.setClockEnabled(_:)` after the next commit.
-    public func setMenuBarClockEnabled(_ enabled: Bool) { menuBar.setClockEnabled(enabled) }
-
     public func sleep() {
         guard started else { return }
         sleeping = true
