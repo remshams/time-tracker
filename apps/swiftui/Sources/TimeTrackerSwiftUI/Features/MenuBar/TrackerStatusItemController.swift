@@ -49,9 +49,7 @@ final class TrackerStatusItemController: NSObject {
             guard let self else { return }
             updateMenuValues(menu.values)
         }
-        let shortcut = GlobalMenuShortcutHandler(preferences: preferences) { [weak self] in self?.toggleMenu() }
-        self.shortcut = shortcut
-        shortcut.start()
+        shortcut = GlobalMenuShortcutHandler(preferences: preferences) { [weak self] in self?.toggleMenu() }
         updateLabel()
     }
 
