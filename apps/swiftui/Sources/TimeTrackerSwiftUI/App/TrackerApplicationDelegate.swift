@@ -69,7 +69,7 @@ final class TrackerAppRuntime {
         menuBarPreferences = MenuBarPreferencesStore(
             preferences: savedPreferences,
             keyboardPreferences: UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults),
-            menu: menu, sync: features.sync)
+            menu: menu, menuBar: features.menuBar)
         lifecycle = MacLifecycleObserver(sync: features.sync, automation: features.trackingAutomation)
         lifecycle.start()
         features.sync.start()

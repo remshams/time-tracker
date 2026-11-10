@@ -8,7 +8,7 @@ final class MenuBarPreferencesStore {
     private let preferences: UserDefaultsMenuBarPreferences
     private let keyboardPreferences: UserDefaultsMenuKeyboardPreferences
     private let menu: TrackerMenuPresentationObserver
-    private let sync: TrackerSync
+    private let menuBar: MenuBarStore
     private(set) var showDailyTotalInMenuBar: Bool
     private(set) var menuTaskOrder: MenuTaskOrder
     private(set) var menuShortcuts: MenuKeyboardShortcuts
@@ -21,16 +21,16 @@ final class MenuBarPreferencesStore {
         preferences: UserDefaultsMenuBarPreferences,
         keyboardPreferences: UserDefaultsMenuKeyboardPreferences,
         menu: TrackerMenuPresentationObserver,
-        sync: TrackerSync
+        menuBar: MenuBarStore
     ) {
         self.preferences = preferences
         self.keyboardPreferences = keyboardPreferences
         self.menu = menu
-        self.sync = sync
+        self.menuBar = menuBar
         showDailyTotalInMenuBar = menu.showDailyTotal
         menuTaskOrder = menu.taskOrder
         menuShortcuts = keyboardPreferences.load()
-        sync.setMenuBarClockEnabled(menu.showDailyTotal)
+        menuBar.setClockEnabled(menu.showDailyTotal)
     }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {
@@ -38,7 +38,7 @@ final class MenuBarPreferencesStore {
         showDailyTotalInMenuBar = enabled
         preferences.save(enabled)
         menu.setShowDailyTotal(enabled)
-        sync.setMenuBarClockEnabled(enabled)
+        menuBar.setClockEnabled(enabled)
     }
 
     func setMenuTaskOrder(_ order: MenuTaskOrder) {
