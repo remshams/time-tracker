@@ -43,12 +43,7 @@ final class TrackerAppRuntime {
     private lazy var statusItem = TrackerStatusItemController(
         sync: features.sync, tracking: features.tracking, menuBar: features.menuBar,
         connection: features.connection, menu: menu, preferences: menuBarPreferences)
-    lazy var presentation = TrackerTaskPresentationCoordinator(
-        taskCreation: features.taskCreation, taskRename: features.taskRename,
-        worklogCorrection: features.worklogCorrection, worklogMove: features.worklogMove,
-        worklogDeletion: features.worklogDeletion, taskArchiving: features.taskArchiving,
-        bulkTaskArchiving: features.bulkTaskArchiving, tracking: features.tracking
-    ) { [weak self] in
+    private lazy var presentation = TrackerTaskPresentationCoordinator(gate: features.presentationGate) { [weak self] in
         self?.showTracker()
     }
     private var openWindow: OpenWindowAction?

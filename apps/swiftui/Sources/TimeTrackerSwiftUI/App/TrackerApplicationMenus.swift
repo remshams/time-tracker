@@ -11,18 +11,15 @@ struct TrackerApplicationMenus: Commands {
         creation = runtime.features.taskCreation
     }
 
-    private var canCreateTask: Bool { creation.canOpen && !runtime.presentation.hasPresentation }
-
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Task") {
-                guard canCreateTask else { return }
                 runtime.installSceneOpener(openWindow)
                 runtime.showTracker()
                 creation.open()
             }
             .keyboardShortcut("n")
-            .disabled(!canCreateTask)
+            .disabled(!creation.canOpen)
         }
 
         CommandGroup(replacing: .appSettings) {
