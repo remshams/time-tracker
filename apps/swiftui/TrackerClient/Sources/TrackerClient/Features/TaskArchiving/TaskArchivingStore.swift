@@ -13,7 +13,9 @@ public enum TaskArchivingAction: Equatable, Sendable {
 /// SwiftUI renders the sheet during its dismissal animation. The next action replaces it.
 @Observable
 public final class TaskArchivingStore {
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { gate.update(self, isShown: isPresented) }
+    }
     public private(set) var taskName = ""
     public private(set) var action = TaskArchivingAction.archive
     public private(set) var isSubmitting = false
@@ -25,17 +27,20 @@ public final class TaskArchivingStore {
     private let connection: ConnectionStore
     private let catalog: TaskCatalogStore
     private let tracking: TrackingStore
+    private let gate: PresentationGate
     private let reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
 
     init(
         client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore, catalog: TaskCatalogStore,
-        tracking: TrackingStore, reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
+        tracking: TrackingStore, gate: PresentationGate,
+        reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
     ) {
         self.client = client
         self.clock = clock
         self.connection = connection
         self.catalog = catalog
         self.tracking = tracking
+        self.gate = gate
         self.reloadAfterWrite = reloadAfterWrite
     }
 
@@ -71,7 +76,7 @@ public final class TaskArchivingStore {
         send()
     }
 
-    private var canBegin: Bool { connection.confirmed && !isPresented && !isSubmitting }
+    private var canBegin: Bool { connection.confirmed && !gate.isClaimed && !isSubmitting }
 
     private func task(withID id: String) -> TaskItem? { catalog.tasks.first { $0.id == id } }
 

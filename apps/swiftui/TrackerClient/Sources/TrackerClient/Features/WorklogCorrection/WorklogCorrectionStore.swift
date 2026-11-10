@@ -7,7 +7,9 @@ import Observation
 /// place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class WorklogCorrectionStore {
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { gate.update(self, isShown: isPresented) }
+    }
     public private(set) var taskName = ""
     public private(set) var isSubmitting = false
     public private(set) var error: String?
@@ -22,11 +24,12 @@ public final class WorklogCorrectionStore {
     private let catalog: TaskCatalogStore
     private let history: WorklogHistoryStore
     private let tracking: TrackingStore
+    private let gate: PresentationGate
     private let reloadAfterWrite: @MainActor () async -> Void
 
     init(
         client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore, catalog: TaskCatalogStore,
-        history: WorklogHistoryStore, tracking: TrackingStore,
+        history: WorklogHistoryStore, tracking: TrackingStore, gate: PresentationGate,
         reloadAfterWrite: @escaping @MainActor () async -> Void
     ) {
         self.client = client
@@ -35,10 +38,11 @@ public final class WorklogCorrectionStore {
         self.catalog = catalog
         self.history = history
         self.tracking = tracking
+        self.gate = gate
         self.reloadAfterWrite = reloadAfterWrite
     }
 
-    public var canOpen: Bool { connection.confirmed }
+    public var canOpen: Bool { connection.confirmed && !gate.isClaimed }
 
     public var canEdit: Bool { isPresented && !isSubmitting }
 
@@ -54,7 +58,7 @@ public final class WorklogCorrectionStore {
     public var timezone: TimeZone { calendar.timeZone }
 
     public func open(worklogID: String, timezone: TimeZone = .current) {
-        guard canOpen, !isPresented, let worklog = worklog(withID: worklogID),
+        guard canOpen, let worklog = worklog(withID: worklogID),
             let start = parseTimestamp(worklog.start), worklog.end == nil || parseTimestamp(worklog.end) != nil
         else { return }
         original = worklog

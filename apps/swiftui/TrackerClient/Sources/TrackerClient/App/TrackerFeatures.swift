@@ -42,6 +42,9 @@ public final class TrackerFeatures {
     public let bulkTaskArchiving: BulkTaskArchivingStore
     /// The worklog correction dialog.
     public let worklogCorrection: WorklogCorrectionStore
+    /// The dialog stores and the tracking error claim this while their sheet or alert shows. The app reveals the
+    /// tracker window and keeps it open from it.
+    public let presentationGate = PresentationGate()
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -53,7 +56,8 @@ public final class TrackerFeatures {
         dailyTotals = DailyTotalsStore(calendar: calendar)
         connection = ConnectionStore(settings: settings.load() ?? .local)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
-        tracking = TrackingStore(client: client, clock: clock, connection: connection, catalog: taskCatalog)
+        tracking = TrackingStore(
+            client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate)
         trackingAutomation = TrackingAutomationStore(
             repository: trackingPreferences, client: client, clock: clock, tracking: tracking)
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
@@ -85,26 +89,26 @@ public final class TrackerFeatures {
         trackingAutomation.reloadTaskList = { [weak sync] in await sync?.reloadTaskList() }
         trackingAutomation.publishChanges = { [weak sync] in sync?.publish() }
         taskRename = TaskRenameStore(
-            client: client, clock: clock, connection: connection, catalog: taskCatalog,
+            client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         taskArchiving = TaskArchivingStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, tracking: tracking,
-            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+            gate: presentationGate, reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         taskCreation = TaskCreationStore(
-            client: client, clock: clock, connection: connection, showTask: sync.showTask(_:),
+            client: client, clock: clock, connection: connection, gate: presentationGate, showTask: sync.showTask(_:),
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         worklogDeletion = WorklogDeletionStore(
             client: client, connection: connection, catalog: taskCatalog, history: worklogHistory,
-            reloadAfterWrite: sync.reloadAfterWorklogWrite)
+            gate: presentationGate, reloadAfterWrite: sync.reloadAfterWorklogWrite)
         worklogMove = WorklogMoveStore(
             client: client, connection: connection, catalog: taskCatalog, history: worklogHistory, tracking: tracking,
-            reloadAfterWrite: sync.reloadAfterWorklogWrite)
+            gate: presentationGate, reloadAfterWrite: sync.reloadAfterWorklogWrite)
         bulkTaskArchiving = BulkTaskArchivingStore(
-            client: client, clock: clock, connection: connection,
+            client: client, clock: clock, connection: connection, gate: presentationGate,
             recordPreviewFailure: sync.recordReadFailure,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         worklogCorrection = WorklogCorrectionStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, history: worklogHistory,
-            tracking: tracking, reloadAfterWrite: sync.reloadAfterWorklogWrite)
+            tracking: tracking, gate: presentationGate, reloadAfterWrite: sync.reloadAfterWorklogWrite)
     }
 }

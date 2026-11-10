@@ -86,19 +86,21 @@ final class WorklogDeletionTests: XCTestCase {
     }
 
     @MainActor
-    func testDeletionOpensWhileCorrectionAndArchiveDialogsAreOpen() async throws {
+    func testDeletionWaitsUntilTheCorrectionDialogCloses() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
         fixture.worklogDeletion.cancel()
 
         fixture.worklogCorrection.open(worklogID: precise.id)
-        fixture.taskArchiving.openArchive(taskID: secondTask.id)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
-        fixture.worklogDeletion.open(worklogID: oldWorklog.id)
-
         XCTAssertTrue(fixture.worklogCorrection.isPresented)
-        XCTAssertTrue(fixture.taskArchiving.isPresented)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
+        fixture.worklogDeletion.open(worklogID: oldWorklog.id)
+        XCTAssertFalse(fixture.worklogDeletion.isPresented)
+        XCTAssertEqual(fixture.worklogDeletion.original, precise)
+
+        fixture.worklogCorrection.cancel()
+        fixture.worklogDeletion.open(worklogID: oldWorklog.id)
         XCTAssertTrue(fixture.worklogDeletion.isPresented)
         XCTAssertEqual(fixture.worklogDeletion.original, oldWorklog)
     }
@@ -203,8 +205,8 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertTrue(fixture.worklogDeletion.isPresented)
         XCTAssertEqual(deletions(fixture), 1)
         XCTAssertTrue(fixture.trackingAvailability.canStop)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
         try await fixture.update("the poll result") { poll.succeed(running) }
 
         fixture.features.tracking.stopTracking(worklogID: activeWorklog.id)
@@ -470,7 +472,8 @@ final class WorklogDeletionTests: XCTestCase {
         let history = WorklogHistoryStore(client: client, catalog: catalog, connection: connection)
         history.accept(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false), cursor: nil)
         let deletion = WorklogDeletionStore(
-            client: client, connection: connection, catalog: catalog, history: history, reloadAfterWrite: {})
+            client: client, connection: connection, catalog: catalog, history: history, gate: PresentationGate(),
+            reloadAfterWrite: {})
         XCTAssertFalse(deletion.canOpen)
 
         deletion.open(worklogID: oldWorklog.id)
@@ -491,8 +494,13 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertTrue(sheet.consume())
         XCTAssertTrue(fixture.worklogDeletion.canOpen)
         fixture.taskCreation.open()
-        fixture.taskCreation.cancel()
+        XCTAssertTrue(sheet.consume())
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
+        fixture.taskCreation.setName("Draft")
         XCTAssertFalse(sheet.consume())
+        fixture.taskCreation.cancel()
+        XCTAssertTrue(sheet.consume())
+        XCTAssertTrue(fixture.worklogDeletion.canOpen)
     }
 
     @MainActor
@@ -511,9 +519,13 @@ final class WorklogDeletionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertFalse(sheet.consume())
 
+        // Another dialog changes only whether this one can open.
         fixture.taskRename.open(taskID: firstTask.id)
-        fixture.taskRename.cancel()
+        XCTAssertTrue(sheet.consume())
+        fixture.taskRename.setName("Draft")
         XCTAssertFalse(sheet.consume())
+        fixture.taskRename.cancel()
+        XCTAssertTrue(sheet.consume())
 
         fixture.worklogDeletion.open(worklogID: oldWorklog.id)
         XCTAssertTrue(sheet.consume())

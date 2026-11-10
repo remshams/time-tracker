@@ -7,7 +7,9 @@ import Observation
 /// place, because SwiftUI renders the sheet during its dismissal animation. `open` replaces it.
 @Observable
 public final class BulkTaskArchivingStore {
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { gate.update(self, isShown: isPresented) }
+    }
     public private(set) var daysText = "14"
     public private(set) var isLoading = false
     public private(set) var isSubmitting = false
@@ -19,22 +21,24 @@ public final class BulkTaskArchivingStore {
     private let client: any TrackerClient
     private let clock: any TrackerClock
     private let connection: ConnectionStore
+    private let gate: PresentationGate
     private let recordPreviewFailure: @MainActor (Error) -> Void
     private let reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
 
     init(
         client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore,
-        recordPreviewFailure: @escaping @MainActor (Error) -> Void,
+        gate: PresentationGate, recordPreviewFailure: @escaping @MainActor (Error) -> Void,
         reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
     ) {
         self.client = client
         self.clock = clock
         self.connection = connection
+        self.gate = gate
         self.recordPreviewFailure = recordPreviewFailure
         self.reloadAfterWrite = reloadAfterWrite
     }
 
-    public var canOpen: Bool { connection.confirmed }
+    public var canOpen: Bool { connection.confirmed && !gate.isClaimed }
     public var hasPreview: Bool { preview != nil }
     public var tasks: [TaskItem] { preview?.tasks ?? [] }
 
@@ -49,7 +53,7 @@ public final class BulkTaskArchivingStore {
     }
 
     public func open() {
-        guard canOpen, !isPresented else { return }
+        guard canOpen else { return }
         daysText = "14"
         preview = nil
         isPresented = true

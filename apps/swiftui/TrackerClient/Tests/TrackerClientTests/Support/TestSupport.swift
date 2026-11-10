@@ -412,7 +412,7 @@ extension TrackingStore {
     convenience init() {
         self.init(
             client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local),
-            catalog: TaskCatalogStore())
+            catalog: TaskCatalogStore(), gate: PresentationGate())
     }
 }
 

@@ -290,7 +290,7 @@ final class TaskCreationTests: XCTestCase {
     }
 
     @MainActor
-    func testCreationRunsWhileARenameRequestIsInFlight() async throws {
+    func testCreationWaitsUntilTheRenameDialogCloses() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
@@ -304,38 +304,22 @@ final class TaskCreationTests: XCTestCase {
                 task: firstTask.id, expectedName: firstTask.name, name: "Renamed task",
                 at: "2025-01-01T00:00:00.000Z"))
         XCTAssertTrue(fixture.taskRename.isSubmitting)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.taskCreation.canOpen)
         fixture.taskCreation.open()
-        fixture.taskCreation.setName(secondTask.name)
-        XCTAssertTrue(fixture.taskCreation.canSubmit)
-        fixture.taskCreation.submit()
-        let creation = try await fixture.client.next()
-        XCTAssertEqual(creation.operation, .create(name: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
-        creation.created(task: secondTask)
-        let creationReload = try await fixture.client.next()
-        XCTAssertEqual(creationReload.operation, .refresh(fixture.features.connection.settings))
         XCTAssertFalse(fixture.taskCreation.isPresented)
-        XCTAssertTrue(fixture.taskRename.isSubmitting)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         try await fixture.update("the rename result") {
-            rename.succeed(TaskListResources(tasks: [renamed, secondTask], active: nil))
+            rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         } until: {
             !fixture.taskRename.isPresented
         }
-        creationReload.succeed(TaskListResources(tasks: [renamed, secondTask], active: nil))
-        let history = try await fixture.client.next()
-        XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
-        history.succeed(emptyPage)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, [renamed, secondTask])
-        XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
-        XCTAssertNil(fixture.taskCreation.error)
-        XCTAssertNil(fixture.taskRename.error)
+        XCTAssertTrue(fixture.taskCreation.canOpen)
+        fixture.taskCreation.open()
+        XCTAssertTrue(fixture.taskCreation.isPresented)
     }
 
     @MainActor
-    func testTrackingStartAndOtherEditorsStayAvailableWhileCreationRuns() async throws {
+    func testTrackingStartStaysAvailableAndOtherDialogsWaitWhileCreationRuns() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
@@ -345,10 +329,10 @@ final class TaskCreationTests: XCTestCase {
         fixture.taskCreation.submit()
         let creation = try await fixture.client.next()
         XCTAssertTrue(fixture.taskCreation.isSubmitting)
-        XCTAssertTrue(fixture.taskRename.canOpen)
-        XCTAssertTrue(fixture.worklogCorrection.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
+        XCTAssertFalse(fixture.taskRename.canOpen)
+        XCTAssertFalse(fixture.worklogCorrection.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
         fixture.features.tracking.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()

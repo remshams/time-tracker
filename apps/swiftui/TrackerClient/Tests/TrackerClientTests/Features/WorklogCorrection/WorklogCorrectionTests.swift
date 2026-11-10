@@ -56,7 +56,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let correction = WorklogCorrectionStore(
             client: client, clock: clock, connection: connection, catalog: catalog,
             history: WorklogHistoryStore(client: client, catalog: catalog, connection: connection), tracking: tracking,
-            reloadAfterWrite: {})
+            gate: PresentationGate(), reloadAfterWrite: {})
         XCTAssertFalse(correction.canOpen)
         correction.open(worklogID: activeWorklog.id)
         XCTAssertFalse(correction.isPresented)
@@ -300,7 +300,7 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
-    func testSubmitIsDisabledWhileSubmittingAndTaskCreationAndTrackingStayUsable() async throws {
+    func testSubmitIsDisabledWhileSubmittingAndTrackingStaysUsable() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
@@ -316,37 +316,21 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.worklogCorrection.cancel()
         XCTAssertTrue(fixture.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.worklogCorrection.start, draft)
-        XCTAssertTrue(fixture.taskCreation.canOpen)
-        XCTAssertTrue(fixture.worklogMove.canOpen)
-        XCTAssertTrue(fixture.worklogDeletion.canOpen)
+        // The open dialog blocks the other dialogs, but tracking stays usable.
+        XCTAssertFalse(fixture.taskCreation.canOpen)
+        XCTAssertFalse(fixture.worklogMove.canOpen)
+        XCTAssertFalse(fixture.worklogDeletion.canOpen)
         XCTAssertTrue(fixture.trackingAvailability.canStart(taskID: secondTask.id))
-
         fixture.taskCreation.open()
-        fixture.taskCreation.setName("Parallel task")
-        fixture.taskCreation.submit()
-        let create = try await fixture.client.next()
-        XCTAssertEqual(create.operation, .create(name: "Parallel task", at: "2025-01-01T00:00:00.000Z"))
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
-        XCTAssertTrue(fixture.taskCreation.isSubmitting)
-        XCTAssertTrue(fixture.worklogCorrection.isSubmitting)
+        XCTAssertFalse(fixture.taskCreation.isPresented)
 
         let corrected = WorklogItem(
             id: log.id, taskId: log.taskId, start: "2024-12-30T08:00:00.000000Z", end: log.end)
         command.corrected(worklog: corrected, resources: resources)
         try await finishHistory(fixture, rows: [corrected])
         XCTAssertFalse(fixture.worklogCorrection.isPresented)
-        XCTAssertTrue(fixture.taskCreation.isSubmitting)
         XCTAssertEqual(corrections(fixture), 1)
-
-        let created = TaskItem(id: "task-created", name: "Parallel task", archived: false, latestStart: nil)
-        try await fixture.update("the created task") {
-            create.created(
-                taskID: created.id, resources: TaskListResources(tasks: [firstTask, secondTask, created], active: nil))
-        } until: {
-            !fixture.taskCreation.isSubmitting
-        }
-        XCTAssertFalse(fixture.taskCreation.isPresented)
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, secondTask, created])
+        XCTAssertTrue(fixture.taskCreation.canOpen)
     }
 
     @MainActor

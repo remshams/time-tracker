@@ -11,7 +11,9 @@ import Observation
 @Observable
 public final class TrackingStore: ChangeGuardedStore {
     public private(set) var active: WorklogItem?
-    public private(set) var error: String?
+    public private(set) var error: String? {
+        didSet { gate.update(self, kind: .alert, isShown: error != nil) }
+    }
     public private(set) var isSubmitting = false
     /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
     public private(set) var timerText = "Unavailable"
@@ -34,12 +36,17 @@ public final class TrackingStore: ChangeGuardedStore {
     private let clock: any TrackerClock
     private let connection: ConnectionStore
     private let catalog: TaskCatalogStore
+    private let gate: PresentationGate
 
-    init(client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore, catalog: TaskCatalogStore) {
+    init(
+        client: any TrackerClient, clock: any TrackerClock, connection: ConnectionStore, catalog: TaskCatalogStore,
+        gate: PresentationGate
+    ) {
         self.client = client
         self.clock = clock
         self.connection = connection
         self.catalog = catalog
+        self.gate = gate
     }
 
     private var availability: TrackingAvailability {
