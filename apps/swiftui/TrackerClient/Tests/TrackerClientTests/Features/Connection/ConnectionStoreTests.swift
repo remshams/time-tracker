@@ -73,6 +73,28 @@ final class ConnectionStoreTests: XCTestCase {
 
         XCTAssertEqual(calls.refreshes, 1)
     }
+
+    @MainActor
+    func testAcceptedTaskListConfirmsTheConnectionAndLiftsAFailure() async {
+        let store = ConnectionStore(settings: serverSettings)
+        store.recordFailure(BridgeFailure(message: "Tracker unavailable", kind: "unavailable"))
+        store.recordFailure(BridgeFailure(message: "Incompatible server", kind: "protocol"))
+        XCTAssertEqual(store.failures, 2)
+        XCTAssertTrue(store.protocolBlocked)
+
+        store.acceptTaskList()
+
+        XCTAssertTrue(store.confirmed)
+        XCTAssertFalse(store.stale)
+        XCTAssertEqual(store.failures, 0)
+        XCTAssertFalse(store.protocolBlocked)
+        XCTAssertEqual(store.statusText, "Connected")
+        XCTAssertNil(store.message)
+
+        let local = ConnectionStore(settings: .local)
+        local.acceptTaskList()
+        XCTAssertEqual(local.statusText, "Local database")
+    }
 }
 
 private final class ConnectionSwitches {
