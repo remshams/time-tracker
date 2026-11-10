@@ -230,8 +230,10 @@ helpers no feature owns and `Contracts/` holds protocols and wire models
   the start and stop checks from `TrackingAvailability` through one
   `Observations` loop, and `TrackerMenuSources` computes the running task's name
   from the connection, tracking and catalog stores. `TrackerSync` loads,
-  refreshes and polls the stores, runs the display, rollover and menu bar timers, handles visibility, sleep
+  refreshes and polls the stores, runs the display and menu bar timers, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
+  `DailyTotalsStore` requests and checks today's report when `TrackerSync` asks it to, runs the
+  midnight rollover timer, and hands the task list that comes with the report back to `TrackerSync`.
   It hands a loaded task list to the stores in a fixed order through their
   `acceptTaskList` methods and passes the values one store needs from
   another, such as the running worklog before and after the update.
