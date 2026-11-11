@@ -45,9 +45,6 @@ public final class TrackerFeatures {
     /// The dialog stores and the tracking error claim this while their sheet or alert shows. The app reveals the
     /// tracker window from it.
     public let presentationGate = PresentationGate()
-    /// Ticks while the app shows a running worklog's time. The tracking and daily totals stores refresh their clock
-    /// values on each tick.
-    let displayClock: DisplayClock
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -56,7 +53,8 @@ public final class TrackerFeatures {
         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
-        displayClock = DisplayClock(scheduler: scheduler)
+        // Ticks while the app shows a running worklog's time. The stores and the sync that use it hold it.
+        let displayClock = DisplayClock(scheduler: scheduler)
         connection = ConnectionStore(settings: settings.load() ?? .local)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
         tracking = TrackingStore(
