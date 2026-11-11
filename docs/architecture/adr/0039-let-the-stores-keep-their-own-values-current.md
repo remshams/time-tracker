@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. It partially supersedes the clauses of ADR 0032, ADR 0035, ADR 0037 and ADR 0038 listed under [Superseded clauses](#superseded-clauses). All other decisions in those records remain accepted.
+Accepted. It partially supersedes the clauses of ADR 0030, ADR 0032, ADR 0035, ADR 0037 and ADR 0038 listed under [Superseded clauses](#superseded-clauses). All other decisions in those records remain accepted.
 
 Implemented by #395.
 
@@ -53,10 +53,12 @@ The new folder dependencies, DailyTotals → TaskCatalog and DailyTotals → Tra
 
 This record replaces these clauses:
 
+- ADR 0030, "Who writes the stores": "`TrackerSync` owns polling, the display and rollover timers, …". `DisplayClock` runs the display timer; polling stays in `TrackerSync`.
 - ADR 0032, "publish() stays": "`TrackerSync.publish()` refreshes values derived from the clock (`timerText`, today's totals, the auto-pause status) and recorded errors, which the stores then assign. … `publish()` keeps its name." `publish()` is removed. `DisplayClock` drives the clock values, and each store shows its recorded state itself.
 - ADR 0035, "TrackingActions is deleted": "Cancelling a pending auto-resume, reloading and publishing reach `Features/Tracking` through closures." Cancelling and reloading still do; there is no publishing closure.
 - ADR 0035, "Screen-lock auto-pause": "Reloading, recording a tracking failure and publishing come in through closures." Reloading comes in through a closure. The store records and shows tracking failures on `TrackingStore` directly.
 - ADR 0035, "`TrackerSync` keeps the orchestration", as amended by ADR 0038: "`TrackerSync` keeps loading, failure recovery, publishing, polling and the display, rollover and menu bar timers". `TrackerSync` keeps loading, failure recovery and polling. `DisplayClock` runs the display and menu bar timers, and `DailyTotalsStore` runs the rollover timer, as ADR 0037 decided.
+- ADR 0037, "Superseded clauses", on ADR 0030: "Polling and the display timer stay in `TrackerSync`." Polling stays in `TrackerSync`; `DisplayClock` runs the display timer.
 - ADR 0037, "Decision": "The store hands that list, read failures, the refresh after a rollover and publishing back to `TrackerSync` through closures". The store hands back the list, read failures and the refresh; it refreshes its own values.
 - ADR 0038, "Menu bar clock": "`MenuBarStore` runs the clock. It gets the scheduler and a publish closure that `TrackerFeatures` wires to `TrackerSync`." `MenuBarStore` turns the `DisplayClock`'s minute ticks on and off, and has no scheduler or publish closure. `TrackerSync` no longer calls its `start()`, `sleep()` and `wake()`, and the order in which it receives the task list no longer matters for the clock.
 - ADR 0038, "Connection recovery rule": "`TrackerSync` asks it, then records the failure, schedules polling and publishes as before." `TrackerSync` records the failure and schedules polling; it doesn't publish.

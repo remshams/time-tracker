@@ -6,7 +6,7 @@ Accepted. It partially supersedes the clauses of ADR 0030 and ADR 0035 listed un
 
 Implemented by #383.
 
-Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for `DailyTotalsStore` publishing through a closure; all other decisions remain accepted.
+Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for `DailyTotalsStore` publishing through a closure and for the display timer staying in `TrackerSync`; all other decisions remain accepted.
 
 ## Date
 

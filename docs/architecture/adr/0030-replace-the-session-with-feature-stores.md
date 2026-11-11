@@ -12,6 +12,8 @@ Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) f
 
 Partially superseded by [ADR 0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) for `TrackerSync` owning the rollover timer; all other decisions remain accepted.
 
+Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for `TrackerSync` owning the display timer; all other decisions remain accepted.
+
 ## Date
 
 2026-10-20
