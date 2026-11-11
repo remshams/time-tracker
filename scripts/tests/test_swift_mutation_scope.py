@@ -23,6 +23,7 @@ CATALOG = scope.SOURCES + scope.CATALOG
 TIME_FORMATTING = scope.SOURCES + scope.TIME_FORMATTING
 CHANGE_GUARD = scope.SOURCES + scope.CHANGE_GUARD
 PRESENTATION_GATE = scope.SOURCES + scope.PRESENTATION_GATE
+DISPLAY_CLOCK = scope.SOURCES + scope.DISPLAY_CLOCK
 TRACKING_TEST = scope.TESTS + "Features/Tracking/TrackingStoreTests.swift"
 
 
@@ -92,7 +93,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        self.assertEqual(result["files"], [TRACKING, CHANGE_GUARD, PRESENTATION_GATE, TIME_FORMATTING])
+        self.assertEqual(result["files"], [TRACKING, CHANGE_GUARD, DISPLAY_CLOCK, PRESENTATION_GATE, TIME_FORMATTING])
 
     def test_suites_mapped_to_tracking_select_the_time_helpers_once(self):
         for test, sources in scope.TEST_PRODUCTION.items():
@@ -189,10 +190,10 @@ class SwiftMutationScopeTests(unittest.TestCase):
         for source in [scope.CATALOG, scope.HISTORY, scope.TOTALS]:
             self.assertIn(scope.SOURCES + source, result["files"])
 
-    def test_publish_suite_selects_the_sync_and_the_stores_its_timer_checks_read(self):
-        test = scope.TESTS + "App/TrackerSyncPublishTests.swift"
-        self.write(scope.PACKAGE + test, "func testSleepPublishes() {}\n")
-        self.commit("Change publish assertions")
+    def test_store_refresh_suite_selects_the_sync_and_the_stores_its_timer_checks_read(self):
+        test = scope.TESTS + "App/StoreRefreshTests.swift"
+        self.write(scope.PACKAGE + test, "func testWakeRefreshes() {}\n")
+        self.commit("Change refresh assertions")
 
         result = self.select()
 
@@ -285,7 +286,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertEqual(result["status"], "focused", result["review_reasons"])
         self.assertEqual(
             result["files"],
-            [scope.SOURCES + scope.DEPENDENCIES, TRACKING, CHANGE_GUARD, PRESENTATION_GATE, TIME_FORMATTING])
+            [scope.SOURCES + scope.DEPENDENCIES, TRACKING, CHANGE_GUARD, DISPLAY_CLOCK, PRESENTATION_GATE, TIME_FORMATTING])
         self.assertTrue(any("Reviewed blob adaptation" in reason for reason in result["reasons"]))
 
     def test_reviewed_support_adaptation_rejects_other_edits(self):
@@ -319,7 +320,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], [TRACKING, CHANGE_GUARD, PRESENTATION_GATE, TIME_FORMATTING])
+        self.assertEqual(result["files"], [TRACKING, CHANGE_GUARD, DISPLAY_CLOCK, PRESENTATION_GATE, TIME_FORMATTING])
         self.assertTrue(any("Reviewed fixture-only adaptation" in reason for reason in result["reasons"]))
 
         self.write(contract, "protocol TrackerClient { func track() }\n")
@@ -458,7 +459,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        self.assertEqual(result["files"], [renamed, CHANGE_GUARD, PRESENTATION_GATE, TIME_FORMATTING])
+        self.assertEqual(result["files"], [renamed, CHANGE_GUARD, DISPLAY_CLOCK, PRESENTATION_GATE, TIME_FORMATTING])
         self.assertEqual(result["changes"][0]["status"], "R100")
 
     def test_deleted_source_requires_review_and_keeps_other_changed_files(self):
@@ -538,7 +539,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.git("rm", scope.PACKAGE + TRACKING_TEST)
         self.commit("Remove tracking assertion")
 
-        self.assertEqual(self.select()["files"], [TRACKING, CHANGE_GUARD, PRESENTATION_GATE, TIME_FORMATTING])
+        self.assertEqual(self.select()["files"], [TRACKING, CHANGE_GUARD, DISPLAY_CLOCK, PRESENTATION_GATE, TIME_FORMATTING])
 
     def test_stale_test_mapping_requires_review(self):
         self.git("rm", scope.PACKAGE + TRACKING)
