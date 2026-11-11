@@ -239,7 +239,7 @@ such as `Features/WorklogCorrection` in both targets.
   minute while the menu bar shows today's total; `TrackingStore` refreshes the
   timer text and `DailyTotalsStore` today's totals on each tick
   ([ADR 0039](adr/0039-let-the-stores-keep-their-own-values-current.md)).
-  On a connection change it calls `acceptConnection`, in a fixed order, on each store that holds state of the previous connection
+  On a connection change `TrackerSync` calls `acceptConnection`, in a fixed order, on each store that holds state of the previous connection
   ([ADR 0038](adr/0038-move-the-remaining-feature-rules-out-of-tracker-sync.md)).
   It hands a loaded task list to the stores in a fixed order through their
   `acceptTaskList` methods and passes the values one store needs from
