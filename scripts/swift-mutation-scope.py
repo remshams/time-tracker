@@ -245,7 +245,10 @@ SUPPORT_PRODUCTION = {
 # deleted path to the successor here. The successor's own scope covers the
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
-REVIEWED_REPLACEMENTS: dict[str, str] = {}
+REVIEWED_REPLACEMENTS: dict[str, str] = {
+    "Tests/TrackerClientTests/App/TrackerSyncPublishTests.swift":
+        "Tests/TrackerClientTests/App/StoreRefreshTests.swift",
+}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
