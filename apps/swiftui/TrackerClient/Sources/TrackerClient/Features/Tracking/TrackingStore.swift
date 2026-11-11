@@ -124,7 +124,7 @@ public final class TrackingStore: ChangeGuardedStore {
         return elapsed().map(formatClockDuration) ?? "Idle"
     }
 
-    func refreshTimerText() { set(\.timerText, displayText()) }
+    private func refreshTimerText() { set(\.timerText, displayText()) }
 
     func beginSubmitting() { set(\.isSubmitting, true) }
 
