@@ -12,6 +12,8 @@ Partially superseded by [ADR 0035](0035-put-user-actions-on-feature-stores.md) f
 
 Partially superseded by [ADR 0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) for `TrackerSync` holding `showTask(_:)`; all other decisions remain accepted.
 
+Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for `publish()` staying; all other decisions remain accepted.
+
 ## Date
 
 2026-11-08
