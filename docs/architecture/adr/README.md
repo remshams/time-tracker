@@ -42,7 +42,7 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed; partially superseded by ADR 0031. |
 | [0028](0028-ship-a-standalone-server-binary.md) | Ship a standalone server binary | Accepted |
 | [0029](0029-send-native-requests-directly.md) | Send native requests directly | Accepted; partially superseded by ADR 0031 and ADR 0036. |
-| [0030](0030-replace-the-session-with-feature-stores.md) | Replace the session with feature stores | Partially superseded by ADR 0032, ADR 0034, ADR 0035 and ADR 0037; all other decisions remain accepted. |
+| [0030](0030-replace-the-session-with-feature-stores.md) | Replace the session with feature stores | Partially superseded by ADR 0032, ADR 0034, ADR 0035, ADR 0037 and ADR 0039; all other decisions remain accepted. |
 | [0031](0031-remove-server-revisions-from-writes-and-reads.md) | Remove server revisions from writes and reads | Accepted |
 | [0032](0032-move-the-dialogs-into-feature-stores.md) | Move the dialogs into feature stores | Partially superseded by ADR 0033, ADR 0034, ADR 0035, ADR 0038 and ADR 0039; all other decisions remain accepted. |
 | [0033](0033-report-bulk-archive-preview-failures-through-a-closure.md) | Report bulk archive preview failures through a closure | Partially superseded by ADR 0034; all other decisions remain accepted. |

@@ -6,7 +6,7 @@ Accepted. It partially supersedes the clauses of ADR 0032 and ADR 0035 listed un
 
 Implemented by #384.
 
-Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for `MenuBarStore` running the menu bar clock with a scheduler and a publish closure, and for `TrackerSync` publishing; all other decisions remain accepted.
+Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for `MenuBarStore` running the menu bar clock with a scheduler and a publish closure, and for `TrackerSync` keeping the display timer and publishing; all other decisions remain accepted.
 
 ## Date
 
