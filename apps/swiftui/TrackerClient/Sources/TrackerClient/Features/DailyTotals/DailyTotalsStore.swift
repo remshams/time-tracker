@@ -133,8 +133,8 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         refreshTotals()
     }
 
-    /// Starts the next day when the current one has ended, which the display tick checks each second.
-    func rollOverIfDayEnded() {
+    /// Starts the next day when the current one has ended, which each display tick checks.
+    private func rollOverIfDayEnded() {
         guard reports != nil, updateDay() else { return }
         rollOver()
     }
