@@ -10,6 +10,8 @@ Partially superseded by [ADR 0037](0037-let-daily-totals-load-and-roll-over-in-t
 
 Partially superseded by [ADR 0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) for the menu bar clock setting going to `TrackerSync`, `TrackerSync` owning the menu bar timer and the rule for which failures need recovery, `TrackerSync` resetting the other stores on a connection change, and `showTask` staying in `TrackerSync`; all other decisions remain accepted.
 
+Partially superseded by [ADR 0039](0039-let-the-stores-keep-their-own-values-current.md) for publishing through closures and `TrackerSync` publishing and owning the display timer; all other decisions remain accepted.
+
 ## Date
 
 2026-11-09

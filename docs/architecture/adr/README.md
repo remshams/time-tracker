@@ -44,10 +44,11 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0029](0029-send-native-requests-directly.md) | Send native requests directly | Accepted; partially superseded by ADR 0031 and ADR 0036. |
 | [0030](0030-replace-the-session-with-feature-stores.md) | Replace the session with feature stores | Partially superseded by ADR 0032, ADR 0034, ADR 0035 and ADR 0037; all other decisions remain accepted. |
 | [0031](0031-remove-server-revisions-from-writes-and-reads.md) | Remove server revisions from writes and reads | Accepted |
-| [0032](0032-move-the-dialogs-into-feature-stores.md) | Move the dialogs into feature stores | Partially superseded by ADR 0033, ADR 0034, ADR 0035 and ADR 0038; all other decisions remain accepted. |
+| [0032](0032-move-the-dialogs-into-feature-stores.md) | Move the dialogs into feature stores | Partially superseded by ADR 0033, ADR 0034, ADR 0035, ADR 0038 and ADR 0039; all other decisions remain accepted. |
 | [0033](0033-report-bulk-archive-preview-failures-through-a-closure.md) | Report bulk archive preview failures through a closure | Partially superseded by ADR 0034; all other decisions remain accepted. |
 | [0034](0034-allow-no-cycles-between-folders-in-a-target.md) | Allow no cycles between folders in a target | Partially superseded by ADR 0035; all other decisions remain accepted. |
-| [0035](0035-put-user-actions-on-feature-stores.md) | Put user actions on feature stores | Accepted; partially superseded by ADR 0037 and ADR 0038. |
+| [0035](0035-put-user-actions-on-feature-stores.md) | Put user actions on feature stores | Accepted; partially superseded by ADR 0037, ADR 0038 and ADR 0039. |
 | [0036](0036-let-dialog-stores-claim-a-presentation-gate.md) | Let dialog stores claim a presentation gate | Accepted |
-| [0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) | Let daily totals load and roll over in their store | Accepted |
-| [0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) | Move the remaining feature rules out of TrackerSync | Accepted |
+| [0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) | Let daily totals load and roll over in their store | Accepted; partially superseded by ADR 0039. |
+| [0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) | Move the remaining feature rules out of TrackerSync | Accepted; partially superseded by ADR 0039. |
+| [0039](0039-let-the-stores-keep-their-own-values-current.md) | Let the stores keep their own values current | Accepted |
