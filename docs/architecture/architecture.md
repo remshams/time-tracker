@@ -232,8 +232,13 @@ such as `Features/WorklogCorrection` in both targets.
   the start and stop checks from `TrackingAvailability` through one
   `Observations` loop, and `TrackerMenuSources` computes the running task's name
   from the connection, tracking and catalog stores. `TrackerSync` loads,
-  refreshes and polls the stores, runs the display timer, handles visibility, sleep
+  refreshes and polls the stores, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
+  Each store keeps its own observed values current. `Shared/DisplayClock` ticks
+  every second while a window or the menu shows a running worklog, and every
+  minute while the menu bar shows today's total; `TrackingStore` refreshes the
+  timer text and `DailyTotalsStore` today's totals on each tick
+  ([ADR 0039](adr/0039-let-the-stores-keep-their-own-values-current.md)).
   On a connection change it calls `acceptConnection`, in a fixed order, on each store that holds state of the previous connection
   ([ADR 0038](adr/0038-move-the-remaining-feature-rules-out-of-tracker-sync.md)).
   It hands a loaded task list to the stores in a fixed order through their
@@ -242,17 +247,20 @@ such as `Features/WorklogCorrection` in both targets.
   `WorklogHistoryStore` decides from them whether to reload or clear its error.
   `DailyTotalsStore` requests and checks today's report when `TrackerSync` asks it to, runs the
   midnight rollover timer, and hands the task list that comes with the report back to `TrackerSync`.
+  It reads the tasks from `TaskCatalogStore` and the running worklog from
+  `TrackingStore`, so `TrackerSync` hands it each task list after those two.
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingStore` starts and
   stops tracking after asking it, and `MenuBarStore` runs the status item's
-  primary action through `TrackingStore`. `MenuBarStore` also runs the menu bar
-  clock, which the app turns on while the menu bar shows the daily total and
-  which republishes once a minute while a worklog runs. `TrackingStore` cancels a pending
-  auto-resume, reloads the task list and publishes through closures that
+  primary action through `TrackingStore`. The app turns the display clock's
+  minute ticks on and off through `MenuBarStore` while the menu bar shows the
+  daily total. `TrackingStore` cancels a pending
+  auto-resume and reloads the task list through closures that
   `TrackerFeatures` sets, so `Tracking` doesn't depend on `TrackingAutomation`.
+  It shows a failed request's error once that reload returns.
   `TrackingAutomationStore` pauses the running timer when the screen locks and
-  resumes its task when the screen unlocks. It reads and records failures on
-  `TrackingStore` directly, and reloads and publishes through closures that
+  resumes its task when the screen unlocks. It records and shows failures on
+  `TrackingStore` directly, and reloads through a closure that
   `TrackerFeatures` sets.
   `TrackerFeatures`, which `TrackerAppRuntime` and the
   test fixture create, creates and holds the stores, `TrackingAvailability`,
