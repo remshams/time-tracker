@@ -412,7 +412,8 @@ extension TrackingStore {
     convenience init() {
         self.init(
             client: FakeClient(), clock: FakeClock(), connection: ConnectionStore(settings: .local),
-            catalog: TaskCatalogStore(), gate: PresentationGate())
+            catalog: TaskCatalogStore(), gate: PresentationGate(),
+            displayClock: DisplayClock(scheduler: FakeScheduler()))
     }
 }
 
@@ -512,7 +513,7 @@ final class Fixture {
         return try completedResult.get()
     }
 
-    /// Moves the clock without a timer tick, so only a publish can show the new elapsed time.
+    /// Moves the clock without a timer tick, so the stores show the new elapsed time only once they refresh.
     func advanceClock(by seconds: TimeInterval) {
         clock.now.addTimeInterval(seconds)
         clock.uptime += seconds

@@ -17,7 +17,7 @@ final class MenuHarness {
             sources: sources, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
     }
 
-    /// Opens the menu as the app does: the sync publishes first, then the menu captures its content.
+    /// Opens the menu as the app does: the stores refresh their clock values first, then the menu captures its content.
     func menuOpened() {
         fixture.sync.setMenuVisible(true)
         observer.menuOpened()
@@ -38,7 +38,7 @@ final class MenuHarness {
         try await fixture.taskValue(finished, file: file, line: line)
     }
 
-    /// Advances the clock and fires the menu bar's minute clock, which republishes the stores.
+    /// Advances the clock and fires the menu bar's minute clock, which refreshes the stores' clock values.
     func tick(_ seconds: TimeInterval, file: StaticString = #filePath, line: UInt = #line) async throws {
         fixture.clock.now.addTimeInterval(seconds)
         fixture.clock.uptime += seconds

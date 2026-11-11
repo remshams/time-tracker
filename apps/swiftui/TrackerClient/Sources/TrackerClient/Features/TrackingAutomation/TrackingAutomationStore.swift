@@ -5,8 +5,8 @@ import Observation
 /// running timer when the screen locks and resumes its task when the screen unlocks.
 ///
 /// Views read `enabled` and `statusText` and turn the auto-pause on or off; the lifecycle observer reports the screen
-/// lock events. Each observed property is assigned only when its value changes. The status text changes only when
-/// `TrackerSync` publishes.
+/// lock events. Each observed property is assigned only when its value changes. The status text follows the task the
+/// auto-pause holds for the unlock.
 @Observable
 public final class TrackingAutomationStore: ChangeGuardedStore {
     struct Resume {
@@ -19,16 +19,14 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
     public private(set) var statusText: String?
     // Only the auto-pause flow and the menu's primary action read these, so views don't observe them.
     @ObservationIgnored private(set) var locked = false
-    @ObservationIgnored private var pausedTaskID: String?
+    @ObservationIgnored private var pausedTaskID: String? {
+        didSet { set(\.statusText, pausedStatusText) }
+    }
     @ObservationIgnored private var isPausing = false
     @ObservationIgnored private var pauseMayResume = false
     @ObservationIgnored private var unlockedAt: Date?
-    /// Reloads the task list after a pause or resume and publishes on every path. `TrackerFeatures` sets it to
-    /// `TrackerSync`'s reload.
+    /// Reloads the task list after a pause or resume. `TrackerFeatures` sets it to `TrackerSync`'s reload.
     @ObservationIgnored var reloadTaskList: @MainActor () async -> Void = {}
-    /// Shows the status text, the tracking error and the other derived values. `TrackerFeatures` sets it to
-    /// `TrackerSync`'s publish.
-    @ObservationIgnored var publishChanges: @MainActor () -> Void = {}
     private let repository: any TrackingPreferencesRepository
     private let client: any TrackerClient
     private let clock: any TrackerClock
@@ -45,19 +43,18 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
         enabled = repository.load().pauseOnScreenLock
     }
 
-    /// Turns the screen-lock auto-pause on or off, saves the preference and publishes. Turning it on while the
-    /// screen is locked pauses the running timer.
+    /// Turns the screen-lock auto-pause on or off and saves the preference. Turning it on while the screen is locked
+    /// pauses the running timer.
     public func setPauseOnScreenLock(_ enabled: Bool) {
         guard self.enabled != enabled else { return }
         set(\.enabled, enabled)
         cancel()
         repository.save(TrackingPreferences(pauseOnScreenLock: enabled))
         if enabled && locked { pauseTracking(at: clock.now) }
-        publishChanges()
     }
 
     /// Pauses the running timer when the screen locks and resumes its task when the screen unlocks, if the
-    /// auto-pause is on, and publishes. `date` is when the event happened, which the requests send as their time.
+    /// auto-pause is on. `date` is when the event happened, which the requests send as their time.
     public func setScreenLocked(_ locked: Bool, at date: Date) {
         if locked {
             guard lock() else { return }
@@ -67,18 +64,15 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
                 guard let self else { return }
                 await resumeTracking(resume)
                 await reloadTaskList()
+                tracking.showRecordedError()
             }
         }
-        publishChanges()
     }
 
-    /// The status text that the next publish shows.
+    /// The status text for the task the auto-pause holds.
     var pausedStatusText: String? {
         pausedTaskID == nil ? nil : "Paused while screen is locked"
     }
-
-    /// Shows the current status text. `TrackerSync` calls this each time it publishes.
-    func publish() { set(\.statusText, pausedStatusText) }
 
     /// Returns false when the screen was already locked.
     func lock() -> Bool {
@@ -152,6 +146,7 @@ public final class TrackingAutomationStore: ChangeGuardedStore {
                 tracking.recordFailure(error)
             }
             await reloadTaskList()
+            tracking.showRecordedError()
         }
     }
 

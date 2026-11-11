@@ -43,7 +43,7 @@ final class RefreshPresentationTests: XCTestCase {
             fixture.advanceClock(by: 1)
             display.fire()
             redraws.append(totals.changed())
-            assertPublished(fixture)
+            assertRefreshed(fixture)
         }
         XCTAssertEqual(
             redraws, Array(repeating: Set([firstTask.id]), count: 3),
@@ -73,14 +73,14 @@ final class RefreshPresentationTests: XCTestCase {
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 25_000_000),
                 ]))
         try await fixture.settled()
-        assertPublished(fixture)
+        assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), Set([secondTask.id]))
         XCTAssertFalse(lists.consume())
         XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:10")
         XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: secondTask.id).content?.text, "00:00:25")
-        // Closing the menu that isn't open publishes again without changing any value.
+        // Closing the menu that isn't open changes nothing.
         fixture.sync.setMenuVisible(false)
-        XCTAssertEqual(totals.changed(), [], "An unchanged report must not publish row updates again.")
+        XCTAssertEqual(totals.changed(), [], "An unchanged report must not redraw the rows again.")
     }
 
     @MainActor
@@ -107,7 +107,7 @@ final class RefreshPresentationTests: XCTestCase {
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
                 ]))
         try await fixture.settled()
-        assertPublished(fixture)
+        assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), Set([firstTask.id]))
         XCTAssertFalse(lists.consume())
         XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:15")
@@ -129,7 +129,7 @@ final class RefreshPresentationTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         try await fixture.settled()
-        assertPublished(fixture)
+        assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), Set([firstTask.id, secondTask.id]))
         let first = fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content
         XCTAssertEqual(first?.text, "00:00:10")
@@ -161,7 +161,7 @@ final class RefreshPresentationTests: XCTestCase {
                     TaskReportTotal(taskId: added.id, durationMicroseconds: 30_000_000),
                 ]))
         try await fixture.settled()
-        assertPublished(fixture)
+        assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), [], "A removed task's label keeps its last total.")
         XCTAssertEqual(removedTotal.content?.text, "00:00:20")
         let replacement = fixture.features.dailyTotals.taskTotal(taskID: secondTask.id)

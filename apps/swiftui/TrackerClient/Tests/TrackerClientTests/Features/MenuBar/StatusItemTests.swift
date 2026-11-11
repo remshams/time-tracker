@@ -325,12 +325,16 @@ private extension MenuBarStore {
         let automation = TrackingAutomationStore(
             repository: MemoryTrackingPreferences(), client: FakeClient(), clock: FakeClock(),
             tracking: TrackingStore())
+        let scheduler = FakeScheduler()
+        let displayClock = DisplayClock(scheduler: scheduler)
+        let catalog = TaskCatalogStore()
+        let tracking = TrackingStore()
         self.init(
-            repository: repository, connection: ConnectionStore(settings: settings), catalog: TaskCatalogStore(),
-            tracking: TrackingStore(),
+            repository: repository, connection: ConnectionStore(settings: settings), catalog: catalog,
+            tracking: tracking,
             dailyTotals: DailyTotalsStore(
-                reports: nil, connection: ConnectionStore(settings: settings), clock: FakeClock(),
-                scheduler: FakeScheduler(), calendar: .autoupdatingCurrent),
-            automation: automation, scheduler: FakeScheduler())
+                reports: nil, connection: ConnectionStore(settings: settings), catalog: catalog, tracking: tracking,
+                clock: FakeClock(), scheduler: scheduler, displayClock: displayClock, calendar: .autoupdatingCurrent),
+            automation: automation, displayClock: displayClock)
     }
 }

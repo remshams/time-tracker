@@ -65,7 +65,7 @@ final class LifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testMenuBarClockRunsWhileTrackingWithTheSettingOnAndRepublishesEachMinute() async throws {
+    func testMenuBarClockRunsWhileTrackingWithTheSettingOnAndRefreshesEachMinute() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         fixture.features.menuBar.setClockEnabled(true)
