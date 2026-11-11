@@ -168,10 +168,10 @@ enum ViewReads {
     }
 }
 
-/// Checks that the last publish updated the tracking store's timer text, the auto-pause status and the daily totals
-/// store's values. Call it only while the clock hasn't moved since that publish.
+/// Checks that the tracking store's timer text, the auto-pause status and the daily totals store's values match their
+/// inputs. Call it only while the clock hasn't moved since the stores last refreshed.
 @MainActor
-func assertPublished(_ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line) {
+func assertRefreshed(_ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line) {
     let features = fixture.features
     let automation = features.trackingAutomation
     XCTAssertEqual(automation.statusText, automation.pausedStatusText, file: file, line: line)
@@ -184,7 +184,7 @@ func assertPublished(_ fixture: Fixture, file: StaticString = #filePath, line: U
     XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
     XCTAssertEqual(
         features.tracking.timerText,
-        features.tracking.displayText(confirmed: features.connection.confirmed),
+        features.tracking.displayText(),
         file: file, line: line)
     for task in features.taskCatalog.tasks {
         XCTAssertEqual(

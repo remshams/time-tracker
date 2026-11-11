@@ -1,11 +1,12 @@
 import Foundation
 
-/// Keeps the stores in step with the tracker: the first load, refreshes, polling, when to load today's report, the
-/// display timer, window and menu visibility, sleep and wake, the connection change, and the reloads after dialog
-/// writes.
+/// Keeps the stores in step with the tracker: the first load, refreshes, polling, when to load today's report, window
+/// and menu visibility, sleep and wake, the connection change, and the reloads after dialog writes.
 ///
 /// `TrackerFeatures` creates the stores and passes them in. The stores' closures call the package-internal methods
-/// below, for example to switch the connection, reload the task list or the history, record a failure and publish.
+/// below, for example to switch the connection, reload the task list or the history and record a failure. Each store
+/// keeps its own observed values current; the sync reports visibility, sleep and wake to the `DisplayClock` that
+/// drives the values derived from the clock.
 ///
 /// Views don't read it. The app delegate starts it from `TrackerFeatures`, and the menu bar and lifecycle classes get
 /// it through `init`; all of them only call its methods.
@@ -20,9 +21,9 @@ public final class TrackerSync {
     private let menuBar: MenuBarStore
     private let automation: TrackingAutomationStore
     private let settingsRepository: any ConnectionSettingsRepository
-    private var displayTimer: (any TrackerCancellation)?
+    private let displayClock: DisplayClock
     private var pollTimer: (any TrackerCancellation)?
-    // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
+    // The scheduler runs no callback after cancel(), so the poll callback needs no staleness check.
     private var started = false
     // One poll at a time: no poll is scheduled while a refresh is waiting.
     private var refreshing = false
@@ -35,7 +36,7 @@ public final class TrackerSync {
         client: any TrackerClient, scheduler: any TrackerScheduler, catalog: TaskCatalogStore,
         history: WorklogHistoryStore, connection: ConnectionStore, tracking: TrackingStore,
         dailyTotals: DailyTotalsStore, menuBar: MenuBarStore, automation: TrackingAutomationStore,
-        settings: any ConnectionSettingsRepository
+        settings: any ConnectionSettingsRepository, displayClock: DisplayClock
     ) {
         self.client = client
         self.scheduler = scheduler
@@ -47,10 +48,10 @@ public final class TrackerSync {
         self.menuBar = menuBar
         self.automation = automation
         settingsRepository = settings
+        self.displayClock = displayClock
     }
 
     isolated deinit {
-        displayTimer?.cancel()
         pollTimer?.cancel()
     }
 
@@ -58,8 +59,7 @@ public final class TrackerSync {
         guard !started else { return }
         started = true
         dailyTotals.start()
-        menuBar.start()
-        updateDisplayTimer()
+        displayClock.setAwake(true)
         refreshing = true
         let settings = connection.settings
         Task { [weak self] in
@@ -90,9 +90,8 @@ public final class TrackerSync {
         guard started else { return }
         sleeping = true
         cancelPolling()
-        cancelDisplay()
+        displayClock.setAwake(false)
         dailyTotals.sleep()
-        menuBar.sleep()
     }
 
     public func wake() {
@@ -100,8 +99,7 @@ public final class TrackerSync {
         sleeping = false
         tracking.resetElapsedAnchor()
         dailyTotals.wake()
-        menuBar.wake()
-        updateDisplayTimer()
+        displayClock.setAwake(true)
         refresh()
     }
 
@@ -127,8 +125,7 @@ public final class TrackerSync {
         schedulePolling()
     }
 
-    /// Reloads the task list and, with a report client, today's totals. Publishes on every path, which also shows a
-    /// failure recorded before this call.
+    /// Reloads the task list and, with a report client, today's totals.
     func reloadTaskList() async {
         if !dailyTotals.loadsTaskList || !connection.confirmed || connection.stale {
             do {
@@ -153,13 +150,12 @@ public final class TrackerSync {
         history.reload()
     }
 
-    /// Takes in the task list that came with today's report and publishes. `DailyTotalsStore` calls it.
+    /// Takes in the task list that came with today's report. `DailyTotalsStore` calls it.
     func acceptReportedTaskList(_ resources: TaskListResources) {
         acceptTaskList(resources, requestReport: false)
     }
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
-        dailyTotals.acceptTaskList(reportRequested: requestReport)
         let connectionWasStale = connection.stale
         connection.acceptTaskList()
         let previousActive = tracking.active
@@ -168,16 +164,14 @@ public final class TrackerSync {
         menuBar.acceptTaskList(resources, settings: connection.settings)
         let historyMayHaveChanged = catalog.acceptTaskList(
             resources.catalog.value, previousActive: previousActive, active: tracking.active)
+        dailyTotals.acceptTaskList(reportRequested: requestReport)
         history.acceptTaskList(historyMayHaveChanged: historyMayHaveChanged, connectionWasStale: connectionWasStale)
-        updateDisplayTimer()
-        publish()
     }
 
     private func recordConnectionFailure(_ failure: Error) {
         connection.recordFailure(failure)
         schedulePolling()
         history.showError(failure.localizedDescription)
-        publish()
     }
 
     /// Recovers the connection when a read failure calls for it.
@@ -193,12 +187,6 @@ public final class TrackerSync {
             [weak self] in
             self?.refresh()
         }
-    }
-
-    func publish() {
-        tracking.publish(confirmed: connection.confirmed)
-        automation.publish()
-        dailyTotals.publish(tasks: catalog.tasks, active: tracking.active)
     }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
@@ -217,37 +205,17 @@ public final class TrackerSync {
         schedulePolling()
     }
 
-    private func updateDisplayTimer() {
-        let needed = started && !sleeping && uiVisible && tracking.active != nil
-        if !needed {
-            cancelDisplay()
-            return
-        }
-        guard displayTimer == nil else { return }
-        displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
-            guard let self else { return }
-            dailyTotals.rollOverIfDayEnded()
-            publish()
-        }
-    }
-
     private func cancelPolling() {
         pollTimer?.cancel()
         pollTimer = nil
     }
 
-    private func cancelDisplay() {
-        displayTimer?.cancel()
-        displayTimer = nil
-    }
-
     private func visibilityChanged(previouslyVisible: Bool) {
-        updateDisplayTimer()
+        displayClock.setVisible(uiVisible)
         if uiVisible && !previouslyVisible {
             refresh()
         } else if uiVisible != previouslyVisible {
             schedulePolling()
         }
-        publish()
     }
 }

@@ -18,9 +18,10 @@ public final class TaskDailyTotal {
 ///
 /// Views read `status` and each task's `TaskDailyTotal`; the menu bar also reads the day's total, the explanation
 /// and each task's duration. The store requests the report, checks it and records a failure, and starts the next
-/// day at midnight. `TrackerSync` decides when to load and calls `publish` each time it publishes a change,
-/// including the one-second display tick and the menu bar's minute tick. `publish` assigns each value only when it
-/// changes, so a tick redraws only the running task's label.
+/// day at midnight. `TrackerSync` decides when to load. The store refreshes its values whenever their inputs change:
+/// a report, a task list, a failure, a new day or a `DisplayClock` tick. It reads the tasks from `TaskCatalogStore`
+/// and the running worklog from `TrackingStore`, and assigns each value only when it changes, so a tick redraws only
+/// the running task's label.
 @Observable
 public final class DailyTotalsStore: ChangeGuardedStore {
     struct Request {
@@ -42,19 +43,19 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     /// Today's duration for each catalog task that a report covers.
     public private(set) var taskDurations: [String: TimeInterval] = [:]
     /// Takes in the task list that came with a report. `TrackerFeatures` sets it to `TrackerSync`'s task list
-    /// handling, which publishes.
+    /// handling.
     @ObservationIgnored var acceptReportedTaskList: @MainActor (TaskListResources) -> Void = { _ in }
     /// Receives a failed report's error, so that `TrackerSync` can recover the connection. `TrackerFeatures` sets it.
     @ObservationIgnored var recordReadFailure: @MainActor (Error) -> Void = { _ in }
     /// Reloads the task list when a new day starts. `TrackerFeatures` sets it to `TrackerSync`'s refresh.
     @ObservationIgnored var refreshTaskList: @MainActor () -> Void = {}
-    /// Shows the totals and the other derived values. `TrackerFeatures` sets it to `TrackerSync`'s publish.
-    @ObservationIgnored var publishChanges: @MainActor () -> Void = {}
     private let reports: (any ReportClient)?
     private let connection: ConnectionStore
     private let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
     private let calendar: Calendar
+    private let catalog: TaskCatalogStore
+    private let tracking: TrackingStore
     // Views observe only the public values and each task's model. Ignoring the rest keeps a tick from redrawing
     // views that read the store, such as the sidebar that looks up task models with `taskTotal(taskID:)`.
     @ObservationIgnored private var request: Request?
@@ -73,15 +74,22 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     @ObservationIgnored private var running = false
 
     init(
-        reports: (any ReportClient)?, connection: ConnectionStore, clock: any TrackerClock,
-        scheduler: any TrackerScheduler, calendar: Calendar
+        reports: (any ReportClient)?, connection: ConnectionStore, catalog: TaskCatalogStore, tracking: TrackingStore,
+        clock: any TrackerClock, scheduler: any TrackerScheduler, displayClock: DisplayClock, calendar: Calendar
     ) {
         self.reports = reports
         self.connection = connection
+        self.catalog = catalog
+        self.tracking = tracking
         self.clock = clock
         self.scheduler = scheduler
         self.calendar = calendar
         updateDay()
+        displayClock.onTick { [weak self] in
+            guard let self else { return }
+            rollOverIfDayEnded()
+            refreshTotals()
+        }
     }
 
     isolated deinit {
@@ -104,20 +112,25 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         cancelRollover()
     }
 
-    /// Moves to the current day, measures the running worklog from the current time and restarts the rollover timer.
+    /// Moves to the current day, measures the running worklog from the current time, restarts the rollover timer and
+    /// refreshes the totals.
     func wake() {
         running = true
         updateDay()
         reanchor()
         scheduleRollover()
+        refreshTotals()
     }
 
-    /// Takes in a loaded task list. When a report follows, the loaded totals become cached until it arrives.
+    /// Takes in a loaded task list and refreshes the totals. When a report follows, the loaded totals become cached
+    /// until it arrives. The totals read the catalog's tasks and the running worklog, so `TrackerSync` calls this
+    /// after the catalog and the tracking store take in the list.
     func acceptTaskList(reportRequested: Bool) {
         updateDay()
         // Only an accepted report sets the request, so totals become cached only with a report client.
         if reportRequested && request != nil { loadStatus = .cached }
         scheduleRollover()
+        refreshTotals()
     }
 
     /// Starts the next day when the current one has ended, which the display tick checks each second.
@@ -127,11 +140,12 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     }
 
     /// Requests today's report, which also returns the task list. Does nothing without a report client. Otherwise
-    /// publishes on every path: before a first request, through the accepted task list, and after a failure.
+    /// refreshes the totals on every path: before a first request, through the accepted task list, and after a
+    /// failure.
     func load() async {
         guard let reports, let requested = begin() else { return }
         // A first request shows the loading status, which the menu reads from the store.
-        publishChanges()
+        refreshTotals()
         do {
             let refreshed = try await reports.refreshTaskListWithTotals(
                 settings: connection.settings, start: requested.start,
@@ -142,7 +156,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         } catch {
             fail(error)
             recordReadFailure(error)
-            publishChanges()
+            refreshTotals()
         }
     }
 
@@ -285,9 +299,10 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         }
     }
 
-    /// Shows the current status, the day's total and each task's total. `TrackerSync` calls this each time it
-    /// publishes.
-    func publish(tasks: [TaskItem], active: WorklogItem?) {
+    /// Shows the current status, the day's total and each task's total.
+    func refreshTotals() {
+        let tasks = catalog.tasks
+        let active = tracking.active
         set(\.status, shownStatus())
         set(\.dayTotal, totalDuration(active: active))
         let explanation = explanation()
@@ -341,7 +356,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
             guard let self else { return }
             updateDay()
             rollOver()
-            publishChanges()
+            refreshTotals()
         }
     }
 

@@ -17,22 +17,17 @@ final class TrackingAutomationStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testSettingThePreferenceSavesItAndReportsOnlyChanges() async {
+    func testSettingThePreferenceSavesOnlyChanges() async {
         let repository = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: true))
         let store = TrackingAutomationStore(repository: repository)
-        let changes = PreferenceChanges()
-        store.publishChanges = { changes.count += 1 }
         XCTAssertTrue(store.enabled)
 
         store.setPauseOnScreenLock(true)
-        XCTAssertEqual(changes.count, 0)
         XCTAssertEqual(repository.writes, [])
         store.setPauseOnScreenLock(false)
         XCTAssertFalse(store.enabled)
-        XCTAssertEqual(changes.count, 1)
         XCTAssertEqual(repository.writes, [TrackingPreferences()])
         store.setPauseOnScreenLock(true)
-        XCTAssertEqual(changes.count, 2)
         XCTAssertEqual(repository.writes, [TrackingPreferences(), TrackingPreferences(pauseOnScreenLock: true)])
     }
 
@@ -43,32 +38,29 @@ final class TrackingAutomationStoreTests: XCTestCase {
         XCTAssertTrue(store.lock())
         XCTAssertTrue(store.beginPause())
         XCTAssertNil(store.paused(taskID: firstTask.id, didStop: true))
-        XCTAssertNotNil(store.pausedStatusText)
+        XCTAssertNotNil(store.statusText)
 
         store.setPauseOnScreenLock(false)
-        XCTAssertNil(store.pausedStatusText)
+        XCTAssertNil(store.statusText)
     }
 
     @MainActor
-    func testStatusTextChangesOnlyWhenPublishedAndNotifiesOnlyForNewText() async {
+    func testStatusTextFollowsThePausedTaskAndNotifiesOnlyForNewText() async {
         let store = TrackingAutomationStore(
             repository: MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: true)))
         let status = ObservationProbe { _ = store.statusText }
         let enabled = ObservationProbe { _ = store.enabled }
         XCTAssertTrue(store.lock())
         XCTAssertTrue(store.beginPause())
+        XCTAssertFalse(status.consume(), "Beginning a pause holds no task yet.")
         XCTAssertNil(store.paused(taskID: firstTask.id, didStop: true))
-        XCTAssertNil(store.statusText, "The status waits for the next publish.")
-        XCTAssertFalse(status.consume())
-
-        store.publish()
         XCTAssertEqual(store.statusText, "Paused while screen is locked")
         XCTAssertTrue(status.consume())
-        store.publish()
-        XCTAssertFalse(status.consume())
+
+        store.acceptTaskList(active: nil)
+        XCTAssertFalse(status.consume(), "An unchanged paused task must not redraw the status.")
 
         XCTAssertEqual(store.unlock(at: Date(timeIntervalSince1970: 90))?.taskID, firstTask.id)
-        store.publish()
         XCTAssertNil(store.statusText)
         XCTAssertTrue(status.consume())
         XCTAssertFalse(enabled.consume())
@@ -103,8 +95,4 @@ private extension TrackingAutomationStore {
     convenience init(repository: any TrackingPreferencesRepository) {
         self.init(repository: repository, client: FakeClient(), clock: FakeClock(), tracking: TrackingStore())
     }
-}
-
-private final class PreferenceChanges {
-    var count = 0
 }

@@ -72,16 +72,20 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     @MainActor
-    func testPublishedMenuValuesNotifyOnlyWhenTheyChange() async throws {
+    func testRefreshedMenuValuesNotifyOnlyWhenTheyChange() async throws {
         let clock = FakeClock()
-        let store = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let catalog = TaskCatalogStore()
+        let tracking = TrackingStore()
+        let store = DailyTotalsStore(clock: clock, calendar: dailyCalendar(), catalog: catalog, tracking: tracking)
         let tasks = [firstTask, secondTask]
+        _ = catalog.acceptTaskList(tasks, previousActive: nil, active: activeWorklog)
+        tracking.acceptTaskList(active: activeWorklog)
         let probe = ObservationProbe {
             _ = store.dayTotal
             _ = store.totalsExplanation
             _ = store.taskDurations
         }
-        store.publish(tasks: tasks, active: activeWorklog)
+        store.refreshTotals()
         XCTAssertFalse(probe.consume(), "Totals without a report keep their initial values.")
         XCTAssertNil(store.dayTotal)
         XCTAssertEqual(store.totalsExplanation, "Today's total is unavailable")
@@ -92,21 +96,21 @@ final class DailyTotalsTests: XCTestCase {
                 taskList: TaskListResources(tasks: tasks, active: activeWorklog),
                 rows: [total(firstTask, 20), total(archivedTask, 50)]),
             requested: request)
-        store.publish(tasks: tasks, active: activeWorklog)
+        store.refreshTotals()
         XCTAssertTrue(probe.consume())
         XCTAssertEqual(store.dayTotal, 70)
         XCTAssertEqual(store.totalsExplanation, "Time logged today in your local time zone")
         XCTAssertEqual(store.taskDurations, [firstTask.id: 20, secondTask.id: 0])
-        store.publish(tasks: tasks, active: activeWorklog)
-        XCTAssertFalse(probe.consume(), "An unchanged publish must not redraw the menu bar.")
+        store.refreshTotals()
+        XCTAssertFalse(probe.consume(), "An unchanged refresh must not redraw the menu bar.")
         clock.now.addTimeInterval(7)
         clock.uptime += 7
-        store.publish(tasks: tasks, active: activeWorklog)
+        store.refreshTotals()
         XCTAssertTrue(probe.consume())
         XCTAssertEqual(store.dayTotal, 77)
         XCTAssertEqual(store.taskDurations[firstTask.id], 27)
         store.fail(BridgeFailure(message: "Report unavailable"))
-        store.publish(tasks: tasks, active: activeWorklog)
+        store.refreshTotals()
         XCTAssertTrue(probe.consume())
         XCTAssertEqual(
             store.totalsExplanation, "Today's total uses cached tracker state. Running time may be unconfirmed.")
@@ -414,7 +418,7 @@ final class DailyTotalsAppTests: XCTestCase {
         XCTAssertEqual(fixture.totalDurationText, "00:00:01")
         XCTAssertEqual(totals.changed(), [])
         XCTAssertFalse(contentChanges.consume())
-        assertPublished(fixture)
+        assertRefreshed(fixture)
     }
 
     @MainActor
@@ -437,7 +441,7 @@ final class DailyTotalsAppTests: XCTestCase {
             observedStatuses.append(fixture.features.dailyTotals.status)
             observedTexts.append(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.text ?? "")
             changedTotals.append(totals.changed())
-            assertPublished(fixture)
+            assertRefreshed(fixture)
         }
         XCTAssertEqual(observedErrors, ["First report failure", "Second report failure"])
         XCTAssertEqual(observedStatuses, [.cached, .cached])
@@ -461,12 +465,12 @@ final class DailyTotalsAppTests: XCTestCase {
         let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
         XCTAssertEqual(
             rollover.delay, 86_400, "The accepted task list must schedule the rollover for the new day's end.")
-        assertPublished(fixture)
+        assertRefreshed(fixture)
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
         try await fixture.settled()
         XCTAssertEqual(fixture.features.dailyTotals.status, .current)
         XCTAssertEqual(fixture.totalsDayStart, fixture.clock.now)
-        assertPublished(fixture)
+        assertRefreshed(fixture)
     }
 
     @MainActor
@@ -518,7 +522,8 @@ final class DailyTotalsAppTests: XCTestCase {
         fixture.clock.now.addTimeInterval(86_400)
         fixture.sync.refresh()
         let refresh = try await fixture.client.next()
-        fixture.sync.publish()
+        let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        rollover.fire()
         XCTAssertEqual(fixture.features.dailyTotals.status, .unavailable)
         XCTAssertEqual(fixture.features.dailyTotals.totalsExplanation, "Today's total is unavailable")
         XCTAssertTrue(fixture.todayTasks.isEmpty)
@@ -550,8 +555,8 @@ final class DailyTotalsAppTests: XCTestCase {
         let report = try await fixture.client.next()
         XCTAssertEqual(
             fixture.totalsDayStart, fixture.clock.now,
-            "The acknowledged resources must publish today's day before its report arrives.")
-        XCTAssertNil(fixture.totalsError, "Yesterday's report error must disappear when the new day is published.")
+            "The acknowledged resources must move to today before its report arrives.")
+        XCTAssertNil(fixture.totalsError, "Yesterday's report error must disappear when the new day starts.")
         report.succeed(TaskListTotalsRefresh(taskList: stoppedResources, rows: [total(firstTask, 5)]))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
@@ -656,7 +661,7 @@ final class DailyTotalsAppTests: XCTestCase {
             fixture.advanceClock(by: 1)
             fixture.scheduler.display?.fire()
             changedTotals.append(totals.changed())
-            assertPublished(fixture)
+            assertRefreshed(fixture)
         }
         XCTAssertEqual(changedTotals, Array(repeating: Set([firstTask.id]), count: 3))
         XCTAssertFalse(content.consume())
@@ -1033,7 +1038,7 @@ final class DailyTotalsAppTests: XCTestCase {
     }
 }
 
-/// Daily totals computed from the clock on each read, so a test can check them without a publish.
+/// Daily totals computed from the clock on each read, so a test can check them without a refresh.
 private extension Fixture {
     var totalsStatus: DailyTotalsStatus { features.dailyTotals.shownStatus() }
     var totalsError: String? { features.dailyTotals.error }
@@ -1055,9 +1060,13 @@ private extension Fixture {
 @MainActor
 private extension DailyTotalsStore {
     /// Builds the store for tests of its totals, which load no report and run no rollover timer.
-    convenience init(clock: FakeClock = FakeClock(), calendar: Calendar) {
+    convenience init(
+        clock: FakeClock = FakeClock(), calendar: Calendar, catalog: TaskCatalogStore = TaskCatalogStore(),
+        tracking: TrackingStore = TrackingStore()
+    ) {
+        let scheduler = FakeScheduler()
         self.init(
-            reports: nil, connection: ConnectionStore(settings: .local), clock: clock, scheduler: FakeScheduler(),
-            calendar: calendar)
+            reports: nil, connection: ConnectionStore(settings: .local), catalog: catalog, tracking: tracking,
+            clock: clock, scheduler: scheduler, displayClock: DisplayClock(scheduler: scheduler), calendar: calendar)
     }
 }

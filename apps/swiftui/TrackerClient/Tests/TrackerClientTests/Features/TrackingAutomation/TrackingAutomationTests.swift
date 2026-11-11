@@ -560,27 +560,6 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(tracking.active, activeWorklog)
     }
-
-    func testChangingThePausePreferencePublishes() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        fixture.trackingAutomation.setPauseOnScreenLock(true)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
-    }
-
-    func testLockingAndUnlockingTheScreenPublishes() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(running)
-        fixture.advanceClock(by: 4)
-        fixture.trackingAutomation.setScreenLocked(true, at: fixture.clock.now)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
-        fixture.advanceClock(by: 4)
-        fixture.trackingAutomation.setScreenLocked(false, at: fixture.clock.now)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:38")
-    }
 }
 
 @MainActor

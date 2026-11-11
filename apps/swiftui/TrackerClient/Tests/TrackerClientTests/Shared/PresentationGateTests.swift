@@ -75,7 +75,7 @@ final class PresentationGateTests: XCTestCase {
         let gate = fixture.features.presentationGate
 
         fixture.features.tracking.recordFailure(BridgeFailure(message: "Start rejected"))
-        fixture.sync.publish()
+        fixture.features.tracking.showRecordedError()
         XCTAssertTrue(gate.isClaimed)
         XCTAssertFalse(gate.showsSheet)
         for dialog in dialogs {
