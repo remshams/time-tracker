@@ -49,6 +49,7 @@ TIME_FORMATTING = "Shared/TimeFormatting.swift"
 CHANGE_GUARD = "Shared/ChangeGuardedStore.swift"
 WRITE_FAILURE = "Shared/WriteFailure.swift"
 PRESENTATION_GATE = "Shared/PresentationGate.swift"
+DISPLAY_CLOCK = "Shared/DisplayClock.swift"
 
 # Map each suite's assertions to complete files, including the code that creates and syncs its stores.
 # Update this map when a suite gains assertions about another production component.
@@ -65,7 +66,7 @@ TEST_PRODUCTION = {
     "App/RefreshPresentationTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, TOTALS, MODELS, CONNECTION, MENU_SOURCES,
     ],
-    "App/TrackerSyncPublishTests.swift": [
+    "App/StoreRefreshTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION,
     ],
     "App/TrackerSyncSelectionAndReloadTests.swift": [FEATURES, SYNC, TRACKING, CATALOG, HISTORY, CONNECTION],
@@ -160,6 +161,7 @@ TEST_PRODUCTION = {
         PRESENTATION_GATE, FEATURES, SYNC, TRACKING_AVAILABILITY, CREATION, RENAME, ARCHIVING, BULK_ARCHIVING,
         CORRECTION, MOVE, DELETION, TRACKING, CATALOG, HISTORY, CONNECTION,
     ],
+    "Shared/DisplayClockTests.swift": [DISPLAY_CLOCK],
     "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
     "Support/FixtureCleanupTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, CONNECTION,
@@ -169,11 +171,12 @@ TEST_PRODUCTION = {
 # elapsed time helpers from TrackingState.swift to TimeFormatting.swift, so every
 # suite mapped to TRACKING runs them. The observable stores assign through the
 # shared change-guarded helper. The dialog stores and the tracking error claim the
-# presentation gate. A direct change to a key file still selects only that file.
+# presentation gate. The tracking, daily totals and menu bar stores drive the display
+# clock. A direct change to a key file still selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
-    TRACKING: (TIME_FORMATTING, CHANGE_GUARD, PRESENTATION_GATE),
-    **{store: (CHANGE_GUARD,) for store in (
-        CATALOG, HISTORY, CONNECTION, TOTALS, MENU_BAR_STORE, AUTOMATION)},
+    TRACKING: (TIME_FORMATTING, CHANGE_GUARD, PRESENTATION_GATE, DISPLAY_CLOCK),
+    **{store: (CHANGE_GUARD,) for store in (CATALOG, HISTORY, CONNECTION, AUTOMATION)},
+    **{store: (CHANGE_GUARD, DISPLAY_CLOCK) for store in (TOTALS, MENU_BAR_STORE)},
     # The dialog flows and the tracking failures explain uncertain writes the same way. The sync's suites cover
     # the tracking failures, which TrackingStore records for the requests and the auto-pause.
     SYNC: (WRITE_FAILURE,),
@@ -197,7 +200,35 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    (
+        "#395 passes a display clock to the TrackingStore that state-only tests build",
+        (
+            (
+                "            catalog: TaskCatalogStore(), gate: PresentationGate())\n",
+                "            catalog: TaskCatalogStore(), gate: PresentationGate(),\n"
+                "            displayClock: DisplayClock(scheduler: FakeScheduler()))\n",
+            ),
+            (
+                "    /// Moves the clock without a timer tick, so only a publish can show the new elapsed time.\n",
+                "    /// Moves the clock without a timer tick, so the stores show the new elapsed time only once they"
+                " refresh.\n",
+            ),
+        ),
+        None,
+        None,
+        ("Features/MenuBar/StatusItemTests.swift", "Features/DailyTotals/DailyTotalsTests.swift"),
+        (
+            "Features/Tracking/TrackingTests.swift", "Features/Tracking/TrackingStoreTests.swift",
+            "Features/Tracking/TrackingAvailabilityTests.swift", "Features/MenuBar/StatusItemTests.swift",
+            "Features/TaskArchiving/TaskArchivingTests.swift",
+            "Features/WorklogCorrection/WorklogCorrectionTests.swift",
+            "Features/TrackingAutomation/TrackingAutomationStoreTests.swift",
+            "Features/TrackingAutomation/TrackingAutomationTests.swift",
+            "Features/DailyTotals/DailyTotalsTests.swift",
+        ),
+    ),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
