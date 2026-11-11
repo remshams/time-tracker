@@ -66,7 +66,8 @@ public final class TrackerMenuPresentationObserver {
         rebuild()
     }
 
-    /// Captures the content from the current store values. Publish the stores first.
+    /// Captures the content from the current store values. Report the menu as visible to the sync first, so the stores
+    /// refresh their clock values.
     public func menuOpened() {
         rebuild()
         menuOpen = true

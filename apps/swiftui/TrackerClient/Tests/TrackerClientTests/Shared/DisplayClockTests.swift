@@ -61,7 +61,7 @@ final class DisplayClockTests: XCTestCase {
         clock.setAwake(true)
         clock.setWorklogRunning(true)
         clock.setMenuBarTotalShown(true)
-        XCTAssertEqual(calls.names, [], "Only a tick or a visibility change refreshes.")
+        XCTAssertEqual(calls.names, [], "Only a tick or a visibility report refreshes.")
 
         clock.setVisible(true)
         XCTAssertEqual(calls.names, ["first", "second"])
