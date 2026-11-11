@@ -25,7 +25,7 @@ After [ADR 0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md), 
 
 ### Display clock
 
-`Shared/DisplayClock` drives the values derived from the clock. It ticks every second while a window or the menu is visible, and every minute while the menu bar shows today's total, both only while the Mac is awake and a worklog runs. It also refreshes once when the window or the menu shows or hides, because the values may be stale while nothing showed them.
+`Shared/DisplayClock` drives the values derived from the clock. It ticks every second while a window or the menu is visible, and every minute while the menu bar shows today's total, both only while the Mac is awake and a worklog runs. It also refreshes each time `TrackerSync` reports whether the window or the menu is visible, because the values may be stale while nothing showed them, and a menu that opens over the visible window captures them.
 
 `TrackerSync` reports start, sleep, wake and visibility to it, `TrackingStore` reports whether a worklog runs, and `MenuBarStore` reports the menu bar clock setting. `TrackingStore` refreshes the timer text on each tick, and `DailyTotalsStore` checks for a new day and refreshes its totals. `MenuBarStore` no longer runs a timer.
 
@@ -60,7 +60,7 @@ This record replaces these clauses:
 - ADR 0037, "Decision": "The store hands that list, read failures, the refresh after a rollover and publishing back to `TrackerSync` through closures". The store hands back the list, read failures and the refresh; it refreshes its own values.
 - ADR 0038, "Menu bar clock": "`MenuBarStore` runs the clock. It gets the scheduler and a publish closure that `TrackerFeatures` wires to `TrackerSync`." `MenuBarStore` turns the `DisplayClock`'s minute ticks on and off, and has no scheduler or publish closure. `TrackerSync` no longer calls its `start()`, `sleep()` and `wake()`, and the order in which it receives the task list no longer matters for the clock.
 - ADR 0038, "Connection recovery rule": "`TrackerSync` asks it, then records the failure, schedules polling and publishes as before." `TrackerSync` records the failure and schedules polling; it doesn't publish.
-- ADR 0038, "What stays in TrackerSync": "… the order in which stores take in a connection or a task list, and publishing." `TrackerSync` keeps the order and doesn't publish.
+- ADR 0038, "What stays in TrackerSync": "`TrackerSync` keeps loading, refreshing, polling, the display timer, … the order in which stores take in a connection or a task list, and publishing." `TrackerSync` keeps the order. `DisplayClock` runs the display timer, and `TrackerSync` doesn't publish.
 
 ## Consequences
 
