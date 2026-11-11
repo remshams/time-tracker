@@ -96,7 +96,8 @@ final class TrackerStatusItemController: NSObject {
 
     private func showNativeMenu() {
         guard shownMenu == nil, let statusItem, let button = statusItem.button else { return }
-        // The sync publishes first, so the menu captures current values even when no display tick ran.
+        // Showing the menu refreshes the clock values first, so the menu captures current values even when no
+        // display tick ran.
         sync.setMenuVisible(true)
         self.menu.menuOpened()
         let builder = TrackerStatusMenuBuilder(
