@@ -52,7 +52,7 @@ final class DisplayClockTests: XCTestCase {
     }
 
     @MainActor
-    func testTicksAndVisibilityChangesRunEveryRefreshInOrder() async {
+    func testTicksAndVisibilityReportsRunEveryRefreshInOrder() async {
         let scheduler = FakeScheduler()
         let clock = DisplayClock(scheduler: scheduler)
         let calls = RefreshCalls()
@@ -66,12 +66,13 @@ final class DisplayClockTests: XCTestCase {
         clock.setVisible(true)
         XCTAssertEqual(calls.names, ["first", "second"])
         clock.setVisible(true)
-        XCTAssertEqual(calls.names, ["first", "second"], "Unchanged visibility must not refresh again.")
+        XCTAssertEqual(calls.names.count, 4, "A menu that opens over the visible window refreshes too.")
+        XCTAssertEqual(scheduler.active.count, 2, "Another report must not schedule a second timer.")
         scheduler.display?.fire()
         scheduler.menuBarClock?.fire()
-        XCTAssertEqual(calls.names, Array(repeating: ["first", "second"], count: 3).flatMap { $0 })
+        XCTAssertEqual(calls.names, Array(repeating: ["first", "second"], count: 4).flatMap { $0 })
         clock.setVisible(false)
-        XCTAssertEqual(calls.names.count, 8, "Hiding the window refreshes too.")
+        XCTAssertEqual(calls.names.count, 10, "Hiding the window refreshes too.")
     }
 }
 

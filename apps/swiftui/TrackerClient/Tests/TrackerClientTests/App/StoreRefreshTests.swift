@@ -80,6 +80,21 @@ final class StoreRefreshTests: XCTestCase {
     }
 
     @MainActor
+    func testWakeShowsTheElapsedTimeAndTodaysTotalsBeforeTheRefreshReplies() async throws {
+        let fixture = Fixture(reports: true)
+        defer { fixture.cleanup() }
+        let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 0)]
+        try await fixture.start(running, rows: rows)
+        fixture.sync.sleep()
+        fixture.advanceClock(by: 4)
+        fixture.sync.wake()
+        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.dailyTotals.dayTotal, 4)
+        try await fixture.client.next().succeed(TaskListTotalsRefresh(taskList: running, rows: rows))
+        try await fixture.settled()
+    }
+
+    @MainActor
     func testRolloverTimerRefreshesTodaysTotals() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
