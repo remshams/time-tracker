@@ -25,7 +25,7 @@ final class DisplayClock {
         minuteTimer?.cancel()
     }
 
-    /// Runs `refresh` on each tick, and when a window or the menu becomes visible or hidden.
+    /// Runs `refresh` on each tick and each time the sync reports whether a window or the menu is visible.
     func onTick(_ refresh: @escaping @MainActor () -> Void) { refreshes.append(refresh) }
 
     /// Whether the sync has started and the Mac is awake.
@@ -34,10 +34,9 @@ final class DisplayClock {
         updateTimers()
     }
 
-    /// Whether a window or the menu is visible. A change refreshes the values at once, because they may be stale
-    /// while nothing showed them.
+    /// Whether a window or the menu is visible. Each report refreshes the values at once, because they may be stale
+    /// while nothing showed them, and a menu that opens over the visible window captures them.
     func setVisible(_ visible: Bool) {
-        guard self.visible != visible else { return }
         self.visible = visible
         updateTimers()
         tick()

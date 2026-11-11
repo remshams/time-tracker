@@ -151,6 +151,7 @@ final class LifecycleTests: XCTestCase {
         let wake = try await fixture.client.next()
         XCTAssertEqual(wake.operation, .refresh(.local))
         XCTAssertEqual(fixture.features.tracking.elapsed(), 3_930)
+        XCTAssertEqual(fixture.features.tracking.timerText, "01:05:30", "Wake shows the new time before the reply.")
         wake.succeed(resources)
         try await fixture.settled()
         XCTAssertNotNil(fixture.scheduler.display)

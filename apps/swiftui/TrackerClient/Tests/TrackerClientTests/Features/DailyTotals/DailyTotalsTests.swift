@@ -509,7 +509,7 @@ final class DailyTotalsAppTests: XCTestCase {
     }
 
     @MainActor
-    func testEndedDayErrorStaysHiddenWhileAStaleRefreshWaitsAndClearsWithItsResponse() async throws {
+    func testRolloverHidesTheEndedDayErrorWhileAStaleRefreshWaitsAndItsResponseKeepsItHidden() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)

@@ -97,6 +97,7 @@ private extension TrackingStore {
     convenience init(clock: FakeClock) {
         self.init(
             client: FakeClient(), clock: clock, connection: ConnectionStore(settings: .local),
-            catalog: TaskCatalogStore(), gate: PresentationGate())
+            catalog: TaskCatalogStore(), gate: PresentationGate(),
+            displayClock: DisplayClock(scheduler: FakeScheduler()))
     }
 }

@@ -57,12 +57,11 @@ final class TrackingAutomationStoreTests: XCTestCase {
         XCTAssertEqual(store.statusText, "Paused while screen is locked")
         XCTAssertTrue(status.consume())
 
-        store.acceptTaskList(active: nil)
-        XCTAssertFalse(status.consume(), "An unchanged paused task must not redraw the status.")
-
         XCTAssertEqual(store.unlock(at: Date(timeIntervalSince1970: 90))?.taskID, firstTask.id)
         XCTAssertNil(store.statusText)
         XCTAssertTrue(status.consume())
+        store.cancel()
+        XCTAssertFalse(status.consume(), "Dropping a task that is already gone must not redraw the status.")
         XCTAssertFalse(enabled.consume())
     }
 
