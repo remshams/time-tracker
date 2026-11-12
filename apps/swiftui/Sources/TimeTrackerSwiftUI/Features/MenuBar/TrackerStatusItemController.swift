@@ -91,9 +91,9 @@ final class TrackerStatusItemController: NSObject {
         if let shownMenu {
             shownMenu.menu.cancelTracking()
         } else {
-            // The menu receives arrow keys and Return only while the app is active.
             let frontmost = NSWorkspace.shared.frontmostApplication
             previousApplication = frontmost == NSRunningApplication.current ? nil : frontmost
+            // The menu receives arrow keys and Return only while the app is active.
             NSApplication.shared.activate(ignoringOtherApps: true)
             showNativeMenu()
         }

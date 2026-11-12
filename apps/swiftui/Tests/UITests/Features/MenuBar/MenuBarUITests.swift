@@ -343,7 +343,7 @@ final class MenuSourceUITests: TrackerUITestCase {
 final class MenuFocusUITests: TrackerUITestCase {
     private let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
 
-    func testShortcutMenuReturnsFocusAfterEscapeShortcutAndStartTracking() throws {
+    func testShortcutMenuReturnsFocusAfterEscapeShortcutStartTrackingAndCopy() throws {
         let task = try fixture.create("Focused task")
         launch()
         openStatusMenuFromFinder()
@@ -363,12 +363,21 @@ final class MenuFocusUITests: TrackerUITestCase {
         app.typeKey(.return, modifierFlags: [])
         assertRunning(task)
         waitUntilFinderIsFrontmost()
+
+        try withRestoredClipboard {
+            openStatusMenuFromFinder()
+            copyFromMenu(.copyName, task: task)
+        }
+        waitUntilFinderIsFrontmost()
     }
 
     func testOpenTimeTrackerKeepsFocusAfterShortcutMenu() throws {
         launch()
+        app.typeKey("w", modifierFlags: .command)
+        waitUntil("The tracker window closes") { !self.trackerWindow.exists }
         openStatusMenuFromFinder()
-        app.menuItems["Open Time Tracker"].click()
+        app.menuItems["Open Time Tracker"].hover()
+        app.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(trackerWindow.waitForExistence(timeout: timeout))
         assertTimeTrackerStaysFrontmost()
     }
