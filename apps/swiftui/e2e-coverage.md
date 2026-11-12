@@ -32,7 +32,7 @@ The CI workflow has an opt-in `native_benchmark` dispatch. Supply the full SHA o
 | 1 | `core` | Smoke, catalog, creation, tracking, history, daily totals, worklog move, and their server variants |
 | 2 | `editing` | Rename, individual archive, existing and extended bulk archive, worklog correction and deletion, and server variants |
 | 3 | `server` | Connection, outages, concurrency, pagination races, unconfirmed-write reporting, rejected tracking conflicts, settings, per-source remembered tasks, and appearance |
-| 4 | `mac` | Menu actions, clipboard, shortcuts, and lifecycle; the menu bar and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the arm64 Release build, and the layout check |
+| 4 | `mac` | Menu actions, clipboard, shortcuts, focus return after the shortcut menu, and lifecycle; the menu bar and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the arm64 Release build, and the layout check |
 
 ## Fixtures and failure evidence
 
@@ -64,7 +64,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 12 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 13 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
 | 14 | Commands during background reads, server-rejected tracking conflicts, unconfirmed creation/rename/archive/correction/move/deletion after a double timeout, no native read before writing or automatic resubmission, per-feature in-flight state, connection change after an unconfirmed write | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
-| 15 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
+| 15 | Native menu opening, navigation, Return and dismissal; focus returns to the previous app after a shortcut-opened menu closes, and stays on Time Tracker after Open Time Tracker or when it was already in front | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift), `MenuFocusUITests` in the same file |
 | 16 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
 | 17 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 18 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
