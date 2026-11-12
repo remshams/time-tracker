@@ -338,3 +338,74 @@ final class MenuSourceUITests: TrackerUITestCase {
         XCTAssertEqual(try remote.worklogs(serverTask).count, 2)
     }
 }
+
+@MainActor
+final class MenuFocusUITests: TrackerUITestCase {
+    private let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+
+    func testShortcutMenuReturnsFocusAfterEscapeShortcutStartTrackingAndCopy() throws {
+        let task = try fixture.create("Focused task")
+        launch()
+        openStatusMenuFromFinder()
+        app.typeKey(.escape, modifierFlags: [])
+        waitUntilFinderIsFrontmost()
+
+        openStatusMenuFromFinder()
+        app.typeKey("t", modifierFlags: [.control, .option])
+        waitUntil("The shortcut closes the menu") { !self.app.menuItems["Open Time Tracker"].exists }
+        waitUntilFinderIsFrontmost()
+
+        openStatusMenuFromFinder()
+        app.typeKey(.downArrow, modifierFlags: [])
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(menuTask(task).waitForExistence(timeout: timeout))
+        app.typeKey(.rightArrow, modifierFlags: [])
+        app.typeKey(.return, modifierFlags: [])
+        assertRunning(task)
+        waitUntilFinderIsFrontmost()
+
+        try withRestoredClipboard {
+            openStatusMenuFromFinder()
+            copyFromMenu(.copyName, task: task)
+        }
+        waitUntilFinderIsFrontmost()
+    }
+
+    func testOpenTimeTrackerKeepsFocusAfterShortcutMenu() throws {
+        launch()
+        app.typeKey("w", modifierFlags: .command)
+        waitUntil("The tracker window closes") { !self.trackerWindow.exists }
+        openStatusMenuFromFinder()
+        app.menuItems["Open Time Tracker"].hover()
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(trackerWindow.waitForExistence(timeout: timeout))
+        assertTimeTrackerStaysFrontmost()
+    }
+
+    func testShortcutMenuKeepsFocusWhenTimeTrackerWasFrontmost() throws {
+        launch()
+        app.activate()
+        openStatusMenu()
+        dismissStatusMenu()
+        assertTimeTrackerStaysFrontmost()
+    }
+
+    private func openStatusMenuFromFinder() {
+        finder.activate()
+        waitUntilFinderIsFrontmost()
+        finder.typeKey("t", modifierFlags: [.control, .option])
+        XCTAssertTrue(app.menuItems["Open Time Tracker"].waitForExistence(timeout: timeout))
+        waitUntil("The shortcut activates Time Tracker") { self.app.state == .runningForeground }
+    }
+
+    private func waitUntilFinderIsFrontmost(file: StaticString = #filePath, line: UInt = #line) {
+        waitUntil("Finder is frontmost", file: file, line: line) { self.finder.state == .runningForeground }
+    }
+
+    private func assertTimeTrackerStaysFrontmost(file: StaticString = #filePath, line: UInt = #line) {
+        let focusMoves = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.app.state != .runningForeground }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [focusMoves], timeout: 2), .timedOut,
+                       "Time Tracker must stay frontmost", file: file, line: line)
+    }
+}

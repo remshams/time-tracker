@@ -15,6 +15,8 @@ final class TrackerStatusItemController: NSObject {
     private var openWindow: (() -> Void)?
     private var shownMenu: TrackerStatusMenu?
     private var shortcut: GlobalMenuShortcutHandler?
+    /// The app that was in front when the shortcut opened the menu. Focus goes back to it after the menu closes.
+    private var previousApplication: NSRunningApplication?
 
     init(
         sync: TrackerSync, tracking: TrackingStore, menuBar: MenuBarStore, connection: ConnectionStore,
@@ -89,9 +91,22 @@ final class TrackerStatusItemController: NSObject {
         if let shownMenu {
             shownMenu.menu.cancelTracking()
         } else {
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            previousApplication = frontmost == NSRunningApplication.current ? nil : frontmost
+            // The menu receives arrow keys and Return only while the app is active.
             NSApplication.shared.activate(ignoringOtherApps: true)
             showNativeMenu()
         }
+    }
+
+    /// Gives focus back to the app that was in front before the shortcut, unless the user chose Open Time Tracker
+    /// or moved to another app.
+    private func returnFocus() {
+        guard let application = previousApplication else { return }
+        previousApplication = nil
+        guard NSApplication.shared.isActive, !application.isTerminated, !application.isHidden else { return }
+        NSApplication.shared.yieldActivation(to: application)
+        _ = application.activate(from: .current)
     }
 
     private func showNativeMenu() {
@@ -118,6 +133,10 @@ final class TrackerStatusItemController: NSObject {
             sync.setMenuVisible(false)
             self.menu.menuClosed()
             shortcut?.endMenuTracking()
+            // Wait one main loop turn so a command the menu sends after it closes can keep focus here.
+            if previousApplication != nil {
+                DispatchQueue.main.async { [weak self] in self?.returnFocus() }
+            }
         }
         // AppKit positions status-item menus below the menu bar, including their outer padding.
         statusItem.menu = menu
@@ -157,6 +176,7 @@ final class TrackerStatusItemController: NSObject {
         case .copy(let copyAction, let taskID):
             copyValue(copyAction, taskID: taskID, connection: command.connection)
         case .openWindow:
+            previousApplication = nil
             NSApplication.shared.activate(ignoringOtherApps: true)
             openWindow?()
         case .quit: NSApplication.shared.terminate(nil)

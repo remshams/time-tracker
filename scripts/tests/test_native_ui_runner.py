@@ -206,7 +206,7 @@ class NativeUIRunnerTests(unittest.TestCase):
         arguments = json.loads(result.stdout.splitlines()[0])
         self.assertEqual([argument for argument in arguments if argument.startswith("-only-testing:")],
                          [f"-only-testing:TimeTrackerUITests/{suite}" for suite in
-                          ("MenuBarUITests", "ServerMenuBarUITests", "LifecycleUITests",
+                          ("MenuBarUITests", "ServerMenuBarUITests", "MenuFocusUITests", "LifecycleUITests",
                            "ServerLifecycleUITests")])
         for flag, value in [("-test-timeouts-enabled", "YES"),
                             ("-default-test-execution-time-allowance", "360"),
