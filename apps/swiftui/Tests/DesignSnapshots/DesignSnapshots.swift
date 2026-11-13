@@ -227,6 +227,13 @@ private func windowServerImage(of window: NSWindow) -> CGImage? {
 @main
 struct DesignSnapshots {
     static func main() throws {
+        // The window server stops compositing while the screen is locked and returns blank images.
+        if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+            session["CGSSessionScreenIsLocked"] as? Bool == true
+        {
+            FileHandle.standardError.write(Data("The screen is locked, so the window server can't render snapshots.\n".utf8))
+            exit(1)
+        }
         let app = NSApplication.shared
         // Prohibited keeps the snapshot process out of the Dock and away from keyboard focus.
         app.setActivationPolicy(.prohibited)
