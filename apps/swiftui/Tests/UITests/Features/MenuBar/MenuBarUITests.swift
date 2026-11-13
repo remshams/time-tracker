@@ -66,7 +66,7 @@ class MenuBarUITests: TrackerUITestCase {
         assertRunning(task)
     }
 
-    func testTaskOrderSettingReordersStartTrackingAndPersists() throws {
+    func testTaskOrderSettingReordersSidebarAndStartTrackingAndPersists() throws {
         let day: TimeInterval = 86_400
         let now = Date()
         let oldest = try fixture.create("Oldest logged task", at: now.addingTimeInterval(-5 * day))
@@ -79,14 +79,18 @@ class MenuBarUITests: TrackerUITestCase {
         }
         let tasks = [oldest, newest, middle, unlogged]
         launch()
+        waitForSidebarOrder([newest, middle, oldest, unlogged])
         XCTAssertEqual(startTrackingOrder(tasks), [newest, middle, oldest, unlogged].map(\.name))
-        chooseMenuTaskOrder("Least recently logged first")
+        chooseTaskOrder("Least recently logged first")
+        waitForSidebarOrder([oldest, middle, newest, unlogged])
         XCTAssertEqual(startTrackingOrder(tasks), [oldest, middle, newest, unlogged].map(\.name))
         relaunch()
+        waitForSidebarOrder([oldest, middle, newest, unlogged])
         openSettings()
-        XCTAssertEqual(element("menu.task-order").value as? String, "Least recently logged first")
+        XCTAssertEqual(element("settings.task-order").value as? String, "Least recently logged first")
         XCTAssertEqual(startTrackingOrder(tasks), [oldest, middle, newest, unlogged].map(\.name))
-        chooseMenuTaskOrder("By name")
+        chooseTaskOrder("By name")
+        waitForSidebarOrder([unlogged, middle, newest, oldest])
         XCTAssertEqual(startTrackingOrder(tasks), [unlogged, middle, newest, oldest].map(\.name))
     }
 
