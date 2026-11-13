@@ -22,6 +22,7 @@ DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingStore.swift"
 TRACKING_AVAILABILITY = "Features/Tracking/TrackingAvailability.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
+TASK_ORDER = "Features/TaskCatalog/TaskOrder.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
 TOTALS = "Features/DailyTotals/DailyTotalsStore.swift"
@@ -30,7 +31,6 @@ MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
 MENU_BAR_STORE = "Features/MenuBar/MenuBarStore.swift"
 MENU_SOURCES = "Features/MenuBar/TrackerMenuSources.swift"
-MENU_ORDER = "Features/MenuBar/MenuTaskOrder.swift"
 MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
 MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
 CONNECTION = "Features/Connection/ConnectionStore.swift"
@@ -91,11 +91,7 @@ TEST_PRODUCTION = {
         TRACKING, CONNECTION, CONNECTION_TESTING, CATALOG, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_ORDER, MENU_VALUES,
-        TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
-    ],
-    "Features/MenuBar/MenuTaskOrderTests.swift": [
-        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, TASK_ORDER, MENU_VALUES,
         TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
@@ -118,7 +114,11 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION,
         MOVE, CONNECTION, DELETION, BULK_ARCHIVING,
     ],
-    "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
+    "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG, TASK_ORDER],
+    "Features/TaskCatalog/TaskOrderTests.swift": [
+        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, TASK_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES,
+        TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
+    ],
     "Features/TaskCreation/TaskCreationTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION,
         CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION, MENU_BAR_STORE, MENU_CLIPBOARD,
