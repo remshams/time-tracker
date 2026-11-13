@@ -41,9 +41,9 @@ extension TrackerUITestCase {
         return order
     }
 
-    func chooseMenuTaskOrder(_ title: String) {
+    func chooseTaskOrder(_ title: String) {
         openSettings()
-        let picker = element("menu.task-order")
+        let picker = element("settings.task-order")
         picker.click()
         let item = app.menuItems[title].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: timeout))

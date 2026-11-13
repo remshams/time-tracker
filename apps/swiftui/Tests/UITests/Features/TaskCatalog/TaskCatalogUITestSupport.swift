@@ -12,4 +12,13 @@ extension TrackerUITestCase {
         let text = taskDetailsName
         return text.value as? String ?? text.label
     }
+
+    /// Waits until the sidebar shows `tasks` from top to bottom.
+    func waitForSidebarOrder(_ tasks: [FixtureTask], file: StaticString = #filePath, line: UInt = #line) {
+        for task in tasks { XCTAssertTrue(taskRow(task).waitForExistence(timeout: timeout), file: file, line: line) }
+        waitUntil("The sidebar lists \(tasks.map(\.name))", file: file, line: line) {
+            let tops = tasks.map { self.taskRow($0).frame.minY }
+            return tops == tops.sorted()
+        }
+    }
 }
