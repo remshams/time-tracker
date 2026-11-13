@@ -58,7 +58,6 @@ private struct WorklogDays: View {
     let runningEnd: Date?
     @Environment(TrackingStore.self) private var tracking
     @Environment(WorklogHistoryStore.self) private var history
-    @State private var hovered: String?
 
     private var color: Color { TaskColor.forTaskID(taskID).swiftUIColor }
 
@@ -78,7 +77,7 @@ private struct WorklogDays: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
                         WorklogDayGroup(
-                            day: day, axis: axis, color: color, active: tracking.active, hovered: $hovered,
+                            day: day, axis: axis, color: color, active: tracking.active,
                             showsTotal: !(history.hasMore && index == days.count - 1), taskID: taskID)
                     }
                     if history.hasMore {

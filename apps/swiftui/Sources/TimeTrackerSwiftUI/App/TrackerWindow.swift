@@ -49,6 +49,9 @@ struct TrackerWindow: View {
         }
         .toolbar {
             if !catalog.tasks.isEmpty {
+                ToolbarItemGroup(placement: .navigation) {
+                    TaskListToolbarActions()
+                }
                 ToolbarItem(placement: .principal) {
                     NowCapsule(availability: runtime.features.trackingAvailability)
                 }

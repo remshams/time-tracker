@@ -1,7 +1,7 @@
 import SwiftUI
 import TrackerClient
 
-/// The task list: the Active and Archived switch, one two-line row for each task, and the list's own actions.
+/// The task list under today's split: the Active and Archived switch and one two-line row for each task.
 struct TrackerSidebar: View {
     let availability: TrackingAvailability
     @Environment(TrackingStore.self) private var tracking
@@ -19,6 +19,11 @@ struct TrackerSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TodayBlock()
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+                .padding(.bottom, 10)
+
             Picker("Tasks", selection: tabBinding) {
                 ForEach(TaskTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -28,8 +33,7 @@ struct TrackerSidebar: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 14)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
 
             List(selection: selectionBinding) {
                 ForEach(catalog.visibleTasks) { task in
@@ -66,11 +70,7 @@ struct TrackerSidebar: View {
                 }
             }
             Divider()
-            HStack(spacing: 2) {
-                TrackerSidebarToolbar()
-                ConnectionSummary()
-            }
-            .padding(.leading, 8)
+            ConnectionSummary()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

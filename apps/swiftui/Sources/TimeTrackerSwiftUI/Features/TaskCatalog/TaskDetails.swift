@@ -1,24 +1,21 @@
 import SwiftUI
 import TrackerClient
 
-/// The main area: today's split on top, then the selected task's title and its worklogs. The content sits in one
-/// column of limited width, so rows stay readable in a wide window.
+/// The main area, about the selected task only: its title and its worklogs. The content sits in one column of
+/// limited width, so rows stay readable in a wide window.
 struct TaskDetails: View {
     @Environment(TaskCatalogStore.self) private var catalog
     @State private var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: compact ? 10 : 18) {
-                TodayBlock(compact: compact)
-                if let task = catalog.selectedTask {
-                    TaskHeader(task: task, compact: compact)
-                }
+            if let task = catalog.selectedTask {
+                TaskHeader(task: task, compact: compact)
+                    .padding(.horizontal, HistoryColumns.gutter)
+                    .padding(.top, compact ? 4 : 10)
+                    .padding(.bottom, compact ? 8 : 12)
+                    .readingColumn()
             }
-            .padding(.horizontal, HistoryColumns.gutter)
-            .padding(.top, compact ? 4 : 14)
-            .padding(.bottom, compact ? 8 : 12)
-            .readingColumn()
 
             if let task = catalog.selectedTask {
                 WorklogHistorySection(taskID: task.id)
@@ -36,7 +33,7 @@ struct TaskDetails: View {
     }
 }
 
-/// Fills the area below today's split while no task is selected, and shows a failed history load.
+/// Fills the main area while no task is selected, and shows a failed history load.
 private struct NoTaskSelected: View {
     @Environment(TaskCatalogStore.self) private var catalog
 

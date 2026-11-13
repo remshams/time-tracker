@@ -1,13 +1,13 @@
 import SwiftUI
 import TrackerClient
 
-/// Opens the main area with today: the total across all tasks, one bar that splits it by task and a chip for each task.
-/// A bar segment or a chip selects its task. The compact form fits on one line and leaves the chips to the bar's hover
-/// labels, for short windows.
+/// Heads the task list with today: the total across all tasks, one bar that splits it by task and one readout line.
+/// The readout names the selected task and its share, and follows the pointer while it rests on another segment.
+/// A segment selects its task.
 struct TodayBlock: View {
-    let compact: Bool
     @Environment(DailyTotalsStore.self) private var dailyTotals
     @Environment(TaskCatalogStore.self) private var catalog
+    @State private var hovered: String?
 
     private var slices: [DaySlice] {
         catalog.tasks
@@ -23,26 +23,12 @@ struct TodayBlock: View {
     var body: some View {
         let slices = slices
         let selected = slices.first { $0.id == catalog.selectedTaskID }?.id
-        Group {
-            if compact {
-                HStack(alignment: .center, spacing: 10) {
-                    heading
-                    if !slices.isEmpty {
-                        DaySplitBar(slices: slices, selected: selected, height: 8)
-                    }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    heading
-                    if !slices.isEmpty {
-                        DaySplitBar(slices: slices, selected: selected, height: 10)
-                        FlowLayout(spacing: 6, lineSpacing: 6) {
-                            ForEach(slices) { slice in
-                                DayChip(slice: slice, isSelected: slice.id == selected)
-                            }
-                        }
-                    }
-                }
+        let focused = slices.first { $0.id == hovered } ?? slices.first { $0.id == selected }
+        VStack(alignment: .leading, spacing: 8) {
+            heading
+            if !slices.isEmpty {
+                DaySplitBar(slices: slices, selected: selected, hovered: $hovered)
+                readout(of: focused, in: slices)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -52,9 +38,9 @@ struct TodayBlock: View {
     }
 
     private var heading: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(title)
-                .font(.system(size: compact ? 13 : 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
             total
         }
@@ -63,13 +49,41 @@ struct TodayBlock: View {
 
     @ViewBuilder private var total: some View {
         if let seconds = dailyTotals.dayTotal, seconds >= 1 {
-            DurationFigure(text: readableDuration(seconds), size: compact ? 20 : 32, weight: .medium)
+            DurationFigure(text: readableDuration(seconds), size: 30, weight: .medium)
                 .accessibilityIdentifier("today-summary.total")
         } else {
             Text(dailyTotals.dayTotal == nil ? "Unavailable" : "Nothing tracked yet")
-                .font(compact ? .subheadline : .title3)
+                .font(.subheadline)
                 .foregroundStyle(.tertiary)
                 .accessibilityIdentifier("today-summary.total")
+        }
+    }
+
+    private func sharePercent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
+
+    /// The share of the day, so the readout adds the one number that the sidebar rows don't show.
+    @ViewBuilder private func readout(of slice: DaySlice?, in slices: [DaySlice]) -> some View {
+        if let slice {
+            let share = slice.seconds / slices.reduce(0) { $0 + $1.seconds }
+            HStack(spacing: 6) {
+                Circle().fill(slice.color).frame(width: 7, height: 7)
+                Text(slice.task.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                Text(sharePercent(share))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "\(slice.task.name), \(sharePercent(share)) of today")
+        } else {
+            Text("Nothing on this task today")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
     }
 }
@@ -86,18 +100,20 @@ struct DaySlice: Identifiable {
     }
 }
 
-/// One segment per task with time today, as wide as the task's share. The selected task's segment gets an outline
-/// around it, so the selection never changes a segment's size.
+/// One segment per task with time today, as wide as the task's share. While a task is selected or hovered, the other
+/// segments fade, so the focus is a tint and never an outline or a change of size.
 private struct DaySplitBar: View {
     let slices: [DaySlice]
     let selected: String?
-    let height: CGFloat
+    @Binding var hovered: String?
     @Environment(TaskCatalogStore.self) private var catalog
 
     private let gap: CGFloat = 2
     private let minimumWidth: CGFloat = 5
+    private let height: CGFloat = 10
 
     var body: some View {
+        let focus = hovered ?? selected
         GeometryReader { proxy in
             let total = slices.reduce(0) { $0 + $1.seconds }
             let usable = max(0, proxy.size.width - gap * CGFloat(slices.count - 1))
@@ -108,57 +124,27 @@ private struct DaySplitBar: View {
                     } label: {
                         RoundedRectangle(cornerRadius: height / 2.5, style: .continuous)
                             .fill(slice.color)
-                            .overlay {
-                                if selected == slice.id {
-                                    RoundedRectangle(cornerRadius: height / 2.5 + 2, style: .continuous)
-                                        .strokeBorder(.primary.opacity(0.6), lineWidth: 1.25)
-                                        .padding(-3)
-                                }
-                            }
+                            .opacity(focus == nil || focus == slice.id ? 1 : 0.45)
                             .frame(width: max(minimumWidth, usable * slice.seconds / total), height: height)
+                            .frame(maxHeight: .infinity)
                             .contentShape(Rectangle())
+                            .animation(.easeOut(duration: 0.12), value: focus)
                     }
                     .buttonStyle(.plain)
+                    .onHover { inside in
+                        if inside {
+                            hovered = slice.id
+                        } else if hovered == slice.id {
+                            hovered = nil
+                        }
+                    }
                     .help("\(slice.task.name), \(readableDuration(slice.seconds))")
                     .accessibilityLabel("\(slice.task.name), \(readableDuration(slice.seconds)) today")
+                    .accessibilityAddTraits(selected == slice.id ? .isSelected : [])
                 }
             }
-            .frame(maxHeight: .infinity)
         }
-        .frame(height: height + 6)
+        .frame(height: 18)
         .accessibilityIdentifier("today-summary.bar")
-    }
-}
-
-/// The bar's legend entry: the task's dot, name and time today. The selected task's chip gets an outline in its color.
-private struct DayChip: View {
-    let slice: DaySlice
-    let isSelected: Bool
-    @Environment(TaskCatalogStore.self) private var catalog
-
-    var body: some View {
-        Button {
-            slice.select(in: catalog)
-        } label: {
-            HStack(spacing: 6) {
-                Circle().fill(slice.color).frame(width: 7, height: 7)
-                Text(slice.task.name)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(readableDuration(slice.seconds))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(.quaternary.opacity(isSelected ? 1 : 0.55), in: .capsule)
-            .overlay { Capsule().strokeBorder(isSelected ? slice.color : .clear, lineWidth: 1.5) }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(slice.task.name), \(readableDuration(slice.seconds)) today")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

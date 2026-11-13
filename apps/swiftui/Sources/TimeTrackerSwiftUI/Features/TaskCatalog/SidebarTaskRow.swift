@@ -1,9 +1,9 @@
 import SwiftUI
 import TrackerClient
 
-/// One task in the sidebar, always two lines tall: color mark, name and when it last ran, and today's total once the
-/// task has time today. A hovered row offers its own start button, except for the task the toolbar capsule controls,
-/// so one task never shows two start or stop controls.
+/// One task in the sidebar, always two lines tall: color mark, name and when it last ran, and today's total at the
+/// trailing edge once the task has time today. A hovered row swaps the total for its own start button, except for the
+/// task the toolbar capsule controls, so one task never shows two start or stop controls.
 struct SidebarTaskRow: View {
     let task: TaskItem
     let isRunning: Bool
@@ -44,26 +44,36 @@ struct SidebarTaskRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            if trackedToday || isRunning, let content = total.content {
-                Text(readableDuration(clockText: content.text))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(isRunning ? Color.primary : Color.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .help(content.explanation)
-                    .accessibilityLabel("Today's total: \(content.text)")
-                    .accessibilityIdentifier("task-sidebar.total.\(task.id)")
-            }
-            startButton
+            trailing
         }
         .frame(height: 40)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }
 
+    private var showsStart: Bool { isHovered && !controlledByCapsule && !task.archived }
+
+    /// Today's total, which the start button replaces while the pointer is on the row.
+    private var trailing: some View {
+        ZStack(alignment: .trailing) {
+            if trackedToday || isRunning, let content = total.content {
+                Text(readableDuration(clockText: content.text))
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(isRunning ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(showsStart ? 0 : 1)
+                    .help(content.explanation)
+                    .accessibilityLabel("Today's total: \(content.text)")
+                    .accessibilityIdentifier("task-sidebar.total.\(task.id)")
+            }
+            startButton
+        }
+        .animation(.easeOut(duration: 0.1), value: showsStart)
+    }
+
     private var startButton: some View {
-        let visible = isHovered && !controlledByCapsule && !task.archived
-        return Button {
+        Button {
             tracking.startTracking(taskID: task.id)
         } label: {
             Image(systemName: "play.fill")
@@ -74,12 +84,11 @@ struct SidebarTaskRow: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .opacity(visible ? 1 : 0)
-        .allowsHitTesting(visible)
+        .opacity(showsStart ? 1 : 0)
+        .allowsHitTesting(showsStart)
         .disabled(!availability.canStart(taskID: task.id))
         .help(tracking.active == nil ? "Start tracking" : "Stop the current timer and start this task")
         .accessibilityLabel("Start \(task.name)")
         .accessibilityHidden(controlledByCapsule || task.archived)
-        .frame(width: 22)
     }
 }

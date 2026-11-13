@@ -8,7 +8,7 @@ struct TrackerSplitLayout<Sidebar: View, Detail: View>: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar()
-                .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
+                .navigationSplitViewColumnWidth(min: 280, ideal: 300, max: 480)
         } detail: {
             detail()
                 .frame(minWidth: 380)

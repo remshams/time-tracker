@@ -1,14 +1,16 @@
 import SwiftUI
 import TrackerClient
 
-/// One worklog on one line: its times and its duration. Hovering highlights the matching segment on the day's strip,
-/// and a double click opens the times for editing.
+/// One worklog on one line: its times, its bar on the day's time axis, its duration and its actions. A double click
+/// opens the times for editing.
 struct WorklogRow: View {
     let segment: DaySegment
+    let day: WorklogDay
+    let axis: TimeAxis
     let color: Color
     let active: WorklogItem?
-    @Binding var hovered: String?
     @Environment(WorklogCorrectionStore.self) private var correction
+    @State private var isHovered = false
 
     private var worklog: WorklogItem { segment.worklog }
     private var isRunning: Bool { active?.id == worklog.id }
@@ -21,6 +23,7 @@ struct WorklogRow: View {
                 .fontWeight(isRunning ? .semibold : .regular)
                 .foregroundStyle(isRunning ? color : Color.primary)
                 .frame(width: HistoryColumns.range, alignment: .leading)
+            WorklogBar(segment: segment, day: day, axis: axis, color: color, highlighted: isHovered || isRunning)
             Group {
                 if isRunning {
                     RunningDuration()
@@ -32,17 +35,16 @@ struct WorklogRow: View {
             .fontWeight(isRunning ? .semibold : .regular)
             .foregroundStyle(isRunning ? color : Color.secondary)
             .frame(width: HistoryColumns.duration, alignment: .trailing)
-            Spacer(minLength: 0)
             WorklogActionsMenu(worklog: worklog)
         }
         .frame(height: 28)
         .background {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(hovered == worklog.id ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+                .fill(isHovered ? AnyShapeStyle(.quaternary.opacity(0.7)) : AnyShapeStyle(.clear))
                 .padding(.horizontal, -8)
         }
         .contentShape(Rectangle())
-        .onHover { hovered = $0 ? worklog.id : (hovered == worklog.id ? nil : hovered) }
+        .onHover { isHovered = $0 }
         .onTapGesture(count: 2) {
             if correction.canOpen { correction.open(worklogID: worklog.id) }
         }
