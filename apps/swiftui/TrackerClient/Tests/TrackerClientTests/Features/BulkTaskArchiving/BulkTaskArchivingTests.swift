@@ -375,7 +375,7 @@ final class BulkTaskArchivingTests: XCTestCase {
             fixture, command, count: 1,
             resources: TaskListResources(tasks: [firstTask, archived, archivedTask], active: activeWorklog))
         XCTAssertEqual(fixture.bulkTaskArchiving.archivedCount, 1)
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived, archivedTask])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [archivedTask, firstTask, archived])
         XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
     }
 

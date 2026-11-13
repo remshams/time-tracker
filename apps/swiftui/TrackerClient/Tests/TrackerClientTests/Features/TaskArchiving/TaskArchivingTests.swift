@@ -419,7 +419,7 @@ final class TaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
         XCTAssertNil(fixture.taskArchiving.error)
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived(archivedTask, false)])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [archived(archivedTask, false), firstTask])
     }
 
     @MainActor
@@ -471,7 +471,7 @@ final class TaskArchivingTests: XCTestCase {
             !fixture.taskArchiving.isSubmitting
         }
         XCTAssertFalse(fixture.taskArchiving.isPresented)
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archived(backgroundName)])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [archived(backgroundName), firstTask])
     }
 
     @MainActor

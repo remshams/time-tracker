@@ -444,7 +444,8 @@ final class Fixture {
     init(
         saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false,
         reports: Bool = false, calendar: Calendar = .autoupdatingCurrent,
-        lastTrackedTasks: (any LastTrackedTaskRepository)? = nil
+        lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
+        taskOrder: (any TaskOrderRepository)? = nil
     ) {
         reportsEnabled = reports
         let settings = MemorySettings(saved)
@@ -453,8 +454,8 @@ final class Fixture {
         self.preferences = preferences
         features = TrackerFeatures(
             client: client, clock: clock, scheduler: scheduler, settings: settings,
-            trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, reports: reports ? client : nil,
-            calendar: calendar)
+            trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, taskOrder: taskOrder,
+            reports: reports ? client : nil, calendar: calendar)
     }
 
     func cleanup() {
@@ -574,6 +575,14 @@ final class MemoryTrackingPreferences: TrackingPreferencesRepository {
     init(_ preferences: TrackingPreferences = TrackingPreferences()) { saved = preferences }
     func load() -> TrackingPreferences { saved }
     func save(_ preferences: TrackingPreferences) { saved = preferences; writes.append(preferences) }
+}
+
+final class MemoryTaskOrder: TaskOrderRepository {
+    private(set) var saved: TaskOrder
+    private(set) var writes: [TaskOrder] = []
+    init(_ order: TaskOrder = .newestFirst) { saved = order }
+    func load() -> TaskOrder { saved }
+    func save(_ order: TaskOrder) { saved = order; writes.append(order) }
 }
 
 extension TaskListResources {

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Orders menu tasks by their latest worklog start, or by name only.
-public enum MenuTaskOrder: String, CaseIterable, Identifiable, Sendable {
+/// Orders the task list, which the sidebar and the menu bar show, by each task's latest worklog start, or by name only.
+public enum TaskOrder: String, CaseIterable, Identifiable, Sendable {
     case newestFirst
     case oldestFirst
     case name

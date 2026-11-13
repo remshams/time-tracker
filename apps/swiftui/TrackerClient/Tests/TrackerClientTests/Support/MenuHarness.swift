@@ -10,11 +10,10 @@ final class MenuHarness {
     let observer: TrackerMenuPresentationObserver
     private let fixture: Fixture
 
-    init(_ fixture: Fixture, showDailyTotal: Bool, taskOrder: MenuTaskOrder = .newestFirst) {
+    init(_ fixture: Fixture, showDailyTotal: Bool) {
         self.fixture = fixture
         sources = fixture.features.menuSources
-        observer = TrackerMenuPresentationObserver(
-            sources: sources, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
+        observer = TrackerMenuPresentationObserver(sources: sources, showDailyTotal: showDailyTotal)
     }
 
     /// Opens the menu as the app does: the stores refresh their clock values first, then the menu captures its content.

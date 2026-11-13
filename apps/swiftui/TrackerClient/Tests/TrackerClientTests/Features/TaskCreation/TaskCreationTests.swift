@@ -117,7 +117,7 @@ final class TaskCreationTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertTrue(fixture.features.connection.stale)
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, [firstTask, archivedTask])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [archivedTask, firstTask])
         XCTAssertEqual(fixture.features.taskCatalog.tab, .active)
         XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, firstTask.id)
     }
@@ -181,7 +181,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(fixture.features.taskCatalog.tab, .active)
         XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, created.id)
         XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
-        XCTAssertEqual(fixture.features.taskCatalog.tasks, tasks + [created])
+        XCTAssertEqual(fixture.features.taskCatalog.tasks, [archivedTask, firstTask, created])
         XCTAssertEqual(
             fixture.client.operations.filter {
                 if case .create = $0 { return true }; return false

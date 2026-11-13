@@ -58,6 +58,11 @@ public protocol TrackingPreferencesRepository {
     func save(_ preferences: TrackingPreferences)
 }
 
+public protocol TaskOrderRepository {
+    func load() -> TaskOrder
+    func save(_ order: TaskOrder)
+}
+
 public protocol LastTrackedTaskRepository {
     func load(for settings: ConnectionSettings) -> String?
     func save(taskID: String, for settings: ConnectionSettings)

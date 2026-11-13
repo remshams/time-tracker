@@ -1,14 +1,16 @@
 import Foundation
 import Observation
 
-/// Holds the task list, the Active or Archived tab, and the selected task for the whole app.
+/// Holds the task list in the chosen order, the Active or Archived tab, and the selected task for the whole app.
 ///
-/// Views read the properties and change the tab and selection; `TrackerSync` and the dialog stores' follow-ups write
-/// them too. Each property is assigned only when its value changes, so an unchanged poll redraws nothing and a change
-/// to another task leaves the selected task's readers alone.
+/// Views read the properties and change the order, tab and selection; `TrackerSync` and the dialog stores' follow-ups
+/// write them too. Each property is assigned only when its value changes, so an unchanged poll redraws nothing and a
+/// change to another task leaves the selected task's readers alone.
 @Observable
 public final class TaskCatalogStore: ChangeGuardedStore {
+    /// The loaded tasks, sorted by `taskOrder`. The sidebar and the menu bar show them in this order.
     public private(set) var tasks: [TaskItem] = []
+    public private(set) var taskOrder: TaskOrder
     public private(set) var selectedTaskID: String?
     public private(set) var tab: TaskTab = .active
     public private(set) var visibleTasks: [TaskItem] = []
@@ -19,6 +21,22 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     /// Loads the selected task's history after the user changed the tab or the selection. `TrackerFeatures` sets it
     /// once, after it creates the history store, which needs this store.
     @ObservationIgnored var reloadHistory: @MainActor () -> Void = {}
+    private let orderRepository: (any TaskOrderRepository)?
+
+    /// Starts with the saved order, or the default order without a repository.
+    init(orderRepository: (any TaskOrderRepository)? = nil) {
+        self.orderRepository = orderRepository
+        taskOrder = orderRepository?.load() ?? .newestFirst
+    }
+
+    /// Sorts the tasks by `order` and saves it. The selection stays.
+    public func setTaskOrder(_ order: TaskOrder) {
+        guard taskOrder != order else { return }
+        taskOrder = order
+        orderRepository?.save(order)
+        set(\.tasks, order.sorted(tasks))
+        updateDerivedValues()
+    }
 
     /// Switches to `newTab` and reloads the history when the selection changes with it.
     public func changeTab(_ newTab: TaskTab) {
@@ -80,7 +98,7 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     func acceptTaskList(_ newTasks: [TaskItem], previousActive: WorklogItem?, active: WorklogItem?) -> Bool {
         let previousTask = selectedTaskID
         let previousLatest = selectedTask?.latestStart
-        set(\.tasks, newTasks)
+        set(\.tasks, taskOrder.sorted(newTasks))
         if selectedTaskID.flatMap({ matchingTaskID($0, in: tab) }) == nil {
             set(\.selectedTaskID, firstTaskID(in: tab))
         }

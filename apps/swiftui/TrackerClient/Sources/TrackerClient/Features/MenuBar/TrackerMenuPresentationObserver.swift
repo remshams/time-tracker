@@ -11,20 +11,18 @@ public final class TrackerMenuPresentationObserver {
     public private(set) var content: TrackerMenuContent
     public private(set) var label: TrackerMenuLabelContent
     public private(set) var values: TrackerMenuValues
-    public private(set) var taskOrder: MenuTaskOrder
     public private(set) var showDailyTotal: Bool
     /// The store values of the last rebuild. Tests wait until it matches the stores.
     private(set) var lastInputs: TrackerMenuInputs
     private let sources: TrackerMenuSources
     private var menuOpen = false
 
-    public init(sources: TrackerMenuSources, showDailyTotal: Bool, taskOrder: MenuTaskOrder = .newestFirst) {
+    public init(sources: TrackerMenuSources, showDailyTotal: Bool) {
         self.sources = sources
         self.showDailyTotal = showDailyTotal
-        self.taskOrder = taskOrder
         let inputs = sources.read()
         lastInputs = inputs
-        content = TrackerMenuContent(inputs, taskOrder: taskOrder)
+        content = TrackerMenuContent(inputs)
         label = TrackerMenuLabelContent(inputs, showDailyTotal: showDailyTotal)
         values = TrackerMenuValues(inputs, content: content)
         // The closure reads the same inputs whether or not the menu is open. A start or stop check skips a store
@@ -41,7 +39,7 @@ public final class TrackerMenuPresentationObserver {
     private func update(_ inputs: TrackerMenuInputs) {
         lastInputs = inputs
         // Keep navigation stable while time values continue to update.
-        let nextContent = menuOpen ? content : TrackerMenuContent(inputs, taskOrder: taskOrder)
+        let nextContent = menuOpen ? content : TrackerMenuContent(inputs)
         let nextLabel = menuOpen ? label : TrackerMenuLabelContent(inputs, showDailyTotal: showDailyTotal)
         let nextValues = TrackerMenuValues(inputs, content: nextContent)
         let labelChanged = label != nextLabel
@@ -57,12 +55,6 @@ public final class TrackerMenuPresentationObserver {
 
     public func setShowDailyTotal(_ enabled: Bool) {
         showDailyTotal = enabled
-        rebuild()
-    }
-
-    /// An open menu keeps its captured order until it closes.
-    public func setTaskOrder(_ order: MenuTaskOrder) {
-        taskOrder = order
         rebuild()
     }
 
