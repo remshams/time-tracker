@@ -1,8 +1,9 @@
 import SwiftUI
 import TrackerClient
 
-struct TrackerDetailPresentation: View {
-    let availability: TrackingAvailability
+/// Hosts the window's content with the editor sheets and the tracking failure alert that it presents.
+struct TrackerDetailPresentation<Content: View>: View {
+    @ViewBuilder let content: () -> Content
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCreationStore.self) private var taskCreation
     @Environment(TaskRenameStore.self) private var taskRename
@@ -21,7 +22,7 @@ struct TrackerDetailPresentation: View {
     }
 
     var body: some View {
-        TaskDetails(availability: availability)
+        content()
             .background {
                 EditorSheet(
                     isPresented: { taskCreation.isPresented },

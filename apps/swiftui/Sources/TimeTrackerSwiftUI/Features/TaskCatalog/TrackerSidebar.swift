@@ -1,12 +1,13 @@
 import SwiftUI
 import TrackerClient
 
+/// The task list: the Active and Archived switch, one two-line row for each task, and the list's own actions.
 struct TrackerSidebar: View {
+    let availability: TrackingAvailability
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
     @Environment(ConnectionStore.self) private var connection
     @Environment(DailyTotalsStore.self) private var dailyTotals
-    @State private var compact = false
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { catalog.tab }, set: { catalog.changeTab($0) })
@@ -18,11 +19,6 @@ struct TrackerSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TodaySummary(compact: compact)
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, compact ? 8 : 12)
-
             Picker("Tasks", selection: tabBinding) {
                 ForEach(TaskTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -31,22 +27,26 @@ struct TrackerSidebar: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 14)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             List(selection: selectionBinding) {
                 ForEach(catalog.visibleTasks) { task in
                     let isRunning = !connection.stale && tracking.active?.taskId == task.id
-                    SidebarTaskRow(task: task, isRunning: isRunning, total: dailyTotals.taskTotal(taskID: task.id))
-                        .tag(task.id)
-                        .help(task.name)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("task-sidebar.task.\(task.id)")
-                        .contextMenu {
-                            TaskContextMenu(
-                                taskID: task.id, taskIsArchived: task.archived,
-                                taskIsRunning: tracking.active?.taskId == task.id)
-                        }
+                    SidebarTaskRow(
+                        task: task, isRunning: isRunning, total: dailyTotals.taskTotal(taskID: task.id),
+                        availability: availability
+                    )
+                    .tag(task.id)
+                    .help(task.name)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("task-sidebar.task.\(task.id)")
+                    .contextMenu {
+                        TaskContextMenu(
+                            taskID: task.id, taskIsArchived: task.archived,
+                            taskIsRunning: tracking.active?.taskId == task.id)
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -57,7 +57,8 @@ struct TrackerSidebar: View {
             .overlay {
                 if catalog.visibleTasks.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "tray")
+                        Image(systemName: catalog.tab == .active ? "checklist" : "archivebox")
+                            .font(.system(size: 24, weight: .light))
                         Text("No \(catalog.tab.rawValue.lowercased()) tasks")
                             .accessibilityIdentifier("task-sidebar.empty")
                     }
@@ -65,13 +66,12 @@ struct TrackerSidebar: View {
                 }
             }
             Divider()
-            ConnectionSummary()
+            HStack(spacing: 2) {
+                TrackerSidebarToolbar()
+                ConnectionSummary()
+            }
+            .padding(.leading, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onGeometryChange(for: Bool.self) {
-            $0.size.height < 600
-        } action: {
-            compact = $0
-        }
     }
 }

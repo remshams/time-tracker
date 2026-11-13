@@ -1,15 +1,26 @@
 import SwiftUI
 import TrackerClient
 
+/// The main area: today's split on top, then the selected task's title and its worklogs. The content sits in one
+/// column of limited width, so rows stay readable in a wide window.
 struct TaskDetails: View {
-    let availability: TrackingAvailability
     @Environment(TaskCatalogStore.self) private var catalog
     @State private var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: compact ? 10 : 18) {
+                TodayBlock(compact: compact)
+                if let task = catalog.selectedTask {
+                    TaskHeader(task: task, compact: compact)
+                }
+            }
+            .padding(.horizontal, HistoryColumns.gutter)
+            .padding(.top, compact ? 4 : 14)
+            .padding(.bottom, compact ? 8 : 12)
+            .readingColumn()
+
             if let task = catalog.selectedTask {
-                TaskHeader(task: task, availability: availability, compact: compact)
                 WorklogHistorySection(taskID: task.id)
             } else {
                 NoTaskSelected()
@@ -25,33 +36,19 @@ struct TaskDetails: View {
     }
 }
 
-/// Fills the pane while no task is selected. With no tasks at all it points to creating the first one.
+/// Fills the area below today's split while no task is selected, and shows a failed history load.
 private struct NoTaskSelected: View {
     @Environment(TaskCatalogStore.self) private var catalog
-    @Environment(TaskCreationStore.self) private var creation
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             WorklogHistoryError()
-            Image(systemName: "checklist")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(.tertiary)
-            VStack(spacing: 4) {
-                Text("Select a task")
-                    .font(.title3.weight(.semibold))
-                Text(
-                    catalog.visibleTasks.isEmpty
-                        ? "You have no \(catalog.tab.rawValue.lowercased()) tasks yet."
-                        : "Pick one from the list to track time or review its worklogs."
-                )
-                .foregroundStyle(.secondary)
-            }
-            if catalog.visibleTasks.isEmpty && catalog.tab == .active {
-                Button("Create a task") { creation.open() }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-                    .disabled(!creation.canOpen)
-                    .accessibilityIdentifier("task-details.create")
+            if !catalog.visibleTasks.isEmpty {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(.tertiary)
+                Text("Select a task to see its worklogs.")
+                    .foregroundStyle(.secondary)
             }
         }
         .multilineTextAlignment(.center)

@@ -10,8 +10,9 @@ struct WorklogHistorySection: View {
     var body: some View {
         VStack(spacing: 0) {
             WorklogHistoryError()
-                .padding(.horizontal, 24)
+                .padding(.horizontal, HistoryColumns.gutter)
                 .padding(.bottom, 12)
+                .readingColumn()
             if history.worklogs.isEmpty {
                 if history.isLoading {
                     DelayedProgressIndicator(
@@ -67,9 +68,10 @@ private struct WorklogDays: View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 TimeAxisLabels(axis: axis)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, HistoryColumns.gutter)
                     .padding(.top, 6)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, 4)
+                    .readingColumn()
                 Divider()
             }
             ScrollView {
@@ -81,19 +83,20 @@ private struct WorklogDays: View {
                     }
                     if history.hasMore {
                         HistoryPaginationButton()
-                            .padding(.horizontal, 24)
                             .padding(.top, 14)
                     }
                 }
                 .padding(.vertical, 8)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, HistoryColumns.gutter)
+                .readingColumn()
             }
             .accessibilityIdentifier("worklog-history.scroll")
         }
     }
 }
 
-/// Tells an empty history what to do next instead of leaving a blank pane.
+/// Tells an empty history what to do next instead of leaving a blank pane. The toolbar capsule is the one control that
+/// starts a task, so an active task points to it. An archived task offers to come back.
 private struct NoWorklogs: View {
     let taskID: String
     @Environment(TaskCatalogStore.self) private var catalog
@@ -103,15 +106,19 @@ private struct NoWorklogs: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: "clock")
-                .font(.system(size: 26, weight: .light))
+                .font(.system(size: 28, weight: .light))
                 .foregroundStyle(.tertiary)
+                .padding(.bottom, 4)
             Text("No worklogs yet")
                 .font(.headline)
                 .accessibilityIdentifier("worklog-history.empty")
-            if !archived {
-                Text("Start tracking to log time on this task.")
-                    .foregroundStyle(.secondary)
-            }
+            Text(
+                archived
+                    ? "Unarchive the task to track time on it."
+                    : "Start tracking from the toolbar. Each stretch of work shows up here as a bar and a row."
+            )
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 320)
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)

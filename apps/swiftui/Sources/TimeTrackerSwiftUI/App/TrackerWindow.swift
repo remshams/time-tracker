@@ -31,29 +31,40 @@ struct TrackerWindow: View {
     }
 
     private var content: some View {
-        TrackerSplitLayout(columnVisibility: $columnVisibility) {
-            TrackerSidebar()
-                .toolbar {
-                    ToolbarItemGroup(placement: .automatic) {
-                        Button {
-                            openWindow(id: TrackerSceneID.settings)
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                        .help("Settings")
-
-                        TrackerSidebarToolbar()
-                    }
+        TrackerDetailPresentation {
+            if catalog.tasks.isEmpty {
+                VStack(spacing: 0) {
+                    EmptyTasksView()
+                    Divider()
+                    ConnectionSummary()
                 }
-        } detail: {
-            TrackerDetailPresentation(availability: runtime.features.trackingAvailability)
-                .toolbar {
-                    ToolbarItemGroup(placement: .primaryAction) {
-                        TrackerTaskToolbar()
-                    }
+                .background(.background)
+            } else {
+                TrackerSplitLayout(columnVisibility: $columnVisibility) {
+                    TrackerSidebar(availability: runtime.features.trackingAvailability)
+                } detail: {
+                    TaskDetails()
                 }
-                .toolbar(removing: .title)
+            }
         }
+        .toolbar {
+            if !catalog.tasks.isEmpty {
+                ToolbarItem(placement: .principal) {
+                    NowCapsule(availability: runtime.features.trackingAvailability)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+            ToolbarSpacer(.flexible, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    openWindow(id: TrackerSceneID.settings)
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Settings")
+            }
+        }
+        .toolbar(removing: .title)
         .navigationTitle(catalog.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
         .onAppear { runtime.installSceneOpener(openWindow) }

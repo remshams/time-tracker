@@ -1,12 +1,27 @@
 import SwiftUI
 import TrackerClient
 
-/// The widths of the columns that the axis, the day lines and the rows share, so that totals and strips line up.
+/// The history's column grid. The column holds the axis, the day strips and the rows. Within a row, the range and the
+/// duration are fixed columns that sit next to each other, and the actions menu stays at the right edge.
 enum HistoryColumns {
-    static let label: CGFloat = 92
-    static let total: CGFloat = 64
+    static let maxWidth: CGFloat = 720
+    static let gutter: CGFloat = 24
+    static let range: CGFloat = usesTwelveHourClock ? 150 : 112
+    static let duration: CGFloat = 64
     static let actions: CGFloat = 26
-    static let spacing: CGFloat = 10
+    static let spacing: CGFloat = 8
+
+    private static var usesTwelveHourClock: Bool {
+        (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a")
+    }
+}
+
+extension View {
+    /// Centers the view in a column of the history's width.
+    func readingColumn() -> some View {
+        frame(maxWidth: HistoryColumns.maxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
+    }
 }
 
 /// One day on the time axis: a segment for each worklog in the task color. The running worklog is hatched and ends
@@ -18,7 +33,7 @@ struct WorklogDayStrip: View {
     @Binding var hovered: String?
     @Environment(WorklogCorrectionStore.self) private var correction
 
-    private let trackHeight: CGFloat = 10
+    private let trackHeight: CGFloat = 12
 
     var body: some View {
         GeometryReader { proxy in
@@ -67,7 +82,7 @@ struct WorklogDayStrip: View {
                 }
             }
         }
-        .frame(height: 22)
+        .frame(height: 24)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "\(day.title), \(day.segments.count) \(day.segments.count == 1 ? "worklog" : "worklogs") on the day's time line"
@@ -116,23 +131,18 @@ private struct SegmentShape: View {
     }
 }
 
-/// Hour labels above the day strips, in the same columns as the strips.
+/// Hour labels above the day strips. They span the strips' width, so each label sits over its hairline.
 struct TimeAxisLabels: View {
     let axis: TimeAxis
 
     var body: some View {
-        HStack(spacing: HistoryColumns.spacing) {
-            Color.clear.frame(width: HistoryColumns.label, height: 1)
-            GeometryReader { proxy in
-                ForEach(axis.ticks, id: \.self) { hour in
-                    Text(String(format: "%02d", hour))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                        .position(
-                            x: proxy.size.width * Double(hour - axis.startHour) / axis.span, y: proxy.size.height / 2)
-                }
+        GeometryReader { proxy in
+            ForEach(axis.ticks, id: \.self) { hour in
+                Text(String(format: "%02d:00", hour))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .position(x: proxy.size.width * Double(hour - axis.startHour) / axis.span, y: proxy.size.height / 2)
             }
-            Color.clear.frame(width: HistoryColumns.total + HistoryColumns.actions, height: 1)
         }
         .frame(height: 14)
         .accessibilityHidden(true)

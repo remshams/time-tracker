@@ -18,11 +18,12 @@ struct WorklogRow: View {
             Text("\(localTimestamp(worklog.start)) – \(worklog.end.map(localTimestamp) ?? "now")")
                 .monospacedDigit()
                 .lineLimit(1)
+                .fontWeight(isRunning ? .semibold : .regular)
                 .foregroundStyle(isRunning ? color : Color.primary)
-            Spacer(minLength: 8)
+                .frame(width: HistoryColumns.range, alignment: .leading)
             Group {
                 if isRunning {
-                    TrackerElapsedText()
+                    RunningDuration()
                 } else {
                     Text(readableDuration(segment.end.timeIntervalSince(segment.start)))
                 }
@@ -30,14 +31,15 @@ struct WorklogRow: View {
             .monospacedDigit()
             .fontWeight(isRunning ? .semibold : .regular)
             .foregroundStyle(isRunning ? color : Color.secondary)
-            .frame(width: HistoryColumns.total, alignment: .trailing)
+            .frame(width: HistoryColumns.duration, alignment: .trailing)
+            Spacer(minLength: 0)
             WorklogActionsMenu(worklog: worklog)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
+        .frame(height: 28)
         .background {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(hovered == worklog.id ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+                .padding(.horizontal, -8)
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 ? worklog.id : (hovered == worklog.id ? nil : hovered) }
@@ -49,6 +51,17 @@ struct WorklogRow: View {
         .contextMenu {
             WorklogContextMenu(worklog: worklog)
         }
+    }
+}
+
+/// The running worklog's elapsed time. Only this view redraws on each tick.
+private struct RunningDuration: View {
+    @Environment(TrackingStore.self) private var tracking
+
+    var body: some View {
+        Text(readableDuration(clockText: tracking.timerText))
+            .accessibilityLabel(tracking.timerText)
+            .accessibilityIdentifier("worklog-history.running-duration")
     }
 }
 

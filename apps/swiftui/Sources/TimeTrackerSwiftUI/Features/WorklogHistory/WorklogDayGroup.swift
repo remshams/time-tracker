@@ -1,7 +1,8 @@
 import SwiftUI
 import TrackerClient
 
-/// One day of worklogs: a line with the day, its strip and its total, then one row for each worklog.
+/// One day of worklogs: the day with its total, the strip, then one row for each worklog. The total sits in the
+/// rows' duration column, over the durations that it adds up.
 struct WorklogDayGroup: View {
     let day: WorklogDay
     let axis: TimeAxis
@@ -17,17 +18,16 @@ struct WorklogDayGroup: View {
                 Text(day.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(width: HistoryColumns.label, alignment: .leading)
-                WorklogDayStrip(day: day, axis: axis, color: color, hovered: $hovered)
+                    .frame(width: HistoryColumns.range, alignment: .leading)
                 DayTotal(day: day, taskID: taskID, showsTotal: showsTotal)
-                    .frame(width: HistoryColumns.total, alignment: .trailing)
-                Color.clear.frame(width: HistoryColumns.actions, height: 1)
+                    .frame(width: HistoryColumns.duration, alignment: .trailing)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
+            .padding(.top, 16)
             .accessibilityElement(children: .contain)
+
+            WorklogDayStrip(day: day, axis: axis, color: color, hovered: $hovered)
+                .padding(.bottom, 2)
 
             ForEach(day.segments) { segment in
                 WorklogRow(segment: segment, color: color, active: active, hovered: $hovered)
