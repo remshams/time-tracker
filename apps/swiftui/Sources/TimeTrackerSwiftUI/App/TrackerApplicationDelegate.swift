@@ -60,11 +60,10 @@ final class TrackerAppRuntime {
             settings: UserDefaultsConnectionSettings(defaults: launch.defaults),
             trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
+            taskOrder: UserDefaultsTaskOrder(defaults: launch.defaults),
             reports: worker)
         let savedPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
-        menu = TrackerMenuPresentationObserver(
-            sources: features.menuSources, showDailyTotal: savedPreferences.load(),
-            taskOrder: savedPreferences.loadTaskOrder())
+        menu = TrackerMenuPresentationObserver(sources: features.menuSources, showDailyTotal: savedPreferences.load())
         // The store turns the menu bar clock on or off for the saved setting.
         menuBarPreferences = MenuBarPreferencesStore(
             preferences: savedPreferences,
