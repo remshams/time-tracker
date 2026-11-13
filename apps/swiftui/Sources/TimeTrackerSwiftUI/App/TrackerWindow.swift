@@ -46,12 +46,13 @@ struct TrackerWindow: View {
                     }
                 }
         } detail: {
-            TrackerDetailPresentation()
+            TrackerDetailPresentation(availability: runtime.features.trackingAvailability)
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
-                        TrackerTaskToolbar(availability: runtime.features.trackingAvailability)
+                        TrackerTaskToolbar()
                     }
                 }
+                .toolbar(removing: .title)
         }
         .navigationTitle(catalog.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)

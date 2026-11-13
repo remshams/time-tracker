@@ -2,65 +2,60 @@ import SwiftUI
 import TrackerClient
 
 struct TaskDetails: View {
-    @Environment(TrackingStore.self) private var tracking
+    let availability: TrackingAvailability
     @Environment(TaskCatalogStore.self) private var catalog
-    @Environment(TrackingAutomationStore.self) private var automation
+    @State private var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let task = catalog.selectedTask {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 16) {
-                        Text(task.name)
-                            .font(.system(size: 26, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                            .help(task.name)
-                            .accessibilityIdentifier("task-details.name")
-                    }
-
-                    HStack(spacing: 12) {
-                        if task.archived {
-                            Label("Archived", systemImage: "archivebox")
-                                .accessibilityIdentifier("task-details.state")
-                                .foregroundStyle(.secondary)
-                        } else if let active = tracking.active, active.taskId == task.id {
-                            Label("Running since \(localTimestamp(active.start))", systemImage: "timer")
-                                .accessibilityIdentifier("task-details.state")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Label("Active", systemImage: "checklist")
-                                .accessibilityIdentifier("task-details.state")
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if let status = automation.statusText {
-                            Text(status)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("task-details.task.\(task.id)")
-
-                Divider()
-                WorklogHistorySection()
+                TaskHeader(task: task, availability: availability, compact: compact)
+                WorklogHistorySection(taskID: task.id)
             } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    WorklogHistoryError()
-                    Label("Select a task", systemImage: "checklist")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(24)
+                NoTaskSelected()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.background)
+        .onGeometryChange(for: Bool.self) {
+            $0.size.height < 560
+        } action: {
+            compact = $0
+        }
+    }
+}
+
+/// Fills the pane while no task is selected. With no tasks at all it points to creating the first one.
+private struct NoTaskSelected: View {
+    @Environment(TaskCatalogStore.self) private var catalog
+    @Environment(TaskCreationStore.self) private var creation
+
+    var body: some View {
+        VStack(spacing: 14) {
+            WorklogHistoryError()
+            Image(systemName: "checklist")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.tertiary)
+            VStack(spacing: 4) {
+                Text("Select a task")
+                    .font(.title3.weight(.semibold))
+                Text(
+                    catalog.visibleTasks.isEmpty
+                        ? "You have no \(catalog.tab.rawValue.lowercased()) tasks yet."
+                        : "Pick one from the list to track time or review its worklogs."
+                )
+                .foregroundStyle(.secondary)
+            }
+            if catalog.visibleTasks.isEmpty && catalog.tab == .active {
+                Button("Create a task") { creation.open() }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+                    .disabled(!creation.canOpen)
+                    .accessibilityIdentifier("task-details.create")
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

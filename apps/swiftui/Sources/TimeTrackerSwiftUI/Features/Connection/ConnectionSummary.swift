@@ -10,20 +10,21 @@ struct ConnectionSummary: View {
                 .foregroundStyle(
                     connection.stale || connection.changing
                         ? Color.secondary : Color.green)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(
-                    connection.settings.mode == .local
-                        ? "Local database" : connection.settings.serverURL
-                )
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(connection.settings.serverURL)
-                .accessibilityIdentifier("connection-summary.source")
+            VStack(alignment: .leading, spacing: 2) {
+                // The local mode's status already reads "Local database", so only a server needs its own line.
+                if connection.settings.mode != .local {
+                    Text(connection.settings.serverURL)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(connection.settings.serverURL)
+                        .accessibilityIdentifier("connection-summary.source")
+                }
                 Text(connection.statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                     .help(connection.message ?? connection.statusText)
                     .accessibilityIdentifier("connection-summary.status")
             }
@@ -36,6 +37,6 @@ struct ConnectionSummary: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
     }
 }

@@ -1,44 +1,51 @@
 import SwiftUI
 import TrackerClient
 
+/// One worklog on one line: its times and its duration. Hovering highlights the matching segment on the day's strip,
+/// and a double click opens the times for editing.
 struct WorklogRow: View {
-    let worklog: WorklogItem
+    let segment: DaySegment
+    let color: Color
     let active: WorklogItem?
+    @Binding var hovered: String?
+    @Environment(WorklogCorrectionStore.self) private var correction
 
-    private var duration: TimeInterval { worklogDuration(worklog) }
+    private var worklog: WorklogItem { segment.worklog }
+    private var isRunning: Bool { active?.id == worklog.id }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(localDay(worklog.start))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                Text("\(localTimestamp(worklog.start)) – \(worklog.end.map(localTimestamp) ?? "Running")")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 12)
+        HStack(spacing: HistoryColumns.spacing) {
+            Text("\(localTimestamp(worklog.start)) – \(worklog.end.map(localTimestamp) ?? "now")")
+                .monospacedDigit()
+                .lineLimit(1)
+                .foregroundStyle(isRunning ? color : Color.primary)
+            Spacer(minLength: 8)
             Group {
-                if active?.id == worklog.id {
+                if isRunning {
                     TrackerElapsedText()
                 } else {
-                    Text(formatClockDuration(duration))
+                    Text(readableDuration(segment.end.timeIntervalSince(segment.start)))
                 }
             }
-            .font(.system(.title3, design: .monospaced).weight(.medium))
-            .foregroundStyle(.primary)
             .monospacedDigit()
-            .fixedSize()
+            .fontWeight(isRunning ? .semibold : .regular)
+            .foregroundStyle(isRunning ? color : Color.secondary)
+            .frame(width: HistoryColumns.total, alignment: .trailing)
             WorklogActionsMenu(worklog: worklog)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 30)
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(hovered == worklog.id ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+        }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 ? worklog.id : (hovered == worklog.id ? nil : hovered) }
+        .onTapGesture(count: 2) {
+            if correction.canOpen { correction.open(worklogID: worklog.id) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
-        .padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.quaternary, lineWidth: 1)
-        }
         .contextMenu {
             WorklogContextMenu(worklog: worklog)
         }
@@ -55,12 +62,13 @@ private struct WorklogActionsMenu: View {
         Menu {
             WorklogContextMenu(worklog: worklog)
         } label: {
-            Label("Worklog actions", systemImage: "ellipsis.circle")
+            Label("Worklog actions", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)
+                .foregroundStyle(.tertiary)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .fixedSize()
+        .frame(width: HistoryColumns.actions, height: 22)
         .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
         .help("Worklog actions")
         .accessibilityIdentifier("worklog-history.actions.\(worklog.id)")

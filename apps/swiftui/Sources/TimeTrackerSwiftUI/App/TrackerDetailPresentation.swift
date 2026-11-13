@@ -2,6 +2,7 @@ import SwiftUI
 import TrackerClient
 
 struct TrackerDetailPresentation: View {
+    let availability: TrackingAvailability
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCreationStore.self) private var taskCreation
     @Environment(TaskRenameStore.self) private var taskRename
@@ -20,7 +21,7 @@ struct TrackerDetailPresentation: View {
     }
 
     var body: some View {
-        TaskDetails()
+        TaskDetails(availability: availability)
             .background {
                 EditorSheet(
                     isPresented: { taskCreation.isPresented },

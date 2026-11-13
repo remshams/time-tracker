@@ -6,6 +6,7 @@ struct TrackerSidebar: View {
     @Environment(TaskCatalogStore.self) private var catalog
     @Environment(ConnectionStore.self) private var connection
     @Environment(DailyTotalsStore.self) private var dailyTotals
+    @State private var compact = false
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { catalog.tab }, set: { catalog.changeTab($0) })
@@ -17,6 +18,11 @@ struct TrackerSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            TodaySummary(compact: compact)
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, compact ? 8 : 12)
+
             Picker("Tasks", selection: tabBinding) {
                 ForEach(TaskTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -25,43 +31,22 @@ struct TrackerSidebar: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(12)
-
-            HStack {
-                Text("Tasks")
-                Spacer()
-                Text(dailyTotals.status == .cached ? "Today, cached" : "Today")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
 
             List(selection: selectionBinding) {
                 ForEach(catalog.visibleTasks) { task in
-                    HStack(spacing: 8) {
-                        TaskIndicatorView(
-                            taskID: task.id,
-                            isRunning: !connection.stale && tracking.active?.taskId == task.id
-                        )
-                        .accessibilityIdentifier(
-                            !connection.stale && tracking.active?.taskId == task.id
-                                ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
-                        Text(task.name)
-                            .lineLimit(2)
-                            .padding(.vertical, 4)
-                        Spacer(minLength: 4)
-                        TrackerDailyTotalText(totals: dailyTotals, taskID: task.id)
-                    }
-                    .tag(task.id)
-                    .help(task.name)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("task-sidebar.task.\(task.id)")
-                    .contextMenu {
-                        TaskContextMenu(
-                            taskID: task.id, taskIsArchived: task.archived,
-                            taskIsRunning: tracking.active?.taskId == task.id)
-                    }
+                    let isRunning = !connection.stale && tracking.active?.taskId == task.id
+                    SidebarTaskRow(task: task, isRunning: isRunning, total: dailyTotals.taskTotal(taskID: task.id))
+                        .tag(task.id)
+                        .help(task.name)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("task-sidebar.task.\(task.id)")
+                        .contextMenu {
+                            TaskContextMenu(
+                                taskID: task.id, taskIsArchived: task.archived,
+                                taskIsRunning: tracking.active?.taskId == task.id)
+                        }
                 }
             }
             .listStyle(.sidebar)
@@ -83,27 +68,10 @@ struct TrackerSidebar: View {
             ConnectionSummary()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct TrackerDailyTotalText: View {
-    private let task: TaskDailyTotal
-    private let taskID: String
-
-    init(totals: DailyTotalsStore, taskID: String) {
-        self.taskID = taskID
-        task = totals.taskTotal(taskID: taskID)
-    }
-
-    var body: some View {
-        let text = task.content?.text ?? "-"
-        Text(text)
-            .font(.callout.monospacedDigit())
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .help(task.content?.explanation ?? "Today's total is unavailable")
-            .accessibilityLabel("Today's total: \(text)")
-            .accessibilityIdentifier("task-sidebar.total.\(taskID)")
+        .onGeometryChange(for: Bool.self) {
+            $0.size.height < 600
+        } action: {
+            compact = $0
+        }
     }
 }
