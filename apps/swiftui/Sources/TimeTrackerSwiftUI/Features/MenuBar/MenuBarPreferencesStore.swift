@@ -1,8 +1,8 @@
 import Observation
 import TrackerClient
 
-/// Owns the menu bar settings: the daily total, the task order and the keyboard shortcuts with their errors.
-/// It reads the saved order and daily total from the menu observer, which the app seeds from the same defaults.
+/// Owns the menu bar settings: the daily total and the keyboard shortcuts with their errors.
+/// It reads the saved daily total from the menu observer, which the app seeds from the same defaults.
 @Observable
 final class MenuBarPreferencesStore {
     private let preferences: UserDefaultsMenuBarPreferences
@@ -10,7 +10,6 @@ final class MenuBarPreferencesStore {
     private let menu: TrackerMenuPresentationObserver
     private let menuBar: MenuBarStore
     private(set) var showDailyTotalInMenuBar: Bool
-    private(set) var menuTaskOrder: MenuTaskOrder
     private(set) var menuShortcuts: MenuKeyboardShortcuts
     private var menuShortcutValidationError: String?
     private(set) var menuGlobalShortcutError: String?
@@ -28,7 +27,6 @@ final class MenuBarPreferencesStore {
         self.menu = menu
         self.menuBar = menuBar
         showDailyTotalInMenuBar = menu.showDailyTotal
-        menuTaskOrder = menu.taskOrder
         menuShortcuts = keyboardPreferences.load()
         menuBar.setClockEnabled(menu.showDailyTotal)
     }
@@ -39,13 +37,6 @@ final class MenuBarPreferencesStore {
         preferences.save(enabled)
         menu.setShowDailyTotal(enabled)
         menuBar.setClockEnabled(enabled)
-    }
-
-    func setMenuTaskOrder(_ order: MenuTaskOrder) {
-        guard menuTaskOrder != order else { return }
-        menuTaskOrder = order
-        preferences.saveTaskOrder(order)
-        menu.setTaskOrder(order)
     }
 
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {

@@ -32,6 +32,7 @@ struct TimeTrackerApp: App {
             SettingsView(connection: delegate.runtime.features.connection, client: delegate.runtime.client)
                 .environment(delegate.runtime.features.connection)
                 .environment(delegate.runtime.features.trackingAutomation)
+                .environment(delegate.runtime.features.taskCatalog)
                 .environment(delegate.runtime.menuBarPreferences)
                 .frame(height: 680)
         }

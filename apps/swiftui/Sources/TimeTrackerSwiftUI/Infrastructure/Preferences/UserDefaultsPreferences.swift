@@ -36,19 +36,23 @@ final class UserDefaultsTrackingPreferences: TrackingPreferencesRepository {
 final class UserDefaultsMenuBarPreferences {
     private let defaults: UserDefaults
     private let key = "tracker.showDailyTotalInMenuBar"
-    private let taskOrderKey = "tracker.menuTaskOrder"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
     func load() -> Bool { defaults.object(forKey: key) as? Bool ?? true }
 
     func save(_ showDailyTotal: Bool) { defaults.set(showDailyTotal, forKey: key) }
+}
 
-    func loadTaskOrder() -> MenuTaskOrder {
-        defaults.string(forKey: taskOrderKey).flatMap(MenuTaskOrder.init(rawValue:)) ?? .newestFirst
-    }
+final class UserDefaultsTaskOrder: TaskOrderRepository {
+    private let defaults: UserDefaults
+    private let key = "tracker.taskOrder"
 
-    func saveTaskOrder(_ order: MenuTaskOrder) { defaults.set(order.rawValue, forKey: taskOrderKey) }
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> TaskOrder { defaults.string(forKey: key).flatMap(TaskOrder.init(rawValue:)) ?? .newestFirst }
+
+    func save(_ order: TaskOrder) { defaults.set(order.rawValue, forKey: key) }
 }
 
 final class UserDefaultsLastTrackedTasks: LastTrackedTaskRepository {
