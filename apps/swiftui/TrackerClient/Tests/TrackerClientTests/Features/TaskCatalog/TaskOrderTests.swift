@@ -1,7 +1,7 @@
 import XCTest
 @testable import TrackerClient
 
-final class MenuTaskOrderTests: XCTestCase {
+final class TaskOrderTests: XCTestCase {
     private let older = TaskItem(
         id: "task-older", name: "Older task", archived: false, latestStart: "2024-12-30T09:00:00.000Z")
     private let newer = TaskItem(
@@ -19,36 +19,37 @@ final class MenuTaskOrderTests: XCTestCase {
     @MainActor
     func testNewestFirstPutsLatestLoggedTasksFirstAndUnloggedTasksLast() {
         XCTAssertEqual(
-            MenuTaskOrder.newestFirst.sorted(shuffled).map(\.id),
+            TaskOrder.newestFirst.sorted(shuffled).map(\.id),
             [newer, tiedEarlier, tiedLater, older, unlogged, unreadable].map(\.id))
     }
 
     @MainActor
     func testOldestFirstPutsEarliestLoggedTasksFirstAndUnloggedTasksLast() {
         XCTAssertEqual(
-            MenuTaskOrder.oldestFirst.sorted(shuffled).map(\.id),
+            TaskOrder.oldestFirst.sorted(shuffled).map(\.id),
             [older, newer, tiedEarlier, tiedLater, unlogged, unreadable].map(\.id))
     }
 
     @MainActor
     func testNameOrderIgnoresLoggedTimes() {
         XCTAssertEqual(
-            MenuTaskOrder.name.sorted(shuffled).map(\.id),
+            TaskOrder.name.sorted(shuffled).map(\.id),
             [unlogged, unreadable, newer, older, tiedEarlier, tiedLater].map(\.id))
     }
 
     @MainActor
     func testPersistedValuesAndTitlesStayStable() {
-        XCTAssertEqual(MenuTaskOrder.allCases.map(\.rawValue), ["newestFirst", "oldestFirst", "name"])
-        XCTAssertEqual(MenuTaskOrder.allCases.map(\.id), MenuTaskOrder.allCases)
+        XCTAssertEqual(TaskOrder.allCases.map(\.rawValue), ["newestFirst", "oldestFirst", "name"])
+        XCTAssertEqual(TaskOrder.allCases.map(\.id), TaskOrder.allCases)
         XCTAssertEqual(
-            MenuTaskOrder.allCases.map(\.title),
+            TaskOrder.allCases.map(\.title),
             ["Most recently logged first", "Least recently logged first", "By name"])
     }
 
     @MainActor
-    func testMenuSectionsUseTheOrderAndAnOpenMenuKeepsItsSnapshotUntilClosed() async throws {
-        let fixture = Fixture(reports: true)
+    func testMenuSectionsFollowTheCatalogOrderAndAnOpenMenuKeepsItsSnapshotUntilClosed() async throws {
+        let order = MemoryTaskOrder(.newestFirst)
+        let fixture = Fixture(reports: true, taskOrder: order)
         defer { fixture.cleanup() }
         let running = TaskItem(
             id: firstTask.id, name: firstTask.name, archived: false, latestStart: activeWorklog.start)
@@ -65,30 +66,29 @@ final class MenuTaskOrderTests: XCTestCase {
                 TaskReportTotal(taskId: running.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: earlierToday.id, durationMicroseconds: 20_000_000),
             ])
+        let catalog = fixture.features.taskCatalog
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
-        XCTAssertEqual(observer.taskOrder, .newestFirst)
+        XCTAssertEqual(catalog.taskOrder, .newestFirst)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [running.id, earlierToday.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [recentIdle.id, staleIdle.id, secondTask.id])
 
         observer.menuOpened()
         let captured = observer.content
-        observer.setTaskOrder(.name)
-        XCTAssertEqual(observer.taskOrder, .name)
+        catalog.setTaskOrder(.name)
+        try await menu.settled()
         XCTAssertEqual(observer.content, captured, "An open menu must keep its rows in place.")
         observer.menuClosed()
-        XCTAssertNotEqual(observer.content, captured)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [earlierToday.id, running.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [recentIdle.id, secondTask.id, staleIdle.id])
 
-        let byName = observer.content
-        observer.setTaskOrder(.oldestFirst)
-        XCTAssertNotEqual(observer.content, byName)
+        catalog.setTaskOrder(.oldestFirst)
+        try await menu.settled()
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [earlierToday.id, running.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [staleIdle.id, recentIdle.id, secondTask.id])
+        XCTAssertEqual(order.writes, [.name, .oldestFirst])
 
-        let created = TrackerMenuPresentationObserver(
-            sources: menu.sources, showDailyTotal: true, taskOrder: .oldestFirst)
+        let created = TrackerMenuPresentationObserver(sources: menu.sources, showDailyTotal: true)
         XCTAssertEqual(created.content, observer.content)
     }
 }

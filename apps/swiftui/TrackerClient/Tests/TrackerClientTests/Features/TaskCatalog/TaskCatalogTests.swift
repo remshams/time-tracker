@@ -278,7 +278,7 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertFalse(
             state.acceptTaskList([firstTask, updatedOther, renamedArchived], previousActive: nil, active: nil))
         XCTAssertEqual(probes.changed(), ["tasks", "visibleTasks"])
-        XCTAssertEqual(state.visibleTasks, [firstTask, updatedOther])
+        XCTAssertEqual(state.visibleTasks, [updatedOther, firstTask])
     }
 
     @MainActor
@@ -311,6 +311,57 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertEqual(probes.changed(), ["tasks", "visibleTasks", "selectedTask"])
         XCTAssertEqual(state.selectedTask, renamed)
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
+    }
+
+    @MainActor
+    func testBothTabsListTasksInTheDefaultOrderAndSelectTheFirstTask() async {
+        let state = TaskCatalogStore()
+        let older = TaskItem(id: "task-older", name: "Older", archived: false, latestStart: "2024-12-30T09:00:00.000Z")
+        let newer = TaskItem(id: "task-newer", name: "Newer", archived: false, latestStart: "2024-12-31T09:00:00.000Z")
+        let unlogged = TaskItem(id: "task-unlogged", name: "Unlogged", archived: false, latestStart: nil)
+        let archivedOlder = TaskItem(
+            id: "archived-older", name: "Archived older", archived: true, latestStart: "2024-12-01T09:00:00.000Z")
+        let archivedNewer = TaskItem(
+            id: "archived-newer", name: "Archived newer", archived: true, latestStart: "2024-12-02T09:00:00.000Z")
+        XCTAssertEqual(state.taskOrder, .newestFirst)
+
+        XCTAssertTrue(
+            state.acceptTaskList(
+                [unlogged, archivedOlder, older, archivedNewer, newer], previousActive: nil, active: nil))
+        XCTAssertEqual(state.tasks, [newer, older, archivedNewer, archivedOlder, unlogged])
+        XCTAssertEqual(state.visibleTasks, [newer, older, unlogged])
+        XCTAssertEqual(state.selectedTaskID, newer.id)
+        XCTAssertTrue(state.switchTab(to: .archived))
+        XCTAssertEqual(state.visibleTasks, [archivedNewer, archivedOlder])
+        XCTAssertEqual(state.selectedTaskID, archivedNewer.id)
+    }
+
+    @MainActor
+    func testChangingTheOrderSortsTheTasksKeepsTheSelectionAndSavesTheOrderOnce() async {
+        let saved = MemoryTaskOrder(.name)
+        let state = TaskCatalogStore(orderRepository: saved)
+        let reloads = HistoryReloads()
+        state.reloadHistory = { reloads.count += 1 }
+        let older = TaskItem(id: "task-older", name: "Older", archived: false, latestStart: "2024-12-30T09:00:00.000Z")
+        let newer = TaskItem(id: "task-newer", name: "Newer", archived: false, latestStart: "2024-12-31T09:00:00.000Z")
+        let unlogged = TaskItem(id: "task-unlogged", name: "Another", archived: false, latestStart: nil)
+        XCTAssertEqual(state.taskOrder, .name)
+        XCTAssertTrue(state.acceptTaskList([older, newer, unlogged], previousActive: nil, active: nil))
+        XCTAssertEqual(state.visibleTasks, [unlogged, newer, older])
+        XCTAssertTrue(state.switchSelection(to: older.id))
+
+        state.setTaskOrder(.oldestFirst)
+        XCTAssertEqual(state.taskOrder, .oldestFirst)
+        XCTAssertEqual(state.tasks, [older, newer, unlogged])
+        XCTAssertEqual(state.visibleTasks, [older, newer, unlogged])
+        XCTAssertEqual(state.selectedTaskID, older.id)
+        XCTAssertEqual(state.selectedTask, older)
+        state.setTaskOrder(.oldestFirst)
+        XCTAssertEqual(saved.writes, [.oldestFirst])
+        XCTAssertEqual(reloads.count, 0)
+
+        XCTAssertFalse(state.acceptTaskList([unlogged, newer, older], previousActive: nil, active: nil))
+        XCTAssertEqual(state.visibleTasks, [older, newer, unlogged])
     }
 }
 

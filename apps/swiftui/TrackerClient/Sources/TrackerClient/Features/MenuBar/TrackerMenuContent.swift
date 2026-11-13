@@ -24,7 +24,7 @@ public struct TrackerMenuContent: Equatable {
     public let todayTasks: [TrackerMenuTask]
     public let otherTasks: [TrackerMenuTask]
 
-    init(_ inputs: TrackerMenuInputs, taskOrder: MenuTaskOrder) {
+    init(_ inputs: TrackerMenuInputs) {
         connectionSettings = inputs.connectionSettings
         connectionStatusText = inputs.connectionStatusText
         isStale = inputs.isStale
@@ -37,11 +37,11 @@ public struct TrackerMenuContent: Equatable {
         dailyTotalsStatus = inputs.dailyTotalsStatus
         totalText = inputs.dayTotalText
         totalsExplanation = inputs.totalsExplanation
-        // Tasks with time logged today, in task list order before the menu's own order applies.
+        // Both sections keep the catalog's task order.
         let today = inputs.tasks.filter { (inputs.taskDurations[$0.id] ?? 0) > 0 }
         let todayIDs = Set(today.map(\.id))
-        todayTasks = taskOrder.sorted(today).map { Self.entry($0, inputs: inputs) }
-        otherTasks = taskOrder.sorted(inputs.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) })
+        todayTasks = today.map { Self.entry($0, inputs: inputs) }
+        otherTasks = inputs.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) }
             .map { Self.entry($0, inputs: inputs) }
     }
 

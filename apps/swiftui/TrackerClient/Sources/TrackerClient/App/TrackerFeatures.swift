@@ -8,8 +8,9 @@ public final class TrackerFeatures {
     public let sync: TrackerSync
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
-    /// Views read the task list, tab and selection here and change the tab and selection; the sync writes them too.
-    public let taskCatalog = TaskCatalogStore()
+    /// Views read the task list, its order, tab and selection here and change the order, tab and selection; the sync
+    /// writes the task list too.
+    public let taskCatalog: TaskCatalogStore
     /// Views read the selected task's worklog pages and the history panel's state here, retry and load older pages;
     /// the store loads the first page when the sync or a selection change asks it to.
     public let worklogHistory: WorklogHistoryStore
@@ -51,10 +52,12 @@ public final class TrackerFeatures {
         scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository,
         trackingPreferences: any TrackingPreferencesRepository,
         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
+        taskOrder: (any TaskOrderRepository)? = nil,
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
         // Ticks while the app shows a running worklog's time. The stores and the sync that use it hold it.
         let displayClock = DisplayClock(scheduler: scheduler)
+        taskCatalog = TaskCatalogStore(orderRepository: taskOrder)
         connection = ConnectionStore(settings: settings.load() ?? .local)
         worklogHistory = WorklogHistoryStore(client: client, catalog: taskCatalog, connection: connection)
         tracking = TrackingStore(
