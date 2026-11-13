@@ -200,7 +200,46 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    (
+        "The shared task order passes a saved order from the fixture to TaskCatalogStore",
+        (
+            (
+                "        lastTrackedTasks: (any LastTrackedTaskRepository)? = nil\n    ) {\n",
+                "        lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,\n"
+                "        taskOrder: (any TaskOrderRepository)? = nil\n    ) {\n",
+            ),
+            (
+                "            trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks,"
+                " reports: reports ? client : nil,\n            calendar: calendar)\n",
+                "            trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, taskOrder: taskOrder,\n"
+                "            reports: reports ? client : nil, calendar: calendar)\n",
+            ),
+            (
+                "extension TaskListResources {\n",
+                "final class MemoryTaskOrder: TaskOrderRepository {\n"
+                "    private(set) var saved: TaskOrder\n"
+                "    private(set) var writes: [TaskOrder] = []\n"
+                "    init(_ order: TaskOrder = .newestFirst) { saved = order }\n"
+                "    func load() -> TaskOrder { saved }\n"
+                "    func save(_ order: TaskOrder) { saved = order; writes.append(order) }\n"
+                "}\n\nextension TaskListResources {\n",
+            ),
+        ),
+        None,
+        (
+            (
+                "public protocol LastTrackedTaskRepository {\n",
+                "public protocol TaskOrderRepository {\n"
+                "    func load() -> TaskOrder\n"
+                "    func save(_ order: TaskOrder)\n"
+                "}\n\npublic protocol LastTrackedTaskRepository {\n",
+            ),
+        ),
+        ("Features/TaskCatalog/TaskCatalogTests.swift",),
+        ("Features/TaskCatalog/TaskOrderTests.swift", "Features/TaskCatalog/TaskCatalogTests.swift"),
+    ),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
@@ -217,7 +256,10 @@ SUPPORT_PRODUCTION = {
 # deleted path to the successor here. The successor's own scope covers the
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
-REVIEWED_REPLACEMENTS: dict[str, str] = {}
+REVIEWED_REPLACEMENTS: dict[str, str] = {
+    "Tests/TrackerClientTests/Features/MenuBar/MenuTaskOrderTests.swift":
+        "Tests/TrackerClientTests/Features/TaskCatalog/TaskOrderTests.swift",
+}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
