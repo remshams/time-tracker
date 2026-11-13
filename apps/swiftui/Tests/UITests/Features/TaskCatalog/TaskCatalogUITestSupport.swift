@@ -18,7 +18,7 @@ extension TrackerUITestCase {
         for task in tasks { XCTAssertTrue(taskRow(task).waitForExistence(timeout: timeout), file: file, line: line) }
         waitUntil("The sidebar lists \(tasks.map(\.name))", file: file, line: line) {
             let tops = tasks.map { self.taskRow($0).frame.minY }
-            return tops == tops.sorted()
+            return Set(tops).count == tops.count && tops == tops.sorted()
         }
     }
 }
