@@ -121,6 +121,23 @@ nonisolated public enum TaskTab: String, CaseIterable, Hashable, Identifiable, S
     public var id: Self { self }
 }
 
+/// Orders the task list, which the sidebar and the menu bar show. `TaskCatalog` holds the sorting.
+nonisolated public enum TaskOrder: String, CaseIterable, Identifiable, Sendable {
+    case newestFirst
+    case oldestFirst
+    case name
+
+    public var id: Self { self }
+
+    public var title: String {
+        switch self {
+        case .newestFirst: return "Most recently logged first"
+        case .oldestFirst: return "Least recently logged first"
+        case .name: return "By name"
+        }
+    }
+}
+
 nonisolated public enum ConnectionMode: String, CaseIterable, Codable, Identifiable, Sendable {
     case local
     case server

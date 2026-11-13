@@ -1,21 +1,7 @@
 import Foundation
 
-/// Orders the task list, which the sidebar and the menu bar show, by each task's latest worklog start, or by name only.
-public enum TaskOrder: String, CaseIterable, Identifiable, Sendable {
-    case newestFirst
-    case oldestFirst
-    case name
-
-    public var id: Self { self }
-
-    public var title: String {
-        switch self {
-        case .newestFirst: return "Most recently logged first"
-        case .oldestFirst: return "Least recently logged first"
-        case .name: return "By name"
-        }
-    }
-
+/// Sorts the task list by each task's latest worklog start, or by name only.
+extension TaskOrder {
     /// Tasks without logged time follow logged tasks. Equal times fall back to name, then ID.
     func sorted(_ tasks: [TaskItem]) -> [TaskItem] {
         tasks.map { RankedTask(task: $0, loggedAt: loggedAt($0)) }
