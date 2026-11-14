@@ -43,7 +43,6 @@
 		571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */; };
 		42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */; };
 		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
-		68E73DACB8ACF07BE1A99DD5 /* TrackerTaskToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3FCDEBF0A25204E12035A8 /* TrackerTaskToolbar.swift */; };
 		2BD055F47D4E288A69EDFEF4 /* TrackerSidebarToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1114FD27618CA688748B0C4F /* TrackerSidebarToolbar.swift */; };
 		C7CCECF59AF142A5D2D23F25 /* TaskSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D31D4998EB720031D3CC85E /* TaskSettingsSection.swift */; };
 		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
@@ -93,6 +92,17 @@
 		745BDF4445457BB07CA3C29C /* WorklogUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */; };
 		B7C4923B11B8BB1AF3B416C2 /* TrackerUITestAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC884A44C0C6D93268EC277 /* TrackerUITestAssertions.swift */; };
 		F70000000000000000000001 /* DelayedProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000002 /* DelayedProgress.swift */; };
+		38DBCE61A759E96D0126F9A2 /* DurationFigure.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC494EF6E6B7BEE73C07EA45 /* DurationFigure.swift */; };
+		248B538F2B22C7873AC3563F /* TodayBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F82AA1D90CB1AA9CE2930E9 /* TodayBlock.swift */; };
+		98353E80EF4CF6A1C5EA3484 /* EmptyTasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 287FA7292F0E1FBE90233853 /* EmptyTasksView.swift */; };
+		CCB02BBCA01001DD7248C2B1 /* SidebarTaskRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96EEDB2B8F8B5A4EE234CA1B /* SidebarTaskRow.swift */; };
+		CE0010D8113452D83FA4AD0E /* TaskHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92D852B826D9DF56426F0DBF /* TaskHeader.swift */; };
+		5DFAC8BA8FDC62EC20D35690 /* TaskLastTracked.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08772D2BDC279EA77F102D55 /* TaskLastTracked.swift */; };
+		3D439F283EEB0E2DFE21DC8C /* NowCapsule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B702D2F8AD19931B42272B5B /* NowCapsule.swift */; };
+		BC9D2540AC57B9FEF4F36A83 /* WorklogDayGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B72E9C61C4FD5D9DBF2717 /* WorklogDayGroup.swift */; };
+		E536E512CD9C9A562475D39B /* WorklogDays.swift in Sources */ = {isa = PBXBuildFile; fileRef = F962566A3D1578BA4F7DCBBF /* WorklogDays.swift */; };
+		73D24D2E3BBC504CF16A6E75 /* WorklogTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B41D084E77D9D267757F289 /* WorklogTimeline.swift */; };
+		B8B1F65FC326B5241930D532 /* DurationFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0B04D16F6610D51B7E0EF6 /* DurationFormat.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -146,7 +156,6 @@
 		A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNameSheet.swift; sourceTree = "<group>"; };
 		88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameView.swift; sourceTree = "<group>"; };
 		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
-		2E3FCDEBF0A25204E12035A8 /* TrackerTaskToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskToolbar.swift; sourceTree = "<group>"; };
 		1114FD27618CA688748B0C4F /* TrackerSidebarToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebarToolbar.swift; sourceTree = "<group>"; };
 		1D31D4998EB720031D3CC85E /* TaskSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSettingsSection.swift; sourceTree = "<group>"; };
 		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
@@ -197,6 +206,17 @@
 		32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogUITestSupport.swift; sourceTree = "<group>"; };
 		CEC884A44C0C6D93268EC277 /* TrackerUITestAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerUITestAssertions.swift; sourceTree = "<group>"; };
 		F70000000000000000000002 /* DelayedProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayedProgress.swift; sourceTree = "<group>"; };
+		DC494EF6E6B7BEE73C07EA45 /* DurationFigure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationFigure.swift; sourceTree = "<group>"; };
+		4F82AA1D90CB1AA9CE2930E9 /* TodayBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayBlock.swift; sourceTree = "<group>"; };
+		287FA7292F0E1FBE90233853 /* EmptyTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyTasksView.swift; sourceTree = "<group>"; };
+		96EEDB2B8F8B5A4EE234CA1B /* SidebarTaskRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarTaskRow.swift; sourceTree = "<group>"; };
+		92D852B826D9DF56426F0DBF /* TaskHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskHeader.swift; sourceTree = "<group>"; };
+		08772D2BDC279EA77F102D55 /* TaskLastTracked.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLastTracked.swift; sourceTree = "<group>"; };
+		B702D2F8AD19931B42272B5B /* NowCapsule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowCapsule.swift; sourceTree = "<group>"; };
+		46B72E9C61C4FD5D9DBF2717 /* WorklogDayGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDayGroup.swift; sourceTree = "<group>"; };
+		F962566A3D1578BA4F7DCBBF /* WorklogDays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDays.swift; sourceTree = "<group>"; };
+		2B41D084E77D9D267757F289 /* WorklogTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogTimeline.swift; sourceTree = "<group>"; };
+		DE0B04D16F6610D51B7E0EF6 /* DurationFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationFormat.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -258,6 +278,7 @@
 		000000000000000000000003 /* TimeTrackerSwiftUI */ = {
 			isa = PBXGroup;
 			children = (
+				12FC3B93687EEF68E3D86FB1 /* Shared */,
 				13C4608B5138EBE9B3A45A55 /* App */,
 				E64DA6756D6CF253E6CA6FFA /* Features */,
 				D0206F6998B4F1500BBA2442 /* Infrastructure */,
@@ -300,6 +321,7 @@
 		E64DA6756D6CF253E6CA6FFA /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				0BC0BD71DB5DB8FB9591D400 /* DaySplit */,
 				67815C35FE40B6535CB0E7B6 /* MenuBar */,
 				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 				F70000000000000000000003 /* ProgressPresentation */,
@@ -359,10 +381,13 @@
 		DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */ = {
 			isa = PBXGroup;
 			children = (
+				08772D2BDC279EA77F102D55 /* TaskLastTracked.swift */,
+				92D852B826D9DF56426F0DBF /* TaskHeader.swift */,
+				96EEDB2B8F8B5A4EE234CA1B /* SidebarTaskRow.swift */,
+				287FA7292F0E1FBE90233853 /* EmptyTasksView.swift */,
 				484979169FE35618CB437645 /* TrackerSidebar.swift */,
 				1D31D4998EB720031D3CC85E /* TaskSettingsSection.swift */,
 				8778858BF38637F9573E8E50 /* TaskContextMenu.swift */,
-				2E3FCDEBF0A25204E12035A8 /* TrackerTaskToolbar.swift */,
 				1114FD27618CA688748B0C4F /* TrackerSidebarToolbar.swift */,
 				06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */,
 			);
@@ -372,6 +397,7 @@
 		8E70C3CFF05EE0815A3B9AD4 /* Tracking */ = {
 			isa = PBXGroup;
 			children = (
+				B702D2F8AD19931B42272B5B /* NowCapsule.swift */,
 				3F85615390A489E1BD026F82 /* TrackingControls.swift */,
 				125E89E5A6E0417513C177E8 /* TrackingSettingsSection.swift */,
 			);
@@ -381,6 +407,9 @@
 		3ABD701C8406AD405352A72E /* WorklogHistory */ = {
 			isa = PBXGroup;
 			children = (
+				2B41D084E77D9D267757F289 /* WorklogTimeline.swift */,
+				F962566A3D1578BA4F7DCBBF /* WorklogDays.swift */,
+				46B72E9C61C4FD5D9DBF2717 /* WorklogDayGroup.swift */,
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
 				E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */,
@@ -680,6 +709,23 @@
 			path = ProgressPresentation;
 			sourceTree = "<group>";
 		};
+		0BC0BD71DB5DB8FB9591D400 /* DaySplit */ = {
+			isa = PBXGroup;
+			children = (
+				4F82AA1D90CB1AA9CE2930E9 /* TodayBlock.swift */,
+				DC494EF6E6B7BEE73C07EA45 /* DurationFigure.swift */,
+			);
+			path = DaySplit;
+			sourceTree = "<group>";
+		};
+		12FC3B93687EEF68E3D86FB1 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				DE0B04D16F6610D51B7E0EF6 /* DurationFormat.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -799,6 +845,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B8B1F65FC326B5241930D532 /* DurationFormat.swift in Sources */,
+				73D24D2E3BBC504CF16A6E75 /* WorklogTimeline.swift in Sources */,
+				E536E512CD9C9A562475D39B /* WorklogDays.swift in Sources */,
+				BC9D2540AC57B9FEF4F36A83 /* WorklogDayGroup.swift in Sources */,
+				3D439F283EEB0E2DFE21DC8C /* NowCapsule.swift in Sources */,
+				5DFAC8BA8FDC62EC20D35690 /* TaskLastTracked.swift in Sources */,
+				CE0010D8113452D83FA4AD0E /* TaskHeader.swift in Sources */,
+				CCB02BBCA01001DD7248C2B1 /* SidebarTaskRow.swift in Sources */,
+				98353E80EF4CF6A1C5EA3484 /* EmptyTasksView.swift in Sources */,
+				248B538F2B22C7873AC3563F /* TodayBlock.swift in Sources */,
+				38DBCE61A759E96D0126F9A2 /* DurationFigure.swift in Sources */,
 				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */,
 				B8C0B64849481F9C0CB43B5D /* WorklogDeletionView.swift in Sources */,
@@ -816,7 +873,6 @@
 				25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
-				68E73DACB8ACF07BE1A99DD5 /* TrackerTaskToolbar.swift in Sources */,
 				2BD055F47D4E288A69EDFEF4 /* TrackerSidebarToolbar.swift in Sources */,
 				C7CCECF59AF142A5D2D23F25 /* TaskSettingsSection.swift in Sources */,
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
