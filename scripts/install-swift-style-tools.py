@@ -30,6 +30,8 @@ LINT_ASSETS = {
     ("Darwin", "x86_64"): ("portable_swiftlint.zip", "swiftlint",
                            "c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0"),
 }
+# Python 3.12 added extraction filters, and some patch releases of older versions backported them.
+SUPPORTS_TAR_FILTER = hasattr(tarfile, "data_filter")
 
 
 def download(url: str, destination: Path, checksum: str) -> None:
@@ -37,6 +39,41 @@ def download(url: str, destination: Path, checksum: str) -> None:
         shutil.copyfileobj(response, target)
     if hashlib.sha256(destination.read_bytes()).hexdigest() != checksum:
         raise ValueError(f"Checksum mismatch for {destination.name}")
+
+
+def check_tar_member(member: tarfile.TarInfo, root: str) -> None:
+    def inside(path: str) -> bool:
+        return os.path.commonpath([root, os.path.realpath(path)]) == root
+
+    name = Path(member.name)
+    target = os.path.join(root, member.name)
+    if name.is_absolute() or ".." in name.parts or not inside(target):
+        raise ValueError(f"Archive member {member.name} leaves the target directory")
+    if member.issym() and not inside(os.path.join(os.path.dirname(target), member.linkname)):
+        raise ValueError(f"Archive link {member.name} points outside the target directory")
+    if member.islnk() and not inside(os.path.join(root, member.linkname)):
+        raise ValueError(f"Archive link {member.name} points outside the target directory")
+    if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
+        raise ValueError(f"Archive member {member.name} is not a file, directory or link")
+
+
+def extract_tar(archive: Path, directory: Path) -> None:
+    with tarfile.open(archive) as source:
+        if SUPPORTS_TAR_FILTER:
+            source.extractall(directory, filter="data")
+            return
+        root = os.path.realpath(directory)
+        # Extract one member at a time so the check resolves links extracted before it.
+        for member in source:
+            check_tar_member(member, root)
+            source.extract(member, root)
+
+
+def extract_zip_member(archive: Path, member: str, destination: Path) -> None:
+    # Copies one named member to a fixed path, so member names in the archive never become paths.
+    with zipfile.ZipFile(archive) as source, destination.open("wb") as target:
+        with source.open(member) as contents:
+            shutil.copyfileobj(contents, target)
 
 
 def install_binary(source: Path, name: str, version: str) -> None:
@@ -60,8 +97,7 @@ def install(swift: str, jobs: int) -> None:
         print(f"Building swift-format {FORMAT_VERSION}", flush=True)
         download(f"https://codeload.github.com/swiftlang/swift-format/tar.gz/refs/tags/{FORMAT_VERSION}",
                  archive, FORMAT_SHA256)
-        with tarfile.open(archive) as source:
-            source.extractall(directory, filter="data")
+        extract_tar(archive, directory)
         package = directory / f"swift-format-{FORMAT_VERSION}"
         shutil.copy2(ROOT / "scripts/swift-style-tools.resolved", package / "Package.resolved")
         arguments = [swift, "build", "--package-path", str(package),
@@ -79,9 +115,7 @@ def install(swift: str, jobs: int) -> None:
         download(f"https://github.com/realm/SwiftLint/releases/download/{LINT_VERSION}/{name}",
                  archive, checksum)
         binary = directory / "swiftlint"
-        with zipfile.ZipFile(archive) as source, binary.open("wb") as target:
-            with source.open(member) as contents:
-                shutil.copyfileobj(contents, target)
+        extract_zip_member(archive, member, binary)
         binary.chmod(0o755)
         install_binary(binary, "swiftlint", LINT_VERSION)
     print(f"Installed style tools in {OUTPUT}")
