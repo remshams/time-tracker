@@ -56,9 +56,10 @@ def check_tar_member(member: tarfile.TarInfo, root: str) -> None:
         source = os.path.join(root, member.linkname)
         if not inside(source):
             raise ValueError(f"Archive link {member.name} points outside the target directory")
-        # Without an existing file, tarfile extracts the linked member again at this path,
-        # and a relative symlink there can point outside.
-        if not os.path.isfile(source):
+        # Without an existing file, tarfile extracts the linked member again at this path, and
+        # Python 3.9's os.link links a symlink itself, not its file. Either way a relative symlink
+        # ends up at this path and can point outside.
+        if os.path.islink(source) or not os.path.isfile(source):
             raise ValueError(f"Archive link {member.name} needs an extracted regular file as its target")
     if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
         raise ValueError(f"Archive member {member.name} is not a file, directory or link")
