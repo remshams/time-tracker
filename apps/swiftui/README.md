@@ -233,6 +233,20 @@ apps/swiftui/check-native-layout.sh
 
 This check compiles the production `TrackerSplitLayout` without the Rust bridge or a server. A SwiftUI `App` and `WindowGroup` create two fixture windows. It checks that task headings and connection footers stay outside the window chrome at two window sizes, with compact and expanded toolbars and changes in toolbar visibility. It also hides and restores one sidebar, checks that detail width follows the change, and confirms that the other window keeps its layout. It requires a macOS desktop session and cannot run on Linux. It checks the shared split layout, not the complete app. Build the app and use the manual checks below to validate commands, Settings, and dialog presentation.
 
+## Design snapshots
+
+Design reviews compare screenshots of the tracker window in light and dark with fixed data. On a Mac with Xcode selected and an unlocked desktop session, run:
+
+```sh
+apps/swiftui/render-design-snapshots.sh [output-dir]
+```
+
+The script compiles the `TrackerClient` sources and the app's views against a fixture client in `Tests/DesignSnapshots`. It doesn't build the Rust bridge or launch the app. The fixture has English task names and a clock frozen at 2026-11-13 15:42 UTC, so repeated runs on one Mac produce the same window. Dates and times follow the Mac's time zone and locale. The window opens far off-screen, and the process never appears in the Dock or takes keyboard focus.
+
+It writes 12 PNGs to `apps/swiftui/design-snapshots/`, which git ignores, or to `output-dir`. The `tracking`, `idle` and `empty` scenarios each get light and dark captures at the default window size and at the minimum size. File names give the window size in points, such as `idle-dark-760x532.png`. The minimum window is 532 points tall because `TrackerWindow` keeps its content at least 760×480 and the toolbar adds the rest.
+
+The captures come from the window server, so they show the glass sidebar and vibrant text as the app does. A process may capture its own windows without the Screen Recording permission. The window server doesn't draw windows while the screen is locked, and drawing the views in-process loses glass and vibrancy, so there is no fallback. The script stops with a message if the screen is locked when it starts or before any capture; unlock the Mac and run it again. CI doesn't run it.
+
 ## Coverage and mutation testing
 
 Run these commands from the repository root on Linux or macOS. The scripts require Python 3.12 or newer. Coverage uses the selected Swift toolchain's `llvm-cov`, with `xcrun` as a fallback on macOS:

@@ -20,8 +20,9 @@ private let fixtureTasks: [TaskItem] = [
     TaskItem(id: "t1", name: "Checkout redesign", archived: false, latestStart: stamp(-1.2 * hour)),
     TaskItem(id: "t2", name: "Code review", archived: false, latestStart: stamp(-3.5 * hour)),
     TaskItem(id: "t3", name: "Team sync and planning", archived: false, latestStart: stamp(-5 * hour)),
-    TaskItem(id: "t4", name: "Invoice export for the quarterly finance report", archived: false,
-             latestStart: stamp(-1 * day)),
+    TaskItem(
+        id: "t4", name: "Invoice export for the quarterly finance report", archived: false,
+        latestStart: stamp(-1 * day)),
     TaskItem(id: "t5", name: "Support inbox", archived: false, latestStart: stamp(-2 * day)),
     TaskItem(id: "t6", name: "Database migration", archived: false, latestStart: stamp(-6 * day)),
     TaskItem(id: "t7", name: "Hiring interviews", archived: false, latestStart: nil),
@@ -79,7 +80,8 @@ private struct FixtureClient: TrackerClient, ReportClient {
     {
         let ids = Set(tasks.map(\.id))
         return TaskListTotalsRefresh(
-            taskList: resources, report: TrackerReport(rows: fixtureTotals.filter { ids.contains($0.taskId) }, now: now))
+            taskList: resources, report: TrackerReport(rows: fixtureTotals.filter { ids.contains($0.taskId) }, now: now)
+        )
     }
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult { throw unsupported() }
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
@@ -150,7 +152,10 @@ private func spinRunLoop(_ seconds: TimeInterval) {
     RunLoop.main.run(until: Date().addingTimeInterval(seconds))
 }
 
-private func render(_ scenario: Scenario, appearance: NSAppearance.Name, to directory: URL) throws {
+/// The app's default window size and the minimum content size that `TrackerWindow` allows.
+private let windowSizes = [NSSize(width: 1100, height: 760), NSSize(width: 760, height: 480)]
+
+private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: NSSize, to directory: URL) throws {
     let client = FixtureClient(tasks: scenario.tasks, active: scenario.active)
     let features = TrackerFeatures(
         client: client, clock: FixedClock(), scheduler: RunLoopTrackerScheduler(), settings: MemorySettings(),
@@ -179,7 +184,6 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, to dire
 
     let controller = NSHostingController(rootView: root)
     controller.sceneBridgingOptions = [.toolbars, .title]
-    let size = NSSize(width: 1100, height: 760)
     let window = NSWindow(
         contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -194,12 +198,16 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, to dire
     window.orderFrontRegardless()
     spinRunLoop(1.5)
 
+    requireUnlockedScreen()
     guard let image = windowServerImage(of: window) else {
         throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
     }
     let bitmap = NSBitmapImageRep(cgImage: image)
     let suffix = appearance == .darkAqua ? "dark" : "light"
-    let url = directory.appendingPathComponent("\(scenario.name)-\(suffix).png")
+    // The file name uses the window's final size, because SwiftUI adds the toolbar to the content's minimum height.
+    let captured = window.frame.size
+    let url = directory.appendingPathComponent(
+        "\(scenario.name)-\(suffix)-\(Int(captured.width))x\(Int(captured.height)).png")
     try bitmap.representation(using: .png, properties: [:])?.write(to: url)
     print(url.path)
     window.orderOut(nil)
@@ -224,16 +232,23 @@ private func windowServerImage(of window: NSWindow) -> CGImage? {
     )?.takeRetainedValue()
 }
 
+/// The window server stops compositing while the screen is locked and returns blank images, and drawing the views
+/// in-process loses the glass and vibrancy, so the run stops instead. It checks again before each capture in case the
+/// screen locks during a run.
+private func requireUnlockedScreen() {
+    if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+        session["CGSSessionScreenIsLocked"] as? Bool == true
+    {
+        FileHandle.standardError.write(
+            Data("The screen is locked, so the window server can't render snapshots. Unlock it and run again.\n".utf8))
+        exit(1)
+    }
+}
+
 @main
 struct DesignSnapshots {
     static func main() throws {
-        // The window server stops compositing while the screen is locked and returns blank images.
-        if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-            session["CGSSessionScreenIsLocked"] as? Bool == true
-        {
-            FileHandle.standardError.write(Data("The screen is locked, so the window server can't render snapshots.\n".utf8))
-            exit(1)
-        }
+        requireUnlockedScreen()
         let app = NSApplication.shared
         // Prohibited keeps the snapshot process out of the Dock and away from keyboard focus.
         app.setActivationPolicy(.prohibited)
@@ -242,7 +257,9 @@ struct DesignSnapshots {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for scenario in scenarios {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-                try render(scenario, appearance: appearance, to: directory)
+                for size in windowSizes {
+                    try render(scenario, appearance: appearance, size: size, to: directory)
+                }
             }
         }
     }
