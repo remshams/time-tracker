@@ -102,6 +102,9 @@ class ArchiveExtractionTests(unittest.TestCase):
                 ("redirect", tarfile.SYMTYPE, "missing/child/../../outside"),
                 ("missing", tarfile.SYMTYPE, "."),
                 ("redirect/escape", tarfile.REGTYPE, b"Escape")],
+            "symlink name with a trailing slash": [("link/", tarfile.SYMTYPE, "../outside")],
+            "hard link to a symlink": [("package/link", tarfile.SYMTYPE, "../outside"),
+                                       ("alias", tarfile.LNKTYPE, "package/link")],
         }
 
     def write_unsafe_archive(self, members):
@@ -146,6 +149,12 @@ class ArchiveExtractionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "leaves the target directory"):
                     self.extract_without_filter()
                 self.assertEqual(list(self.target.iterdir()), [])
+
+    def test_extraction_without_filter_rejects_a_hard_link_to_a_missing_file(self):
+        write_tar(self.archive, [("alias", tarfile.LNKTYPE, "package/missing.swift")])
+        with self.assertRaisesRegex(ValueError, "needs an extracted regular file"):
+            self.extract_without_filter()
+        self.assertEqual(list(self.target.iterdir()), [])
 
     def test_extraction_with_filter_support_uses_the_data_filter(self):
         write_tar(self.archive, [("package/main.swift", tarfile.REGTYPE, b"Formatter")])
