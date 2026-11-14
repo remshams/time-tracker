@@ -86,6 +86,7 @@ class ArchiveExtractionTests(unittest.TestCase):
         self.target.mkdir()
         self.outside.mkdir()
         (self.outside / "file").write_bytes(b"Outside")
+        self.outside_modes = self.modes_outside()
         self.archive = Path(temporary.name) / "package.tar.gz"
 
     def unsafe_archives(self):
@@ -103,8 +104,11 @@ class ArchiveExtractionTests(unittest.TestCase):
                 ("missing", tarfile.SYMTYPE, "."),
                 ("redirect/escape", tarfile.REGTYPE, b"Escape")],
             "symlink name with a trailing slash": [("link/", tarfile.SYMTYPE, "../outside")],
-            "hard link to a symlink": [("package/link", tarfile.SYMTYPE, "../outside"),
-                                       ("alias", tarfile.LNKTYPE, "package/link")],
+            "hard link to a dangling symlink": [("package/link", tarfile.SYMTYPE, "../outside"),
+                                                ("alias", tarfile.LNKTYPE, "package/link")],
+            "hard link to a symlink to a file": [("outside", tarfile.REGTYPE, b"Inside"),
+                                                 ("package/link", tarfile.SYMTYPE, "../outside"),
+                                                 ("alias", tarfile.LNKTYPE, "package/link")],
         }
 
     def write_unsafe_archive(self, members):
@@ -112,9 +116,13 @@ class ArchiveExtractionTests(unittest.TestCase):
         self.target.mkdir()
         write_tar(self.archive, members)
 
+    def modes_outside(self):
+        return [self.outside.stat().st_mode, (self.outside / "file").stat().st_mode]
+
     def assert_outside_untouched(self):
         self.assertEqual([path.name for path in self.outside.iterdir()], ["file"])
         self.assertEqual((self.outside / "file").read_bytes(), b"Outside")
+        self.assertEqual(self.modes_outside(), self.outside_modes)
 
     def extract_without_filter(self):
         # Python 3.12 and 3.13 warn when extract() runs without a filter.
@@ -172,6 +180,11 @@ class ArchiveExtractionTests(unittest.TestCase):
                     # The data filter strips the leading slash instead of rejecting the member.
                     INSTALLER.extract_tar(self.archive, self.target)
                     self.assertTrue((self.target / str(self.outside / "escape").lstrip("/")).exists())
+                elif case == "hard link to a symlink to a file":
+                    # The data filter links the symlink's file, not the symlink itself.
+                    INSTALLER.extract_tar(self.archive, self.target)
+                    self.assertFalse((self.target / "alias").is_symlink())
+                    self.assertEqual((self.target / "alias").read_bytes(), b"Inside")
                 else:
                     # The filter rejects most members by name. For the redirected symlink, extraction
                     # fails with an OSError when it creates the parent directory instead.
