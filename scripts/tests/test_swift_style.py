@@ -81,7 +81,8 @@ class SwiftStyleTests(unittest.TestCase):
                      "RoundedRectangle(cornerRadius: 8)", ".cornerRadius(6)",
                      "Grid(horizontalSpacing: Spacing.medium, verticalSpacing: 16) {",
                      ".font(.system(size: 26, weight: .semibold))", ".opacity(0.5)",
-                     ".opacity(hovered ? 1 : 0.45)", "color.opacity(2)"):
+                     ".opacity(hovered ? 1 : 0.45)", "color.opacity(2)", ".opacity(1.5)",
+                     'Text("Example: .padding(10)").padding(10)', 'Text("https://example.test").padding(8)'):
             with self.subTest(line=line):
                 violations = self.token_violations({"Features/View.swift": line})
                 self.assertEqual(violations, [f"Features/View.swift:1: {line}"])
@@ -90,13 +91,14 @@ class SwiftStyleTests(unittest.TestCase):
         for line in (".padding(Spacing.small)", ".padding(.vertical, Spacing.x2)", "VStack(spacing: 0) {",
                      ".padding(0)", ".opacity(visible ? 1 : 0)", ".font(.system(.title3, design: .monospaced))",
                      ".frame(width: 16, height: 16)", "Text(\"Row 1\").padding(Spacing.xSmall)", "// .padding(8)",
-                     ".padding(Spacing.small) // .padding(8)"):
+                     ".padding(Spacing.small) // .padding(8)", ".padding(0.0)", ".opacity(pressed ? 1.0 : 0.0)",
+                     'Text("Example: .padding(10)")', 'Text("Say \\"hi\\" .padding(8)")'):
             with self.subTest(line=line):
                 self.assertEqual(self.token_violations({"Features/View.swift": line}), [])
 
     def test_token_check_skips_the_tokens_and_code_outside_the_app_views(self):
         self.assertEqual(self.token_violations({
-            "Shared/DesignTokens/DesignTokens.swift": "static let small: CGFloat = 8 // .padding(8)",
+            "Shared/DesignTokens/DesignTokens.swift": "static let display = Font.system(size: 26, weight: .semibold)",
             "../../TrackerClient/Sources/TrackerClient/Layout.swift": ".padding(8)",
             "Features/View.swift": "\n.padding(8)",
         }), ["Features/View.swift:2: .padding(8)"])

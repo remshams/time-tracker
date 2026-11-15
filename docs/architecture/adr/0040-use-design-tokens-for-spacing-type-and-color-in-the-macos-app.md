@@ -34,7 +34,7 @@ The move onto the tokens snapped the off-scale values: the task header's 10 beca
 
 ### The check
 
-`scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `horizontalSpacing:`, `verticalSpacing:`, `minLength:`, `cornerRadius:`, `.cornerRadius(`, `.system(size:` or `.opacity(` in a file under `apps/swiftui/Sources/TimeTrackerSwiftUI/` outside `Shared/DesignTokens/`. `0` is allowed everywhere, and `1` in opacity, because hiding or showing a view isn't a design value. The check reads one line at a time and ignores what follows `//`.
+`scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `horizontalSpacing:`, `verticalSpacing:`, `minLength:`, `cornerRadius:`, `.cornerRadius(`, `.system(size:` or `.opacity(` in a file under `apps/swiftui/Sources/TimeTrackerSwiftUI/` outside `Shared/DesignTokens/`. `0` is allowed everywhere, and `1` in opacity, because hiding or showing a view isn't a design value. The check reads one line at a time and skips string contents and what follows `//`. `0.0` and `1.0` count as `0` and `1`.
 
 ### Rejected alternatives
 

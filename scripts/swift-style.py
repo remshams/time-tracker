@@ -22,15 +22,17 @@ MANIFEST = "apps/swiftui/TrackerClient/Package.swift"
 CHECK_INPUTS = {".swift-format", ".swiftlint.yml", "scripts/swift-style.py",
                 "scripts/install-swift-style-tools.py", "scripts/swift-style-tools.resolved"}
 # Views take padding, stack, grid and spacer spacing, corner radii, fixed font sizes and opacities from the design
-# tokens. 0 is allowed everywhere, and 1 in opacity, because hiding or showing a view isn't a design value.
+# tokens. 0 is allowed everywhere, and 1 in opacity, because hiding or showing a view isn't a design value. The check
+# skips string contents and comments.
 # SwiftLint's custom rules need SourceKit, which the Linux check doesn't have, so this check runs here.
 TOKEN_SCOPE = "apps/swiftui/Sources/TimeTrackerSwiftUI"
 TOKEN_FOLDER = f"{TOKEN_SCOPE}/Shared/DesignTokens"
 TOKEN_ARGUMENTS = (r"\.(?:padding|cornerRadius)\([^)]*?"
                    r"|\b(?:spacing|horizontalSpacing|verticalSpacing|minLength|cornerRadius):[^,)]*?"
                    r"|\.system\(size:[^,)]*?")
-TOKEN_LITERAL = re.compile(rf"(?:{TOKEN_ARGUMENTS})(?<![\w.])(?!0(?![\w.]))\d"
-                           r"|\.opacity\([^)]*?(?<![\w.])(?![01](?![\w.]))\d")
+TOKEN_LITERAL = re.compile(rf"(?:{TOKEN_ARGUMENTS})(?<![\w.])(?!0(?:\.0+)?(?![\w.]))\d"
+                           r"|\.opacity\([^)]*?(?<![\w.])(?![01](?:\.0+)?(?![\w.]))\d")
+SWIFT_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 
 
 def source_files(root: Path) -> list[Path]:
@@ -56,7 +58,8 @@ def token_literal_violations(root: Path) -> list[str]:
         if path.is_relative_to(root / TOKEN_FOLDER):
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if TOKEN_LITERAL.search(line.split("//", 1)[0]):
+            code = SWIFT_STRING.sub('""', line).split("//", 1)[0]
+            if TOKEN_LITERAL.search(code):
                 violations.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
     return violations
 
