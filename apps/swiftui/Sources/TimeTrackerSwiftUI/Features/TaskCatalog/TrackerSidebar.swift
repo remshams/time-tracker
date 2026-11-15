@@ -63,9 +63,9 @@ struct TrackerSidebar: View {
     }
 }
 
-/// One task in the sidebar. Hovering a row whose task isn't the tracking pill's shows a start button in place of
-/// today's total, so one task never shows two start or stop controls. The button starts the task and stops the running
-/// one. Keyboard and VoiceOver users start a task from the context menu or the row's accessibility action instead.
+/// One task in the sidebar. Hovering a row whose task isn't the tracking pill's and can start shows a start button in
+/// place of today's total, so one task never shows two start or stop controls. The button starts the task and stops
+/// the running one. Keyboard and VoiceOver users start a task from the context menu or the row's accessibility action instead.
 private struct TrackerSidebarRow: View {
     let task: TaskItem
     let availability: TrackingAvailability

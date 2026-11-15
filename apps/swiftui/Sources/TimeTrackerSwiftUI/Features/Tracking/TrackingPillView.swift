@@ -31,7 +31,7 @@ struct TrackingPillView: View {
         } label: {
             TrackingPillLabel(state: shown, stale: pill.isStale, inFlight: pill.isInFlight)
         }
-        // The disabled state keeps a request in flight from sending a second one. The style doesn't dim for it.
+        // The disabled state keeps a request in flight from sending a second one. The style doesn't dim for the pill's own request.
         .buttonStyle(
             TrackingPillButtonStyle(
                 color: TaskColor.forTaskID(shown.taskID), inFlight: pill.isInFlight, isHovering: isHovering)
@@ -149,9 +149,9 @@ extension EnvironmentValues {
 }
 
 /// A glass capsule at toolbar control height. Hovering washes it faintly in the task color and pressing deepens it. A
-/// disabled control dims and takes no wash. A request in flight blocks the click but keeps the hover wash and full
-/// opacity, so a click doesn't flash the pill. `TrackingPillView` owns the hover, because the style is rebuilt with
-/// the button's state and a hover kept here would have to outlive that.
+/// disabled control dims and takes no wash. The pill's own request in flight blocks the click but keeps the hover wash
+/// and full opacity, so a click doesn't flash the pill. `TrackingPillView` owns the hover, because the style is rebuilt
+/// with the button's state and a hover kept here would have to outlive that.
 private struct TrackingPillButtonStyle: ButtonStyle {
     let color: TaskColor
     let inFlight: Bool

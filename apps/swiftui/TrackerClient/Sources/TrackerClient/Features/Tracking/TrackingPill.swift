@@ -45,7 +45,8 @@ public struct TrackingPillState: Equatable, Sendable {
 /// doesn't flicker through intermediate states. After a stop from the pill succeeds, it announces the stop.
 @Observable
 public final class TrackingPill {
-    /// The state from the moment of the click, shown while the request it sent is in flight.
+    /// The state from the moment of the click, shown while the request it sent is in flight. `TrackingStore` calls back
+    /// right after it ends the request, so this is set exactly while the pill's own request runs.
     private var frozen: TrackingPillState?
     /// Posts a VoiceOver announcement. The app sets it; tests record the calls.
     @ObservationIgnored public var announce: @MainActor (String) -> Void = { _ in }
@@ -66,14 +67,14 @@ public final class TrackingPill {
 
     /// The state to show, or `nil` for "Nothing running": no task runs and no active task is selected.
     public var shown: TrackingPillState? {
-        if tracking.isSubmitting, let frozen { return frozen }
+        if let frozen { return frozen }
         return current
     }
 
     /// The task of the shown state. Unlike `shown`, it doesn't change with the elapsed time, so a sidebar row can read
     /// it without redrawing every second.
     public var taskID: String? {
-        if tracking.isSubmitting, let frozen { return frozen.taskID }
+        if let frozen { return frozen.taskID }
         return tracking.active?.taskId ?? idleTask?.id
     }
 
@@ -85,7 +86,7 @@ public final class TrackingPill {
 
     /// Whether the pill's own request is in flight. The view keeps the clicked look while it waits; a request sent
     /// from elsewhere dims the pill like any disabled state.
-    public var isInFlight: Bool { tracking.isSubmitting && frozen != nil }
+    public var isInFlight: Bool { frozen != nil }
 
     public var isStale: Bool { connection.stale }
 
