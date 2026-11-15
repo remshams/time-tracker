@@ -162,6 +162,31 @@ final class TrackingPillTests: XCTestCase {
     }
 
     @MainActor
+    func testUnconfirmedStopIsNotAnnouncedEvenWhenTheReloadShowsNothingRunning() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        let pill = fixture.features.trackingPill
+        var announcements: [String] = []
+        pill.announce = { announcements.append($0) }
+
+        pill.click()
+        let stop = try await fixture.client.next()
+        stop.fail(BridgeFailure(message: "Write response lost", uncertain: true))
+        let reload = try await fixture.client.next()
+        reload.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        try await fixture.waitUntil("finished stop") { !pill.isInFlight }
+
+        XCTAssertNil(fixture.features.tracking.active)
+        XCTAssertNotNil(fixture.features.tracking.error)
+        XCTAssertEqual(announcements, [], "A stop the tracker didn't confirm must not be announced.")
+        XCTAssertEqual(pill.shown?.mode, .idle)
+    }
+
+    @MainActor
     func testStopThatLeavesAnotherWorklogRunningIsNotAnnounced() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
