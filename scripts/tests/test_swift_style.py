@@ -83,7 +83,8 @@ class SwiftStyleTests(unittest.TestCase):
                      ".font(.system(size: 26, weight: .semibold))", ".opacity(0.5)",
                      ".opacity(hovered ? 1 : 0.45)", "color.opacity(2)"):
             with self.subTest(line=line):
-                self.assertEqual(self.token_violations({"Features/View.swift": line}), [f"Features/View.swift:1: {line}"])
+                violations = self.token_violations({"Features/View.swift": line})
+                self.assertEqual(violations, [f"Features/View.swift:1: {line}"])
 
     def test_token_check_allows_tokens_zero_and_full_opacity(self):
         for line in (".padding(Spacing.small)", ".padding(.vertical, Spacing.x2)", "VStack(spacing: 0) {",
