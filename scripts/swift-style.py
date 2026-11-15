@@ -4,6 +4,7 @@
 import argparse
 import importlib.util
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -20,6 +21,14 @@ SOURCE_DIRECTORIES = (
 MANIFEST = "apps/swiftui/TrackerClient/Package.swift"
 CHECK_INPUTS = {".swift-format", ".swiftlint.yml", "scripts/swift-style.py",
                 "scripts/install-swift-style-tools.py", "scripts/swift-style-tools.resolved"}
+# Views take padding, stack spacing, corner radii, fixed font sizes and opacities from the design tokens. 0 is allowed
+# everywhere, and 1 in opacity, because hiding or showing a view isn't a design value. SwiftLint's custom rules need
+# SourceKit, which the Linux check doesn't have, so this check runs here.
+TOKEN_SCOPE = "apps/swiftui/Sources/TimeTrackerSwiftUI"
+TOKEN_FOLDER = f"{TOKEN_SCOPE}/Shared/DesignTokens"
+TOKEN_LITERAL = re.compile(
+    r"(?:\.padding\([^)]*?|\b(?:spacing|cornerRadius):[^,)]*?|\.system\(size:[^,)]*?)(?<![\w.])(?!0(?![\w.]))\d"
+    r"|\.opacity\([^)]*?(?<![\w.])(?![01](?![\w.]))\d")
 
 
 def source_files(root: Path) -> list[Path]:
@@ -37,6 +46,17 @@ def needs_staged_check() -> bool:
                (path.endswith(".swift") and any(path.startswith(directory + "/")
                                                for directory in SOURCE_DIRECTORIES))
                for path in output.split("\0"))
+
+
+def token_literal_violations(root: Path) -> list[str]:
+    violations = []
+    for path in sorted((root / TOKEN_SCOPE).rglob("*.swift")):
+        if path.is_relative_to(root / TOKEN_FOLDER):
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if TOKEN_LITERAL.search(line):
+                violations.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
+    return violations
 
 
 def tool(name: str, version: str) -> str:
@@ -58,6 +78,9 @@ def check(*, format_files: bool, format_only: bool) -> None:
         linter = tool("swiftlint", INSTALLER.LINT_VERSION)
         subprocess.run([linter, "lint", "--strict", "--quiet", "--disable-sourcekit",
                         "--no-cache", "--config", str(ROOT / ".swiftlint.yml"), *files], cwd=ROOT, check=True)
+        if violations := token_literal_violations(ROOT):
+            raise ValueError("use a token from Shared/DesignTokens instead of a number literal:\n" +
+                             "\n".join(violations))
 
 
 def main() -> int:

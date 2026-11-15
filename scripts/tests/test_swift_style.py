@@ -75,6 +75,45 @@ class SwiftStyleTests(unittest.TestCase):
                 file.touch()
             self.assertEqual({str(path.relative_to(root)) for path in STYLE.source_files(root)}, set(paths[:4]))
 
+    def test_token_check_rejects_number_literals_in_view_styling(self):
+        for line in (".padding(10)", ".padding(.horizontal, -3)", "VStack(spacing: 0.5) {",
+                     "HStack(alignment: .top, spacing: compact ? 4 : 8) {", "RoundedRectangle(cornerRadius: 8)",
+                     ".font(.system(size: 26, weight: .semibold))", ".opacity(0.5)",
+                     ".opacity(hovered ? 1 : 0.45)", "color.opacity(2)"):
+            with self.subTest(line=line):
+                self.assertEqual(self.token_violations({"Features/View.swift": line}), [f"Features/View.swift:1: {line}"])
+
+    def test_token_check_allows_tokens_zero_and_full_opacity(self):
+        for line in (".padding(Spacing.small)", ".padding(.vertical, Spacing.x2)", "VStack(spacing: 0) {",
+                     ".padding(0)", ".opacity(visible ? 1 : 0)", ".font(.system(.title3, design: .monospaced))",
+                     ".frame(width: 16, height: 16)", "Text(\"Row 1\").padding(Spacing.xSmall)"):
+            with self.subTest(line=line):
+                self.assertEqual(self.token_violations({"Features/View.swift": line}), [])
+
+    def test_token_check_skips_the_tokens_and_code_outside_the_app_views(self):
+        self.assertEqual(self.token_violations({
+            "Shared/DesignTokens/DesignTokens.swift": "static let small: CGFloat = 8 // .padding(8)",
+            "../../TrackerClient/Sources/TrackerClient/Layout.swift": ".padding(8)",
+            "Features/View.swift": "\n.padding(8)",
+        }), ["Features/View.swift:2: .padding(8)"])
+
+    def test_check_fails_when_a_view_uses_a_number_literal(self):
+        with patch.object(STYLE, "tool", return_value="tool"), patch.object(STYLE.subprocess, "run"), \
+                patch.object(STYLE, "token_literal_violations", return_value=["Features/View.swift:1: .padding(10)"]):
+            with self.assertRaisesRegex(ValueError, r"Shared/DesignTokens(.|\n)*View\.swift:1: \.padding\(10\)"):
+                STYLE.check(format_files=False, format_only=False)
+            STYLE.check(format_files=False, format_only=True)
+
+    def token_violations(self, files):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for path, content in files.items():
+                file = root / STYLE.TOKEN_SCOPE / path
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(content, encoding="utf-8")
+            prefix = STYLE.TOKEN_SCOPE + "/"
+            return [violation.removeprefix(prefix) for violation in STYLE.token_literal_violations(root)]
+
 
 
 class ArchiveExtractionTests(unittest.TestCase):
