@@ -173,13 +173,43 @@ on Linux without Apple's SDKs. Native compilation and UI tests still require mac
 
 Both commands cover the native app's production sources, the `TrackerClient` manifest,
 and its production sources and unit tests. Generated build output and native UI E2E/layout
-tests are outside the initial style scope. This setup preserves the existing E2E files as
+tests are outside the initial style scope. The command also checks the app's views for design token
+literals, as described in [Design tokens](#design-tokens). This setup preserves the existing E2E files as
 required by `AGENTS.md`.
 
 CI requires these checks in the Linux Swift job. The repository's pre-commit hook checks Swift
 formatting when staged paths affect this scope or the style configuration. It checks the full
 working-tree scope, as the Rust formatting hook does. Enable it with `git config core.hooksPath .githooks`.
 Use `python3 scripts/swift-style.py --format-check` to run only the formatting check.
+
+## Design tokens
+
+Views take their spacing, corner radii, fonts, opacities and colors from the tokens in
+`Sources/TimeTrackerSwiftUI/Shared/DesignTokens/DesignTokens.swift`
+([ADR 0040](../../docs/architecture/adr/0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md)):
+
+```swift
+VStack(alignment: .leading, spacing: Spacing.medium) {
+    Text("Edit worklog").font(TextRole.sheetTitle)
+    Text(error).foregroundStyle(ColorRole.error)
+}
+.padding(Spacing.xLarge)
+```
+
+- `Spacing` is a 4-point scale: `xSmall` 4, `small` 8, `medium` 12, `large` 16, `xLarge` 24, `xxLarge` 32.
+  Pick the nearest step instead of adding an off-scale value.
+- `CornerRadius` has `small` 4 and `medium` 8.
+- `TextRole` names fonts by what the text is, such as `sheetTitle`, `detail` or `caption`, and builds on
+  the system text styles. Use `TextRole.duration(_:)` for times, so the digits keep their width.
+  Only `display` has a fixed size.
+- `Emphasis` holds the opacities for a resting tint, hover, pressed and disabled.
+- `ColorRole` holds the semantic colors and `ColorRole.task(_:)`, the color for a task's `TaskColor`.
+  Hierarchical styles such as `.secondary` stay as they are.
+
+To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
+`python3 scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `cornerRadius:`,
+`.system(size:` or `.opacity(` anywhere else in `Sources/TimeTrackerSwiftUI`. `0` is allowed, and `1` in
+opacity. Frame sizes and AppKit code in the menu bar keep their literals.
 
 ## Unit tests
 
