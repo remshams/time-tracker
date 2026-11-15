@@ -83,8 +83,9 @@ public final class TrackingPill {
         return shown.isRunning ? availability.canStop : availability.canStart(taskID: shown.taskID)
     }
 
-    /// Whether a tracking request is in flight. The view keeps its look while it waits.
-    public var isInFlight: Bool { tracking.isSubmitting }
+    /// Whether the pill's own request is in flight. The view keeps the clicked look while it waits; a request sent
+    /// from elsewhere dims the pill like any disabled state.
+    public var isInFlight: Bool { tracking.isSubmitting && frozen != nil }
 
     public var isStale: Bool { connection.stale }
 

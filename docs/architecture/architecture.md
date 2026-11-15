@@ -227,7 +227,8 @@ such as `Features/WorklogCorrection` in both targets.
   text from `TrackingStore`, today's status and task totals from
   `DailyTotalsStore`, the auto-pause preference and status from
   `TrackingAutomationStore`, whether tracking can start or stop from
-  `TrackingAvailability`, and each dialog's state from its own feature store
+  `TrackingAvailability`, what the toolbar's tracking pill shows from
+  `TrackingPill`, and each dialog's state from its own feature store
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
   bar observer reads these stores, the last tracked task from `MenuBarStore` and
   the start and stop checks from `TrackingAvailability` through one
@@ -253,7 +254,10 @@ such as `Features/WorklogCorrection` in both targets.
   `TrackingAvailability` reads the connection, catalog and tracking stores to
   decide which tracking requests are possible. `TrackingStore` starts and
   stops tracking after asking it, and `MenuBarStore` runs the status item's
-  primary action through `TrackingStore`. The app turns the display clock's
+  primary action through `TrackingStore`. `TrackingPill` reads the tracking,
+  catalog and connection stores and `TrackingAvailability`, starts and stops
+  tracking through `TrackingStore`, and keeps the clicked state shown until
+  the store calls back that the request ended. The app turns the display clock's
   minute ticks on and off through `MenuBarStore` while the menu bar shows the
   daily total. `TrackingStore` cancels a pending
   auto-resume and reloads the task list through closures that

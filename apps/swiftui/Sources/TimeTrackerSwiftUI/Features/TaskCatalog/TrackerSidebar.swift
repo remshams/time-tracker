@@ -77,7 +77,7 @@ private struct TrackerSidebarRow: View {
 
     private var isRunning: Bool { tracking.active?.taskId == task.id }
     private var canStart: Bool { availability.canStart(taskID: task.id) }
-    private var showsStart: Bool { isHovered && pill.taskID != task.id && !task.archived }
+    private var showsStart: Bool { isHovered && pill.taskID != task.id && canStart }
 
     var body: some View {
         HStack(spacing: Spacing.small) {
