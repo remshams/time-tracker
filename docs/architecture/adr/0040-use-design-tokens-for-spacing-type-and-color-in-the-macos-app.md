@@ -30,7 +30,7 @@ The app's views take spacing, corner radii, fonts, opacities and colors from nam
 
 Hierarchical styles such as `.primary` and `.secondary` stay as they are; they already name a role. Control heights stay with the system, and frame sizes are out of scope. AppKit code in the menu bar keeps its own values.
 
-The move onto the tokens snapped the off-scale values: the task header's 10 became 8, and the connection summary's 3 became 4 and its vertical 10 became 12. The worklog card's duration changed from a monospaced font to the system font with monospaced digits. Everything else looks the same.
+The move onto the tokens snapped the off-scale values: the task header's 10 became 8, and the connection summary's 3 became 4 and its vertical 10 became 12. The durations in the worklog card and in the delete sheet's summary changed from a monospaced font to the system font with monospaced digits. Everything else looks the same.
 
 ### The check
 
