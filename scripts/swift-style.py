@@ -27,7 +27,7 @@ CHECK_INPUTS = {".swift-format", ".swiftlint.yml", "scripts/swift-style.py",
 TOKEN_SCOPE = "apps/swiftui/Sources/TimeTrackerSwiftUI"
 TOKEN_FOLDER = f"{TOKEN_SCOPE}/Shared/DesignTokens"
 TOKEN_LITERAL = re.compile(
-    r"(?:\.padding\([^)]*?|\b(?:spacing|minLength|cornerRadius):[^,)]*?|\.system\(size:[^,)]*?)(?<![\w.])(?!0(?![\w.]))\d"
+    r"(?:\.(?:padding|cornerRadius)\([^)]*?|\b(?:spacing|minLength|cornerRadius):[^,)]*?|\.system\(size:[^,)]*?)(?<![\w.])(?!0(?![\w.]))\d"
     r"|\.opacity\([^)]*?(?<![\w.])(?![01](?![\w.]))\d")
 
 
