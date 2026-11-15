@@ -305,7 +305,8 @@ such as `Features/WorklogCorrection` in both targets.
   serial
   [`TrackerWorker`](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift)
   keeps bridge calls and decoding off the UI thread and runs them in order.
-  The views take spacing, radii, fonts, opacities and colors from the design
+  The views take spacing, radii, fonts, opacities, colors, icon sizes, border
+  widths and animations from the design
   tokens in `Shared/DesignTokens`, and `scripts/swift-style.py` rejects number
   literals in view styling elsewhere
   ([ADR 0040](adr/0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md),

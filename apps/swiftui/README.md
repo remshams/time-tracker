@@ -186,7 +186,7 @@ Use `python3 scripts/swift-style.py --format-check` to run only the formatting c
 
 ## Design tokens
 
-Views take their spacing, corner radii, fonts, opacities and colors from the tokens in
+Views take their spacing, corner radii, fonts, opacities, colors, icon sizes, border widths and animations from the tokens in
 `Sources/TimeTrackerSwiftUI/Shared/DesignTokens/DesignTokens.swift`
 ([ADR 0040](../../docs/architecture/adr/0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md),
 [ADR 0041](../../docs/architecture/adr/0041-add-icon-border-and-motion-tokens-for-the-tracking-pill.md)):
@@ -208,9 +208,9 @@ VStack(alignment: .leading, spacing: Spacing.medium) {
 - `Emphasis` holds the opacities for a resting tint, hover, pressed and disabled.
 - `ColorRole` holds the semantic colors, `ColorRole.task(_:)`, the color for a task's `TaskColor`, and
   `ColorRole.actionDisc(_:in:)`, the disc behind a white action glyph.
+  Hierarchical styles such as `.secondary` stay as they are.
 - `IconSize` has `marker` 10, `regular` 16 and `button` 22. `BorderWidth` has `hairline` 1 and `marker` 1.75.
   `Motion` has `quick` and `standard` animations and the `pressScale` of a pressed marker.
-  Hierarchical styles such as `.secondary` stay as they are.
 
 To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
 `python3 scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `horizontalSpacing:`, `verticalSpacing:`, `minLength:`, `cornerRadius:`, `.cornerRadius(`,
