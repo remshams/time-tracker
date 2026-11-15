@@ -93,7 +93,7 @@ private struct TrackerSidebarRow: View {
                     .opacity(showsStart ? 0 : 1)
                 startButton
             }
-            .animation(Motion.quick, value: showsStart)
+            .animation(Motion.standard, value: showsStart)
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
