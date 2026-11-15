@@ -2,7 +2,8 @@ import SwiftUI
 import TrackerClient
 
 // scripts/swift-style.py rejects number literals in padding, stack, grid and spacer spacing, corner radii, fixed font
-// sizes and opacities outside this folder. Add a token here instead of typing the value in a view.
+// sizes and opacities outside this folder. Add a token here instead of typing the value in a view. The check doesn't
+// read icon sizes, border widths or animations; their tokens hold by convention.
 
 /// The spacing scale for padding and stack, grid and spacer spacing, in points.
 enum Spacing {
@@ -19,8 +20,35 @@ enum CornerRadius {
     static let medium: CGFloat = 8
 }
 
+/// Square frame sizes for icons and the controls that hold one, in points.
+enum IconSize {
+    /// The tracking pill's running dot and idle ring.
+    static let marker: CGFloat = 10
+    /// A task indicator, a small spinner, or the tracking pill's marker slot.
+    static let regular: CGFloat = 16
+    /// The disc of a sidebar row's start button.
+    static let button: CGFloat = 22
+}
+
+enum BorderWidth {
+    /// The outline of a card.
+    static let hairline: CGFloat = 1
+    /// The tracking pill's idle ring.
+    static let marker: CGFloat = 1.75
+}
+
+/// Animation timing for interaction feedback.
+enum Motion {
+    /// A press.
+    static let quick: Animation = .easeOut(duration: 0.12)
+    /// A change of state or hover.
+    static let standard: Animation = .easeOut(duration: 0.18)
+    /// The scale of a pressed marker.
+    static let pressScale = 0.92
+}
+
 /// Fonts by the role of the text. They build on the system text styles, which are 13 pt for `.body`, 12 for
-/// `.callout`, 11 for `.subheadline` and 10 for `.caption` on macOS. Only `display` uses a fixed size.
+/// `.callout`, 11 for `.subheadline` and 10 for `.caption` on macOS. Only `display` and `actionGlyph` use a fixed size.
 enum TextRole {
     /// The selected task's name at the top of the detail.
     static let display = Font.system(size: 26, weight: .semibold)
@@ -35,6 +63,12 @@ enum TextRole {
     static let captionEmphasis = Font.caption.weight(.medium)
     /// The SF Symbol that marks a task's color.
     static let taskMarker = Font.callout.weight(.semibold)
+    /// The tracking pill's task name.
+    static let status = Font.body
+    /// A small symbol next to status text, such as the stale connection's `wifi.slash`.
+    static let statusGlyph = Font.caption.weight(.semibold)
+    /// The stop or play glyph inside a marker disc. It has a fixed size because the disc has one.
+    static let actionGlyph = Font.system(size: 8, weight: .bold)
 
     /// A duration with monospaced digits, so the text keeps its width while the time runs.
     static func duration(_ style: Font.TextStyle = .callout) -> Font {
@@ -55,6 +89,13 @@ enum ColorRole {
     static let error = Color.red
     static let connected = Color.green
     static let confirmation = Color.accentColor
+
+    /// The disc behind a white action glyph in a task color. Dark mode darkens it so light task colors keep the
+    /// contrast; light mode keeps the task color, because darkening turns orange brown.
+    static func actionDisc(_ color: TaskColor, in scheme: ColorScheme) -> Color {
+        let base = task(color)
+        return scheme == .dark ? base.mix(with: .black, by: 0.3) : base
+    }
 
     static func task(_ color: TaskColor) -> Color {
         switch color {

@@ -32,7 +32,7 @@ struct DelayedProgressIndicator: View {
         DelayedProgress(isBusy: isBusy) { visible in
             HStack(spacing: Spacing.medium) {
                 ProgressView().controlSize(.small)
-                    .frame(width: 16, height: 16)
+                    .frame(width: IconSize.regular, height: IconSize.regular)
                     .accessibilityIdentifier(identifier)
                 if let title { Text(title).foregroundStyle(.secondary) }
             }

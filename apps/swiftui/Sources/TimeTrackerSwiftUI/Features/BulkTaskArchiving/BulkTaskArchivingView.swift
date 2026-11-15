@@ -35,7 +35,7 @@ struct BulkTaskArchivingSheet: View {
                                 .accessibilityIdentifier("bulk-archive.refresh-progress")
                         }
                     }
-                    .frame(width: 16, height: 16)
+                    .frame(width: IconSize.regular, height: IconSize.regular)
                     .padding(Spacing.xSmall)
                     .contentShape(Rectangle())
                 }
