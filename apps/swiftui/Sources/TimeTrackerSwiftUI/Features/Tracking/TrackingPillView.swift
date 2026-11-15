@@ -14,11 +14,15 @@ struct TrackingPillView: View {
     fileprivate static let height: CGFloat = 34
 
     var body: some View {
-        if let shown = pill.shown {
-            button(shown)
-        } else {
-            nothingRunning
+        Group {
+            if let shown = pill.shown {
+                button(shown)
+            } else {
+                nothingRunning
+            }
         }
+        // The hover lives here, so a pointer that leaves while "Nothing running" shows still ends it.
+        .onHover { isHovering = $0 }
     }
 
     private func button(_ shown: TrackingPillState) -> some View {
@@ -33,7 +37,6 @@ struct TrackingPillView: View {
                 color: TaskColor.forTaskID(shown.taskID), inFlight: pill.isInFlight, isHovering: isHovering)
         )
         .disabled(!pill.isEnabled)
-        .onHover { isHovering = $0 }
         .contextMenu { Button("Show Task") { pill.showTask() } }
         .help(shown.help(stale: pill.isStale))
         .accessibilityLabel(shown.actionLabel)
