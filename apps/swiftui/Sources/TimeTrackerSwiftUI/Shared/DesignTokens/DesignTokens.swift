@@ -1,8 +1,8 @@
 import SwiftUI
 import TrackerClient
 
-// The SwiftLint rule `design_token_literal` rejects number literals in padding, stack spacing, corner radii, fixed
-// font sizes and opacities outside this folder. Add a token here instead of typing the value in a view.
+// scripts/swift-style.py rejects number literals in padding, stack spacing, corner radii, fixed font sizes and
+// opacities outside this folder. Add a token here instead of typing the value in a view.
 
 /// The spacing scale for padding and stack spacing, in points.
 enum Spacing {
