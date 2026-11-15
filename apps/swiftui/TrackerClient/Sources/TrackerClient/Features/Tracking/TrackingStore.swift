@@ -17,7 +17,7 @@ public final class TrackingStore: ChangeGuardedStore {
     /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
     public private(set) var timerText = "Unavailable"
     /// The whole seconds of the running worklog, or `nil` while nothing runs or before the tracker state is confirmed.
-    public private(set) var elapsedSeconds: Int?
+    private(set) var elapsedSeconds: Int?
     // A failed tracking request, auto-pause or auto-resume records its error here. The flow that sent the request
     // shows it once its reload returns, so the alert appears over the reloaded state.
     @ObservationIgnored private(set) var recordedError: String?

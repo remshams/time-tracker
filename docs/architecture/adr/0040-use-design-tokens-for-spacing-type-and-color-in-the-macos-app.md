@@ -28,7 +28,7 @@ The app's views take spacing, corner radii, fonts, opacities and colors from nam
 - `Emphasis`: the opacities for a resting tint, hover, pressed and disabled.
 - `ColorRole`: semantic colors (`error`, `connected`, `confirmation`), `task(_:)`, the SwiftUI color for a `TaskColor`, and `actionDisc(_:in:)`, which darkens that color in dark mode behind a white glyph. The rule that picks a task's color stays in the package's `TaskIndicator`.
 - `IconSize`: 10 for a marker dot or ring, 16 for a task indicator, a small spinner or a marker slot, and 22 for a row's start button.
-- `BorderWidth`: 1 for a card outline and 1.75 for the tracking pill's idle ring.
+- `BorderWidth`: 1 for a card outline and 1.75 for the tracking pill's rings.
 - `Motion`: `quick` (0.12 s) for a press, `standard` (0.18 s) for a state or hover change, and the 0.92 scale of a pressed marker.
 
 Hierarchical styles such as `.primary` and `.secondary` stay as they are; they already name a role. Control heights stay with the system. Frame sizes other than icon sizes stay out of scope, such as the tracking pill's 34-point height. `scripts/swift-style.py` doesn't read icon sizes, border widths or animations, so `IconSize`, `BorderWidth` and `Motion` hold by convention. AppKit code in the menu bar keeps its own values.
