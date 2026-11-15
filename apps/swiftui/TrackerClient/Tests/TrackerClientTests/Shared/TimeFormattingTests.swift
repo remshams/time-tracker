@@ -23,4 +23,24 @@ final class TimeFormattingTests: XCTestCase {
         XCTAssertEqual(formatClockDuration(-1), "00:00:00")
         XCTAssertEqual(formatClockDuration(90_061), "25:01:01")
     }
+
+    func testDurationTextDropsTheHourZeroAndSplitsOffTheSeconds() async {
+        XCTAssertEqual(DurationText(seconds: 0).hoursAndMinutes, "0:00")
+        XCTAssertEqual(DurationText(seconds: 0).seconds, ":00")
+        XCTAssertEqual(DurationText(seconds: 3867).text, "1:04:27")
+        XCTAssertEqual(DurationText(seconds: 90_061).text, "25:01:01")
+        XCTAssertEqual(DurationText(seconds: -5).text, "0:00:00")
+    }
+
+    func testSpokenDurationReadsHoursAndMinutesAndSecondsOnlyUnderAMinute() async {
+        XCTAssertEqual(spokenDuration(-1), "0 seconds")
+        XCTAssertEqual(spokenDuration(1), "1 second")
+        XCTAssertEqual(spokenDuration(59), "59 seconds")
+        XCTAssertEqual(spokenDuration(60), "1 minute")
+        XCTAssertEqual(spokenDuration(61), "1 minute")
+        XCTAssertEqual(spokenDuration(150), "2 minutes")
+        XCTAssertEqual(spokenDuration(3600), "1 hour")
+        XCTAssertEqual(spokenDuration(3867), "1 hour, 4 minutes")
+        XCTAssertEqual(spokenDuration(7260), "2 hours, 1 minute")
+    }
 }
