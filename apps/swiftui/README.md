@@ -209,7 +209,7 @@ VStack(alignment: .leading, spacing: Spacing.medium) {
 To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
 `python3 scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `horizontalSpacing:`, `verticalSpacing:`, `minLength:`, `cornerRadius:`, `.cornerRadius(`,
 `.system(size:` or `.opacity(` anywhere else in `Sources/TimeTrackerSwiftUI`. `0` is allowed, and `1` in
-opacity. It reads one line at a time and skips string contents and `//` comments. `0.0` and `1.0` count as `0` and `1`. Frame sizes and AppKit code in the menu bar keep their literals.
+opacity. It reads one line at a time and skips `//` comments and strings that open and close on that line. `0.0` and `1.0` count as `0` and `1`. Frame sizes and AppKit code in the menu bar keep their literals.
 
 ## Unit tests
 
