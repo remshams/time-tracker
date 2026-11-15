@@ -7,10 +7,10 @@ struct TaskArchivingSheet: View {
     var body: some View {
         let isUnarchiving = archiving.action == .unarchive
         let actionTitle = isUnarchiving ? "Unarchive" : "Archive"
-        VStack(alignment: .leading, spacing: 16) {
-            Text("\(actionTitle) task").font(.title2.bold())
+        VStack(alignment: .leading, spacing: Spacing.large) {
+            Text("\(actionTitle) task").font(TextRole.sheetTitle)
             Text(archiving.taskName)
-                .font(.headline)
+                .font(TextRole.heading)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             Text(
@@ -24,12 +24,12 @@ struct TaskArchivingSheet: View {
             if let error = archiving.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("task-archive.error")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ColorRole.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 DelayedProgressIndicator(
                     isBusy: archiving.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
                     identifier: "task-archive.progress")
@@ -47,7 +47,7 @@ struct TaskArchivingSheet: View {
                 .disabled(!archiving.canSubmit)
             }
         }
-        .padding(24)
+        .padding(Spacing.xLarge)
         .frame(width: 480)
         .interactiveDismissDisabled(archiving.isSubmitting)
     }

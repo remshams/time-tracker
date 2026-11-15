@@ -6,8 +6,8 @@ struct WorklogMoveSheet: View {
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Move worklog").font(.title2.bold())
+        VStack(alignment: .leading, spacing: Spacing.large) {
+            Text("Move worklog").font(TextRole.sheetTitle)
             LabeledContent("From", value: move.sourceTaskName)
                 .lineLimit(2)
                 .help(move.sourceTaskName)
@@ -15,11 +15,11 @@ struct WorklogMoveSheet: View {
                 Text(
                     "\(localDay(original.start)) · \(localTimestamp(original.start)) to \(original.end.map(localTimestamp) ?? "Running")"
                 )
-                .font(.subheadline)
+                .font(TextRole.detail)
                 .foregroundStyle(.secondary)
                 if original.end == nil {
                     Label("The timer will keep running on the destination task.", systemImage: "timer")
-                        .font(.caption)
+                        .font(TextRole.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -45,7 +45,7 @@ struct WorklogMoveSheet: View {
             }
             .onSubmit { move.submit() }
 
-            VStack(spacing: 8) {
+            VStack(spacing: Spacing.small) {
                 DelayedProgressIndicator(
                     isBusy: move.isSearching, title: "Loading destinations...",
                     identifier: "worklog-move.search-progress")
@@ -88,7 +88,7 @@ struct WorklogMoveSheet: View {
             if let error = move.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("worklog-move.error")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ColorRole.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if move.canEdit, move.candidates.isEmpty {
@@ -96,7 +96,7 @@ struct WorklogMoveSheet: View {
                 }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 DelayedProgressIndicator(
                     isBusy: move.isSubmitting, title: "Moving worklog...",
                     identifier: "worklog-move.submit-progress")
@@ -114,7 +114,7 @@ struct WorklogMoveSheet: View {
                 .disabled(!move.canSubmit)
             }
         }
-        .padding(24)
+        .padding(Spacing.xLarge)
         .frame(width: 560)
         .interactiveDismissDisabled(move.isSubmitting)
         .onAppear { searchFocused = true }

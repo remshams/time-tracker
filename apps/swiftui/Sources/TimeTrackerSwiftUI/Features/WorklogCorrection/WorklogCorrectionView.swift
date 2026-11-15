@@ -5,10 +5,10 @@ struct WorklogCorrectionSheet: View {
     @Environment(WorklogCorrectionStore.self) private var correction
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Edit worklog").font(.title2.bold())
+        VStack(alignment: .leading, spacing: Spacing.large) {
+            Text("Edit worklog").font(TextRole.sheetTitle)
             Text(correction.taskName)
-                .font(.subheadline)
+                .font(TextRole.detail)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
                 .help(correction.taskName)
@@ -50,7 +50,7 @@ struct WorklogCorrectionSheet: View {
 
             Text("Time zone: \(correction.timezone.identifier)")
                 .accessibilityIdentifier("worklog-correction.timezone")
-                .font(.caption)
+                .font(TextRole.caption)
                 .foregroundStyle(.secondary)
 
             if let end = correction.end, end > correction.start {
@@ -74,12 +74,12 @@ struct WorklogCorrectionSheet: View {
             if let error = correction.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("worklog-correction.error")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ColorRole.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 DelayedProgressIndicator(
                     isBusy: correction.isSubmitting, title: "Saving worklog...",
                     identifier: "worklog-correction.progress")
@@ -97,7 +97,7 @@ struct WorklogCorrectionSheet: View {
                 .disabled(!correction.canSubmit)
             }
         }
-        .padding(24)
+        .padding(Spacing.xLarge)
         .frame(width: 480)
         .environment(\.timeZone, correction.timezone)
         .interactiveDismissDisabled(correction.isSubmitting)

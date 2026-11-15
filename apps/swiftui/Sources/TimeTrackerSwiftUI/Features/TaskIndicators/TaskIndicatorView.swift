@@ -19,21 +19,7 @@ struct TaskIndicatorDot: View {
     var body: some View {
         Image(systemName: indicator.symbol)
             .renderingMode(.original)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(indicator.color?.swiftUIColor ?? .secondary)
-    }
-}
-
-extension TaskColor {
-    var swiftUIColor: Color {
-        switch self {
-        case .blue: return .blue
-        case .teal: return .teal
-        case .green: return .green
-        case .orange: return .orange
-        case .red: return .red
-        case .purple: return .purple
-        case .pink: return .pink
-        }
+            .font(TextRole.taskMarker)
+            .foregroundStyle(indicator.color.map(ColorRole.task) ?? .secondary)
     }
 }

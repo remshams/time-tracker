@@ -8,16 +8,16 @@ struct WorklogRow: View {
     private var duration: TimeInterval { worklogDuration(worklog) }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.medium) {
+            VStack(alignment: .leading, spacing: Spacing.xSmall) {
                 Text(localDay(worklog.start))
-                    .font(.subheadline.weight(.medium))
+                    .font(TextRole.detailEmphasis)
                     .foregroundStyle(.primary)
                 Text("\(localTimestamp(worklog.start)) – \(worklog.end.map(localTimestamp) ?? "Running")")
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Spacing.medium)
             Group {
                 if active?.id == worklog.id {
                     TrackerElapsedText()
@@ -25,18 +25,17 @@ struct WorklogRow: View {
                     Text(formatClockDuration(duration))
                 }
             }
-            .font(.system(.title3, design: .monospaced).weight(.medium))
+            .font(TextRole.duration(.title3).weight(.medium))
             .foregroundStyle(.primary)
-            .monospacedDigit()
             .fixedSize()
             WorklogActionsMenu(worklog: worklog)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
-        .padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+        .padding(Spacing.large)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: CornerRadius.medium))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: CornerRadius.medium)
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {

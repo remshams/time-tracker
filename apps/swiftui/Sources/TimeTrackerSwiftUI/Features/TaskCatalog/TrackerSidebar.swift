@@ -25,21 +25,21 @@ struct TrackerSidebar: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(12)
+            .padding(Spacing.medium)
 
             HStack {
                 Text("Tasks")
                 Spacer()
                 Text(dailyTotals.status == .cached ? "Today, cached" : "Today")
             }
-            .font(.caption)
+            .font(TextRole.caption)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
+            .padding(.horizontal, Spacing.large)
+            .padding(.bottom, Spacing.xSmall)
 
             List(selection: selectionBinding) {
                 ForEach(catalog.visibleTasks) { task in
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.small) {
                         TaskIndicatorView(
                             taskID: task.id,
                             isRunning: !connection.stale && tracking.active?.taskId == task.id
@@ -49,8 +49,8 @@ struct TrackerSidebar: View {
                                 ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
                         Text(task.name)
                             .lineLimit(2)
-                            .padding(.vertical, 4)
-                        Spacer(minLength: 4)
+                            .padding(.vertical, Spacing.xSmall)
+                        Spacer(minLength: Spacing.xSmall)
                         TrackerDailyTotalText(totals: dailyTotals, taskID: task.id)
                     }
                     .tag(task.id)
@@ -71,7 +71,7 @@ struct TrackerSidebar: View {
             }
             .overlay {
                 if catalog.visibleTasks.isEmpty {
-                    VStack(spacing: 8) {
+                    VStack(spacing: Spacing.small) {
                         Image(systemName: "tray")
                         Text("No \(catalog.tab.rawValue.lowercased()) tasks")
                             .accessibilityIdentifier("task-sidebar.empty")
@@ -98,7 +98,7 @@ struct TrackerDailyTotalText: View {
     var body: some View {
         let text = task.content?.text ?? "-"
         Text(text)
-            .font(.callout.monospacedDigit())
+            .font(TextRole.duration())
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)

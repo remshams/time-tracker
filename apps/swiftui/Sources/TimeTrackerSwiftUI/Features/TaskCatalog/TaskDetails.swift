@@ -9,10 +9,10 @@ struct TaskDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let task = catalog.selectedTask {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: Spacing.small) {
+                    HStack(alignment: .top, spacing: Spacing.large) {
                         Text(task.name)
-                            .font(.system(size: 26, weight: .semibold))
+                            .font(TextRole.display)
                             .foregroundStyle(.primary)
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
@@ -21,7 +21,7 @@ struct TaskDetails: View {
                             .accessibilityIdentifier("task-details.name")
                     }
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: Spacing.medium) {
                         if task.archived {
                             Label("Archived", systemImage: "archivebox")
                                 .accessibilityIdentifier("task-details.state")
@@ -38,26 +38,26 @@ struct TaskDetails: View {
 
                         if let status = automation.statusText {
                             Text(status)
-                                .font(.caption)
+                                .font(TextRole.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
+                .padding(Spacing.xLarge)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("task-details.task.\(task.id)")
 
                 Divider()
                 WorklogHistorySection()
             } else {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: Spacing.large) {
                     WorklogHistoryError()
                     Label("Select a task", systemImage: "checklist")
-                        .font(.title3)
+                        .font(TextRole.placeholder)
                         .foregroundStyle(.secondary)
                 }
-                .padding(24)
+                .padding(Spacing.xLarge)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
