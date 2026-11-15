@@ -62,6 +62,7 @@ final class TrackerAppRuntime {
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             taskOrder: UserDefaultsTaskOrder(defaults: launch.defaults),
             reports: worker)
+        features.trackingPill.announce = { AccessibilityNotification.Announcement($0).post() }
         let savedPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
         menu = TrackerMenuPresentationObserver(sources: features.menuSources, showDailyTotal: savedPreferences.load())
         // The store turns the menu bar clock on or off for the saved setting.

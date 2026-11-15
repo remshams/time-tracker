@@ -32,7 +32,7 @@ struct TrackerWindow: View {
 
     private var content: some View {
         TrackerSplitLayout(columnVisibility: $columnVisibility) {
-            TrackerSidebar()
+            TrackerSidebar(availability: runtime.features.trackingAvailability)
                 .toolbar {
                     ToolbarItemGroup(placement: .automatic) {
                         Button {
@@ -48,11 +48,18 @@ struct TrackerWindow: View {
         } detail: {
             TrackerDetailPresentation()
                 .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        TrackingPillView()
+                    }
+                    .sharedBackgroundVisibility(.hidden)
                     ToolbarItemGroup(placement: .primaryAction) {
-                        TrackerTaskToolbar(availability: runtime.features.trackingAvailability)
+                        TrackerTaskToolbar()
                     }
                 }
         }
+        // The detail header shows the task name, so the toolbar leaves its room to the tracking pill. The window keeps
+        // the title for the Window menu and VoiceOver.
+        .toolbar(removing: .title)
         .navigationTitle(catalog.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
         .onAppear { runtime.installSceneOpener(openWindow) }

@@ -2,9 +2,8 @@ import SwiftUI
 import TrackerClient
 
 struct TrackerSidebar: View {
-    @Environment(TrackingStore.self) private var tracking
+    let availability: TrackingAvailability
     @Environment(TaskCatalogStore.self) private var catalog
-    @Environment(ConnectionStore.self) private var connection
     @Environment(DailyTotalsStore.self) private var dailyTotals
 
     private var tabBinding: Binding<TaskTab> {
@@ -39,29 +38,7 @@ struct TrackerSidebar: View {
 
             List(selection: selectionBinding) {
                 ForEach(catalog.visibleTasks) { task in
-                    HStack(spacing: Spacing.small) {
-                        TaskIndicatorView(
-                            taskID: task.id,
-                            isRunning: !connection.stale && tracking.active?.taskId == task.id
-                        )
-                        .accessibilityIdentifier(
-                            !connection.stale && tracking.active?.taskId == task.id
-                                ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
-                        Text(task.name)
-                            .lineLimit(2)
-                            .padding(.vertical, Spacing.xSmall)
-                        Spacer(minLength: Spacing.xSmall)
-                        TrackerDailyTotalText(totals: dailyTotals, taskID: task.id)
-                    }
-                    .tag(task.id)
-                    .help(task.name)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("task-sidebar.task.\(task.id)")
-                    .contextMenu {
-                        TaskContextMenu(
-                            taskID: task.id, taskIsArchived: task.archived,
-                            taskIsRunning: tracking.active?.taskId == task.id)
-                    }
+                    TrackerSidebarRow(task: task, availability: availability)
                 }
             }
             .listStyle(.sidebar)
@@ -83,6 +60,77 @@ struct TrackerSidebar: View {
             ConnectionSummary()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// One task in the sidebar. Hovering a row whose task isn't the tracking pill's shows a start button in place of
+/// today's total, so one task never shows two start or stop controls. The button starts the task and stops the running
+/// one. Keyboard and VoiceOver users start a task from the context menu or the row's accessibility action instead.
+private struct TrackerSidebarRow: View {
+    let task: TaskItem
+    let availability: TrackingAvailability
+    @Environment(TrackingStore.self) private var tracking
+    @Environment(TrackingPill.self) private var pill
+    @Environment(ConnectionStore.self) private var connection
+    @Environment(DailyTotalsStore.self) private var dailyTotals
+    @State private var isHovered = false
+
+    private var isRunning: Bool { tracking.active?.taskId == task.id }
+    private var canStart: Bool { availability.canStart(taskID: task.id) }
+    private var showsStart: Bool { isHovered && pill.taskID != task.id && !task.archived }
+
+    var body: some View {
+        HStack(spacing: Spacing.small) {
+            TaskIndicatorView(taskID: task.id, isRunning: !connection.stale && isRunning)
+                .accessibilityIdentifier(
+                    !connection.stale && isRunning ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
+            Text(task.name)
+                .lineLimit(2)
+                .padding(.vertical, Spacing.xSmall)
+            Spacer(minLength: Spacing.xSmall)
+            ZStack(alignment: .trailing) {
+                TrackerDailyTotalText(totals: dailyTotals, taskID: task.id)
+                    .opacity(showsStart ? 0 : 1)
+                startButton
+            }
+            .animation(Motion.quick, value: showsStart)
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .tag(task.id)
+        .help(task.name)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("task-sidebar.task.\(task.id)")
+        .accessibilityActions {
+            if !task.archived && !isRunning {
+                Button("Start \(task.name)") { tracking.startTracking(taskID: task.id) }
+                    .disabled(!canStart)
+            }
+        }
+        .contextMenu {
+            TaskContextMenu(
+                taskID: task.id, taskIsArchived: task.archived, taskIsRunning: isRunning, canStartTracking: canStart)
+        }
+    }
+
+    private var startButton: some View {
+        let color = ColorRole.task(TaskColor.forTaskID(task.id))
+        return Button {
+            tracking.startTracking(taskID: task.id)
+        } label: {
+            Image(systemName: "play.fill")
+                .font(TextRole.actionGlyph)
+                .foregroundStyle(color)
+                .frame(width: IconSize.button, height: IconSize.button)
+                .background(color.opacity(Emphasis.hoverTint), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .opacity(showsStart ? 1 : 0)
+        .allowsHitTesting(showsStart)
+        .disabled(!canStart)
+        .help(tracking.active == nil ? "Start tracking \(task.name)" : "Stop the current timer and start \(task.name)")
+        .accessibilityHidden(true)
     }
 }
 
