@@ -21,6 +21,7 @@ MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingStore.swift"
 TRACKING_AVAILABILITY = "Features/Tracking/TrackingAvailability.swift"
+TRACKING_PILL = "Features/Tracking/TrackingPill.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
 TASK_ORDER = "Features/TaskCatalog/TaskOrder.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
@@ -131,6 +132,9 @@ TEST_PRODUCTION = {
         CONNECTION_TESTING, NAME_POLICY, MENU_SOURCES, DELETION, MOVE, CORRECTION,
     ],
     "Features/Tracking/TrackingAvailabilityTests.swift": [TRACKING_AVAILABILITY, CONNECTION, CATALOG, TRACKING],
+    "Features/Tracking/TrackingPillTests.swift": [
+        FEATURES, SYNC, TRACKING_PILL, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, CONNECTION,
+    ],
     "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, TRACKING, CATALOG, HISTORY, MENU_BAR_STORE, CONNECTION, RENAME,

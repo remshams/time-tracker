@@ -8,6 +8,8 @@ public final class TrackerFeatures {
     public let sync: TrackerSync
     /// Views and the menu bar read whether tracking can start or stop here.
     public let trackingAvailability: TrackingAvailability
+    /// The toolbar's start and stop control.
+    public let trackingPill: TrackingPill
     /// Views read the task list, its order, tab and selection here and change the order, tab and selection; the sync
     /// writes the task list too.
     public let taskCatalog: TaskCatalogStore
@@ -69,6 +71,8 @@ public final class TrackerFeatures {
         trackingAutomation = TrackingAutomationStore(
             repository: trackingPreferences, client: client, clock: clock, tracking: tracking)
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
+        trackingPill = TrackingPill(
+            tracking: tracking, catalog: taskCatalog, connection: connection, availability: trackingAvailability)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
             dailyTotals: dailyTotals, automation: trackingAutomation, displayClock: displayClock)

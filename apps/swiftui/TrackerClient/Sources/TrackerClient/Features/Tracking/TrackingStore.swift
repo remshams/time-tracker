@@ -16,6 +16,8 @@ public final class TrackingStore: ChangeGuardedStore {
     public private(set) var isSubmitting = false
     /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
     public private(set) var timerText = "Unavailable"
+    /// The whole seconds of the running worklog, or `nil` while nothing runs or before the tracker state is confirmed.
+    public private(set) var elapsedSeconds: Int?
     // A failed tracking request, auto-pause or auto-resume records its error here. The flow that sent the request
     // shows it once its reload returns, so the alert appears over the reloaded state.
     @ObservationIgnored private(set) var recordedError: String?
@@ -51,32 +53,39 @@ public final class TrackingStore: ChangeGuardedStore {
         TrackingAvailability(connection: connection, catalog: catalog, tracking: self)
     }
 
-    /// Starts tracking `taskID`, which stops the running worklog first. Does nothing when
-    /// `TrackingAvailability.canStart(taskID:)` is false.
-    public func startTracking(taskID: String) {
-        guard availability.canStart(taskID: taskID) else { return }
+    /// Starts tracking `taskID`, which stops the running worklog first, and calls `finished` once the request and
+    /// its reload end. Does nothing and returns `false` when `TrackingAvailability.canStart(taskID:)` is false.
+    @discardableResult
+    public func startTracking(taskID: String, then finished: @escaping @MainActor () -> Void = {}) -> Bool {
+        guard availability.canStart(taskID: taskID) else { return false }
         let expectedActiveID = active?.id
         let occurredAt = formatTimestamp(clock.now)
-        sendTracking { client in
+        sendTracking(then: finished) { client in
             _ = try await client.startTracking(
                 taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
         }
+        return true
     }
 
-    /// Stops the running worklog `worklogID`. Does nothing when another worklog runs or
-    /// `TrackingAvailability.canStop` is false.
-    public func stopTracking(worklogID: String) {
-        guard availability.canStop, active?.id == worklogID else { return }
+    /// Stops the running worklog `worklogID` and calls `finished` once the request and its reload end. Does nothing
+    /// and returns `false` when another worklog runs or `TrackingAvailability.canStop` is false.
+    @discardableResult
+    public func stopTracking(worklogID: String, then finished: @escaping @MainActor () -> Void = {}) -> Bool {
+        guard availability.canStop, active?.id == worklogID else { return false }
         let occurredAt = formatTimestamp(clock.now)
-        sendTracking { client in
+        sendTracking(then: finished) { client in
             _ = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
         }
+        return true
     }
 
     /// Hides the tracking error.
     public func dismissError() { clearError() }
 
-    private func sendTracking(_ request: @escaping @MainActor (any TrackerClient) async throws -> Void) {
+    private func sendTracking(
+        then finished: @escaping @MainActor () -> Void,
+        _ request: @escaping @MainActor (any TrackerClient) async throws -> Void
+    ) {
         cancelAutoResume()
         clearError()
         beginSubmitting()
@@ -90,6 +99,7 @@ public final class TrackingStore: ChangeGuardedStore {
             await reloadTaskList()
             showRecordedError()
             endSubmitting()
+            finished()
         }
     }
 
@@ -124,7 +134,10 @@ public final class TrackingStore: ChangeGuardedStore {
         return elapsed().map(formatClockDuration) ?? "Idle"
     }
 
-    private func refreshTimerText() { set(\.timerText, displayText()) }
+    private func refreshTimerText() {
+        set(\.timerText, displayText())
+        set(\.elapsedSeconds, connection.confirmed ? elapsed().map { Int($0) } : nil)
+    }
 
     func beginSubmitting() { set(\.isSubmitting, true) }
 
