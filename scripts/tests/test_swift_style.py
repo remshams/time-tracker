@@ -77,7 +77,8 @@ class SwiftStyleTests(unittest.TestCase):
 
     def test_token_check_rejects_number_literals_in_view_styling(self):
         for line in (".padding(10)", ".padding(.horizontal, -3)", "VStack(spacing: 0.5) {",
-                     "HStack(alignment: .top, spacing: compact ? 4 : 8) {", "RoundedRectangle(cornerRadius: 8)",
+                     "HStack(alignment: .top, spacing: compact ? 4 : 8) {", "Spacer(minLength: 12)",
+                     "RoundedRectangle(cornerRadius: 8)",
                      ".font(.system(size: 26, weight: .semibold))", ".opacity(0.5)",
                      ".opacity(hovered ? 1 : 0.45)", "color.opacity(2)"):
             with self.subTest(line=line):
@@ -86,7 +87,8 @@ class SwiftStyleTests(unittest.TestCase):
     def test_token_check_allows_tokens_zero_and_full_opacity(self):
         for line in (".padding(Spacing.small)", ".padding(.vertical, Spacing.x2)", "VStack(spacing: 0) {",
                      ".padding(0)", ".opacity(visible ? 1 : 0)", ".font(.system(.title3, design: .monospaced))",
-                     ".frame(width: 16, height: 16)", "Text(\"Row 1\").padding(Spacing.xSmall)"):
+                     ".frame(width: 16, height: 16)", "Text(\"Row 1\").padding(Spacing.xSmall)", "// .padding(8)",
+                     ".padding(Spacing.small) // .padding(8)"):
             with self.subTest(line=line):
                 self.assertEqual(self.token_violations({"Features/View.swift": line}), [])
 

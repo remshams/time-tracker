@@ -207,9 +207,9 @@ VStack(alignment: .leading, spacing: Spacing.medium) {
   Hierarchical styles such as `.secondary` stay as they are.
 
 To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
-`python3 scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `cornerRadius:`,
+`python3 scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `minLength:`, `cornerRadius:`,
 `.system(size:` or `.opacity(` anywhere else in `Sources/TimeTrackerSwiftUI`. `0` is allowed, and `1` in
-opacity. Frame sizes and AppKit code in the menu bar keep their literals.
+opacity. It reads one line at a time and skips `//` comments. Frame sizes and AppKit code in the menu bar keep their literals.
 
 ## Unit tests
 
