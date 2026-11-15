@@ -5,7 +5,7 @@ struct ConnectionActionsSection: View {
 
     var body: some View {
         Section {
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 Button("Test connection") { draft.testConnection() }
                     .disabled(draft.operationPending || draft.missingEndpoint)
                     .accessibilityIdentifier("connection.test")
@@ -25,7 +25,7 @@ struct ConnectionActionsSection: View {
                         .textSelection(.enabled)
                 } icon: {
                     Image(systemName: draft.resultSucceeded ? "checkmark.circle" : "exclamationmark.triangle")
-                        .foregroundStyle(draft.resultSucceeded ? Color.accentColor : Color.red)
+                        .foregroundStyle(draft.resultSucceeded ? ColorRole.confirmation : ColorRole.error)
                 }
                 .accessibilityIdentifier("connection.result")
             }

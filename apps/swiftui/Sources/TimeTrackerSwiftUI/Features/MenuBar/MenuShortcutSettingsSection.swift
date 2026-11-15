@@ -19,7 +19,7 @@ struct MenuShortcutSettingsSection: View {
                 }
             }
             if let error = preferences.menuShortcutError {
-                Text(error).foregroundStyle(.red)
+                Text(error).foregroundStyle(ColorRole.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("menu.shortcut.error")
             }

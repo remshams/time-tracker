@@ -14,11 +14,11 @@ struct TaskNameSheet: View {
     @FocusState private var nameFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.title2.bold())
+        VStack(alignment: .leading, spacing: Spacing.large) {
+            Text(title).font(TextRole.sheetTitle)
             if let context {
                 Text(context)
-                    .font(.subheadline)
+                    .font(TextRole.detail)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .help(context)
@@ -33,12 +33,12 @@ struct TaskNameSheet: View {
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("task-name.error")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ColorRole.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 DelayedProgressIndicator(
                     isBusy: isSubmitting, title: progressTitle,
                     identifier: "task-name.progress")
@@ -54,7 +54,7 @@ struct TaskNameSheet: View {
                     .disabled(!canSubmit)
             }
         }
-        .padding(24)
+        .padding(Spacing.xLarge)
         .frame(width: 440)
         .interactiveDismissDisabled(isSubmitting)
         .onAppear { nameFocused = true }

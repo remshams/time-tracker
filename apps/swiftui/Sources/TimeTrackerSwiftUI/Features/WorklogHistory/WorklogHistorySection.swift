@@ -8,7 +8,7 @@ struct WorklogHistorySection: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: Spacing.medium) {
                 WorklogHistoryHeading()
                 WorklogHistoryError()
 
@@ -17,12 +17,12 @@ struct WorklogHistorySection: View {
                         isBusy: history.isLoading, title: "Loading worklogs...",
                         identifier: "worklog-history.loading"
                     )
-                    .padding(.vertical, 12)
+                    .padding(.vertical, Spacing.medium)
                 } else if history.worklogs.isEmpty && history.error == nil {
                     Label("No worklogs yet", systemImage: "clock")
                         .accessibilityIdentifier("worklog-history.empty")
                         .foregroundStyle(.secondary)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.medium)
                 }
 
                 ForEach(history.worklogs) { worklog in
@@ -31,11 +31,11 @@ struct WorklogHistorySection: View {
 
                 if history.hasMore {
                     HistoryPaginationButton()
-                        .padding(.top, 8)
+                        .padding(.top, Spacing.small)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(24)
+            .padding(Spacing.xLarge)
         }
         .accessibilityIdentifier("worklog-history.scroll")
     }
@@ -47,13 +47,13 @@ struct WorklogHistoryError: View {
 
     var body: some View {
         if let error = history.error {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.small) {
                 Label {
                     Text(error).textSelection(.enabled)
                         .accessibilityIdentifier("worklog-history.error")
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(ColorRole.error)
                 }
                 .foregroundStyle(.primary)
                 if history.unavailable {
@@ -61,11 +61,11 @@ struct WorklogHistoryError: View {
                         .accessibilityIdentifier("worklog-history.retry")
                 }
             }
-            .padding(12)
+            .padding(Spacing.medium)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: CornerRadius.medium))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: CornerRadius.medium)
                     .stroke(.quaternary, lineWidth: 1)
             }
         }
@@ -74,9 +74,9 @@ struct WorklogHistoryError: View {
 
 private struct WorklogHistoryHeading: View {
     var body: some View {
-        Text("Worklogs").font(.title3.weight(.semibold))
+        Text("Worklogs").font(TextRole.sectionTitle)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 4)
+            .padding(.bottom, Spacing.xSmall)
     }
 }
 

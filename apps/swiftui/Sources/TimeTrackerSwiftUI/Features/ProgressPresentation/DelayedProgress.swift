@@ -30,7 +30,7 @@ struct DelayedProgressIndicator: View {
 
     var body: some View {
         DelayedProgress(isBusy: isBusy) { visible in
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 ProgressView().controlSize(.small)
                     .frame(width: 16, height: 16)
                     .accessibilityIdentifier(identifier)

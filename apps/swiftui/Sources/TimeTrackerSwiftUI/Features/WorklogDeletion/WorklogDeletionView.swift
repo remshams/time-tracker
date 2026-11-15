@@ -5,10 +5,10 @@ struct WorklogDeletionSheet: View {
     @Environment(WorklogDeletionStore.self) private var deletion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Delete worklog").font(.title2.bold())
+        VStack(alignment: .leading, spacing: Spacing.large) {
+            Text("Delete worklog").font(TextRole.sheetTitle)
             Text(deletion.taskName)
-                .font(.subheadline)
+                .font(TextRole.detail)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
                 .help(deletion.taskName)
@@ -24,12 +24,12 @@ struct WorklogDeletionSheet: View {
             if let error = deletion.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("worklog-deletion.error")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ColorRole.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.medium) {
                 DelayedProgressIndicator(
                     isBusy: deletion.isSubmitting, title: "Deleting worklog...",
                     identifier: "worklog-deletion.progress")
@@ -44,11 +44,11 @@ struct WorklogDeletionSheet: View {
                 .accessibilityIdentifier("worklog-deletion.confirm")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .tint(ColorRole.error)
                 .disabled(!deletion.canSubmit)
             }
         }
-        .padding(24)
+        .padding(Spacing.xLarge)
         .frame(width: 440)
         .interactiveDismissDisabled(deletion.isSubmitting)
     }
@@ -61,26 +61,25 @@ private struct WorklogDeletionSummary: View {
     private var duration: TimeInterval { worklogDuration(worklog) }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.medium) {
+            VStack(alignment: .leading, spacing: Spacing.xSmall) {
                 Text(localDay(worklog.start))
-                    .font(.subheadline.weight(.medium))
+                    .font(TextRole.detailEmphasis)
                 Text("\(localTimestamp(worklog.start)) – \(worklog.end.map(localTimestamp) ?? "Running")")
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Spacing.medium)
             Text(formatClockDuration(duration))
-                .font(.system(.title3, design: .monospaced).weight(.medium))
-                .monospacedDigit()
+                .font(TextRole.duration(.title3).weight(.medium))
                 .accessibilityLabel("Duration \(formatClockDuration(duration))")
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("worklog-deletion.summary")
-        .padding(16)
+        .padding(Spacing.large)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: CornerRadius.medium))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: CornerRadius.medium)
                 .stroke(.quaternary, lineWidth: 1)
         }
     }

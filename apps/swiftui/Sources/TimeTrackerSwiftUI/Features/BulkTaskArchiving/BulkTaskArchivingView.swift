@@ -5,8 +5,8 @@ struct BulkTaskArchivingSheet: View {
     @Environment(BulkTaskArchivingStore.self) private var archiving
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Archive inactive tasks").font(.title2.bold())
+        VStack(alignment: .leading, spacing: Spacing.large) {
+            Text("Archive inactive tasks").font(TextRole.sheetTitle)
             Text(
                 "Archive tasks with no recent work or changes. Running tasks are excluded. Worklog history remains available."
             )
@@ -36,7 +36,7 @@ struct BulkTaskArchivingSheet: View {
                         }
                     }
                     .frame(width: 16, height: 16)
-                    .padding(4)
+                    .padding(Spacing.xSmall)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -46,23 +46,23 @@ struct BulkTaskArchivingSheet: View {
                 .accessibilityIdentifier("bulk-archive.refresh")
             }
             Text(previewTitle)
-                .font(.headline)
+                .font(TextRole.heading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 20)
                 .accessibilityIdentifier("bulk-archive.count")
             Group {
                 if let error = archiving.error {
                     Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(ColorRole.error)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("bulk-archive.error")
-                        .padding(12)
+                        .padding(Spacing.medium)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
+                        LazyVStack(alignment: .leading, spacing: Spacing.small) {
                             if let count = archiving.archivedCount {
                                 Label(
                                     "Archived \(count) \(count == 1 ? "task" : "tasks").",
@@ -83,13 +83,13 @@ struct BulkTaskArchivingSheet: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(Spacing.medium)
                     }
                 }
             }
             .frame(height: 220)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            HStack(spacing: 12) {
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: CornerRadius.medium))
+            HStack(spacing: Spacing.medium) {
                 DelayedProgressIndicator(
                     isBusy: archiving.isSubmitting, title: "Archiving tasks...",
                     identifier: "bulk-archive.submit-progress")
@@ -108,7 +108,7 @@ struct BulkTaskArchivingSheet: View {
             }
             .frame(height: 24)
         }
-        .padding(24)
+        .padding(Spacing.xLarge)
         .frame(width: 560)
         .interactiveDismissDisabled(archiving.isSubmitting)
         .accessibilityElement(children: .contain)
