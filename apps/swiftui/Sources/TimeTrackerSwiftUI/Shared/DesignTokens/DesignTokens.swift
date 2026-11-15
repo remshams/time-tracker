@@ -1,10 +1,10 @@
 import SwiftUI
 import TrackerClient
 
-// scripts/swift-style.py rejects number literals in padding, stack spacing, corner radii, fixed font sizes and
-// opacities outside this folder. Add a token here instead of typing the value in a view.
+// scripts/swift-style.py rejects number literals in padding, stack, grid and spacer spacing, corner radii, fixed font
+// sizes and opacities outside this folder. Add a token here instead of typing the value in a view.
 
-/// The spacing scale for padding and stack spacing, in points.
+/// The spacing scale for padding and stack, grid and spacer spacing, in points.
 enum Spacing {
     static let xSmall: CGFloat = 4
     static let small: CGFloat = 8
