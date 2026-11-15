@@ -128,7 +128,8 @@ private struct TrackerSidebarRow: View {
         .buttonStyle(.plain)
         .opacity(showsStart ? 1 : 0)
         .allowsHitTesting(showsStart)
-        .disabled(!canStart)
+        // Hidden, the button must not take keyboard focus and start a task nobody sees.
+        .disabled(!showsStart)
         .help(tracking.active == nil ? "Start tracking \(task.name)" : "Stop the current timer and start \(task.name)")
         .accessibilityHidden(true)
     }
