@@ -15,6 +15,17 @@ extension TrackerUITestCase {
         }
     }
 
+    /// Switches tracking through the sidebar row's context menu. The toolbar pill stops the running task, so it cannot
+    /// start another one.
+    func startTracking(fromContextMenuOf task: FixtureTask, file: StaticString = #filePath, line: UInt = #line) {
+        let row = taskRow(task)
+        XCTAssertTrue(row.waitForExistence(timeout: timeout), file: file, line: line)
+        row.rightClick()
+        let item = app.menuItems["Start Tracking"]
+        XCTAssertTrue(item.waitForExistence(timeout: timeout), file: file, line: line)
+        item.click()
+    }
+
     /// Checks the rejected tracking command's alert, then closes it.
     func dismissTrackingFailure(containing text: String, file: StaticString = #filePath, line: UInt = #line) {
         let title = app.staticTexts["Could not change tracking"]
