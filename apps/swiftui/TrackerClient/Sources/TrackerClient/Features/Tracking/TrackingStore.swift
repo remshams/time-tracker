@@ -54,29 +54,25 @@ public final class TrackingStore: ChangeGuardedStore {
     }
 
     /// Starts tracking `taskID`, which stops the running worklog first, and calls `finished` once the request and
-    /// its reload end. Does nothing and returns `false` when `TrackingAvailability.canStart(taskID:)` is false.
-    @discardableResult
-    public func startTracking(taskID: String, then finished: @escaping @MainActor () -> Void = {}) -> Bool {
-        guard availability.canStart(taskID: taskID) else { return false }
+    /// its reload end. Does nothing when `TrackingAvailability.canStart(taskID:)` is false.
+    public func startTracking(taskID: String, then finished: @escaping @MainActor () -> Void = {}) {
+        guard availability.canStart(taskID: taskID) else { return }
         let expectedActiveID = active?.id
         let occurredAt = formatTimestamp(clock.now)
         sendTracking(then: finished) { client in
             _ = try await client.startTracking(
                 taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
         }
-        return true
     }
 
     /// Stops the running worklog `worklogID` and calls `finished` once the request and its reload end. Does nothing
-    /// and returns `false` when another worklog runs or `TrackingAvailability.canStop` is false.
-    @discardableResult
-    public func stopTracking(worklogID: String, then finished: @escaping @MainActor () -> Void = {}) -> Bool {
-        guard availability.canStop, active?.id == worklogID else { return false }
+    /// when another worklog runs or `TrackingAvailability.canStop` is false.
+    public func stopTracking(worklogID: String, then finished: @escaping @MainActor () -> Void = {}) {
+        guard availability.canStop, active?.id == worklogID else { return }
         let occurredAt = formatTimestamp(clock.now)
         sendTracking(then: finished) { client in
             _ = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
         }
-        return true
     }
 
     /// Hides the tracking error.

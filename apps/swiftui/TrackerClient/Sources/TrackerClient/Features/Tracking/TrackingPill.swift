@@ -22,6 +22,20 @@ public struct TrackingPillState: Equatable, Sendable {
 
     /// The button's accessibility label. The native E2E tests look the button up by it.
     public var actionLabel: String { isRunning ? "Stop tracking" : "Start tracking" }
+
+    /// The tooltip, which names the action and the task.
+    public func help(stale: Bool) -> String {
+        let action = "\(actionLabel) \(name)"
+        return stale ? "\(action). The connection is stale." : action
+    }
+
+    /// The task name, the spoken duration while running, and the stale note.
+    public func accessibilityValue(stale: Bool) -> String {
+        var parts = [name]
+        if case .running(_, let seconds?) = mode { parts.append(spokenDuration(seconds)) }
+        if stale { parts.append("connection stale") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 /// The toolbar's one start and stop control. It shows the running task, or the selected task while nothing runs, and
@@ -60,9 +74,7 @@ public final class TrackingPill {
     /// it without redrawing every second.
     public var taskID: String? {
         if tracking.isSubmitting, let frozen { return frozen.taskID }
-        if let active = tracking.active { return active.taskId }
-        guard let task = catalog.selectedTask, !task.archived else { return nil }
-        return task.id
+        return tracking.active?.taskId ?? idleTask?.id
     }
 
     /// Whether a click can send a request now. A stale connection or a request in flight disables the pill.
@@ -76,34 +88,17 @@ public final class TrackingPill {
 
     public var isStale: Bool { connection.stale }
 
-    /// The tooltip, which names the action and the task.
-    public var help: String? {
-        guard let shown else { return nil }
-        let action = "\(shown.actionLabel) \(shown.name)"
-        return isStale ? "\(action). The connection is stale." : action
-    }
-
-    /// The task name, the spoken duration while running, and the stale note.
-    public var accessibilityValue: String? {
-        guard let shown else { return nil }
-        var parts = [shown.name]
-        if case .running(_, let seconds?) = shown.mode { parts.append(spokenDuration(seconds)) }
-        if isStale { parts.append("connection stale") }
-        return parts.joined(separator: ", ")
-    }
-
     /// Stops the running task, or starts the selected one while nothing runs.
     public func click() {
-        guard let pill = current else { return }
+        // `isEnabled` makes the same checks as the store, so the store sends the request and calls back.
+        guard isEnabled, let pill = current else { return }
         frozen = pill
-        let sent =
-            switch pill.mode {
-            case .running(let worklogID, _):
-                tracking.stopTracking(worklogID: worklogID) { [weak self] in self?.finishStop(of: pill.name) }
-            case .idle:
-                tracking.startTracking(taskID: pill.taskID) { [weak self] in self?.frozen = nil }
-            }
-        if !sent { frozen = nil }
+        switch pill.mode {
+        case .running(let worklogID, _):
+            tracking.stopTracking(worklogID: worklogID) { [weak self] in self?.finishStop(of: pill.name) }
+        case .idle:
+            tracking.startTracking(taskID: pill.taskID) { [weak self] in self?.frozen = nil }
+        }
     }
 
     /// Selects the shown task and changes to its tab.
@@ -119,8 +114,14 @@ public final class TrackingPill {
                 mode: .running(worklogID: active.id, elapsedSeconds: tracking.elapsedSeconds), taskID: active.taskId,
                 name: name)
         }
-        guard let task = catalog.selectedTask, !task.archived else { return nil }
+        guard let task = idleTask else { return nil }
         return TrackingPillState(mode: .idle, taskID: task.id, name: task.name)
+    }
+
+    /// The selected task while it's active, which the pill offers while nothing runs.
+    private var idleTask: TaskItem? {
+        guard let task = catalog.selectedTask, !task.archived else { return nil }
+        return task
     }
 
     private func finishStop(of name: String) {

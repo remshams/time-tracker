@@ -21,8 +21,8 @@ final class TrackingPillTests: XCTestCase {
         XCTAssertTrue(pill.isEnabled)
         XCTAssertFalse(pill.isStale)
         XCTAssertFalse(pill.isInFlight)
-        XCTAssertEqual(pill.help, "Stop tracking First task")
-        XCTAssertEqual(pill.accessibilityValue, "First task, 30 seconds")
+        XCTAssertEqual(pill.shown?.help(stale: pill.isStale), "Stop tracking First task")
+        XCTAssertEqual(pill.shown?.accessibilityValue(stale: pill.isStale), "First task, 30 seconds")
     }
 
     @MainActor
@@ -41,8 +41,8 @@ final class TrackingPillTests: XCTestCase {
         XCTAssertNil(shown.elapsed)
         XCTAssertEqual(shown.actionLabel, "Start tracking")
         XCTAssertTrue(pill.isEnabled)
-        XCTAssertEqual(pill.help, "Start tracking Second task")
-        XCTAssertEqual(pill.accessibilityValue, "Second task")
+        XCTAssertEqual(pill.shown?.help(stale: pill.isStale), "Start tracking Second task")
+        XCTAssertEqual(pill.shown?.accessibilityValue(stale: pill.isStale), "Second task")
     }
 
     @MainActor
@@ -61,8 +61,6 @@ final class TrackingPillTests: XCTestCase {
         XCTAssertNil(pill.shown)
         XCTAssertNil(pill.taskID)
         XCTAssertFalse(pill.isEnabled)
-        XCTAssertNil(pill.help)
-        XCTAssertNil(pill.accessibilityValue)
         let operationCount = fixture.client.operations.count
         pill.click()
         XCTAssertEqual(fixture.client.operations.count, operationCount)
@@ -90,8 +88,8 @@ final class TrackingPillTests: XCTestCase {
 
         XCTAssertTrue(pill.isStale)
         XCTAssertFalse(pill.isEnabled)
-        XCTAssertEqual(pill.help, "Stop tracking First task. The connection is stale.")
-        XCTAssertEqual(pill.accessibilityValue, "First task, 30 seconds, connection stale")
+        XCTAssertEqual(pill.shown?.help(stale: pill.isStale), "Stop tracking First task. The connection is stale.")
+        XCTAssertEqual(pill.shown?.accessibilityValue(stale: pill.isStale), "First task, 30 seconds, connection stale")
     }
 
     @MainActor
@@ -313,7 +311,7 @@ final class TrackingPillTests: XCTestCase {
         display.fire()
 
         XCTAssertTrue(shown.consume())
-        XCTAssertEqual(pill.shown?.elapsed?.text, "0:00:31")
+        XCTAssertEqual(pill.shown?.elapsed, DurationText(seconds: 31))
         XCTAssertFalse(taskID.consume(), "A sidebar row reads the task ID and must not redraw every second.")
     }
 }
