@@ -4,7 +4,7 @@
 
 Accepted.
 
-Implemented by #404.
+Implemented by #404. #405 added `IconSize`, `BorderWidth`, `Motion` and the tracking pill's text roles.
 
 ## Date
 
@@ -24,13 +24,16 @@ The app's views take spacing, corner radii, fonts, opacities and colors from nam
 
 - `Spacing`: a 4-point scale, 4, 8, 12, 16, 24 and 32, for padding, stack spacing and spacer lengths.
 - `CornerRadius`: 4 and 8.
-- `TextRole`: fonts named after the role of the text, such as `sheetTitle`, `detail` and `caption`. They build on the system text styles. `duration(_:)` adds monospaced digits to a text style, so a running time keeps its width. `display` is the only role with a fixed point size.
+- `TextRole`: fonts named after the role of the text, such as `sheetTitle`, `detail` and `caption`. They build on the system text styles. `duration(_:)` adds monospaced digits to a text style, so a running time keeps its width. `display` and `actionGlyph`, the 8-point glyph inside a marker disc, are the only roles with a fixed point size. The disc has a fixed size, so its glyph has one too.
 - `Emphasis`: the opacities for a resting tint, hover, pressed and disabled.
-- `ColorRole`: semantic colors (`error`, `connected`, `confirmation`) and `task(_:)`, the SwiftUI color for a `TaskColor`. The rule that picks a task's color stays in the package's `TaskIndicator`.
+- `ColorRole`: semantic colors (`error`, `connected`, `confirmation`), `task(_:)`, the SwiftUI color for a `TaskColor`, and `actionDisc(_:in:)`, which darkens that color in dark mode behind a white glyph. The rule that picks a task's color stays in the package's `TaskIndicator`.
+- `IconSize`: 10 for a marker dot or ring, 16 for a task indicator, a small spinner or a marker slot, and 22 for a row's start button.
+- `BorderWidth`: 1 for a card outline and 1.75 for the tracking pill's idle ring.
+- `Motion`: `quick` (0.12 s) for a press, `standard` (0.18 s) for a state or hover change, and the 0.92 scale of a pressed marker.
 
-Hierarchical styles such as `.primary` and `.secondary` stay as they are; they already name a role. Control heights stay with the system, and frame sizes are out of scope. AppKit code in the menu bar keeps its own values.
+Hierarchical styles such as `.primary` and `.secondary` stay as they are; they already name a role. Control heights stay with the system. Frame sizes other than icon sizes stay out of scope, such as the tracking pill's 34-point height. `scripts/swift-style.py` doesn't read icon sizes, border widths or animations, so `IconSize`, `BorderWidth` and `Motion` hold by convention. AppKit code in the menu bar keeps its own values.
 
-The move onto the tokens snapped the off-scale values: the task header's 10 became 8, and the connection summary's 3 became 4 and its vertical 10 became 12. The durations in the worklog card and in the delete sheet's summary changed from a monospaced font to the system font with monospaced digits. Everything else looks the same.
+The move onto the tokens snapped the off-scale values: the task header's 10 became 8, and the connection summary's 3 became 4 and its vertical 10 became 12. The durations in the worklog card and in the delete sheet's summary changed from a monospaced font to the system font with monospaced digits. Everything else looks the same. #405 snapped the prototype pill's padding of 14 to 12, its 18-point marker slot to 16, its 1.5-point ring to 1.75, and its 0.15 and 0.2 second animations to 0.18.
 
 ### The check
 

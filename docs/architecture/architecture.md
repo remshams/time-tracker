@@ -24,7 +24,8 @@ of the clients and the Swift-to-Rust bridge are in [diagrams.html](diagrams.html
   [ADR 0008](adr/0008-move-worklogs-between-tasks.md)).
 - **Active tracking**: the tracker is idle or runs one worklog across the
   database. Switching stops the old worklog and starts the new one atomically;
-  closing a client leaves tracking running. Owner:
+  closing a client leaves tracking running. Stopping ends the worklog; starting
+  again creates a new worklog, and the time in between is not work. Owner:
   [tracking model](../../crates/tracker-domain/src/tracking.rs).
 - **Operation instant**: the time a client supplies for an action. The
   application canonicalizes it to UTC microseconds; calendar boundaries use time

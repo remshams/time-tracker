@@ -53,7 +53,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 1 | Launch, isolation, cleanup, diagnostics | [SmokeUITests](Tests/UITests/App/SmokeUITests.swift) and [shared support](Tests/UITests/Support/TrackerUITestCase.swift) |
 | 2 | Active/Archived, ordering, ID selection | [TaskCatalogUITests](Tests/UITests/Features/TaskCatalog/TaskCatalogUITests.swift) |
 | 3 | Creation entry points, validation, cancellation, timer preservation | [TaskCreationUITests](Tests/UITests/Features/TaskCreation/TaskCreationUITests.swift) |
-| 4 | Start, switch, stop, exact running identity after relaunch | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
+| 4 | Start and stop from the toolbar pill, switch from the sidebar context menu, exact running identity after relaunch | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
 | 5 | History order, 50-row pagination, empty/running states, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/Features/WorklogHistory/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
 | 6 | Rename, clicked target, preserved history/timer, conflict on save and reload | [TaskRenameUITests](Tests/UITests/Features/TaskRename/TaskRenameUITests.swift) |
 | 7 | Archive/unarchive, cancellation, fallback selection, running guard, rename conflict on confirm | [TaskArchivingUITests](Tests/UITests/Features/TaskArchiving/TaskArchivingUITests.swift) |
