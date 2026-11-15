@@ -173,7 +173,7 @@ on Linux without Apple's SDKs. Native compilation and UI tests still require mac
 
 Both commands cover the native app's production sources, the `TrackerClient` manifest,
 and its production sources and unit tests. Generated build output and native UI E2E/layout
-tests are outside the initial style scope. The command also checks the app's views for design token
+tests are outside the initial style scope. The second command also checks the app's views for design token
 literals, as described in [Design tokens](#design-tokens). This setup preserves the existing E2E files as
 required by `AGENTS.md`.
 
