@@ -13,6 +13,7 @@ struct TimeTrackerApp: App {
                 .environment(delegate.runtime.features.worklogHistory)
                 .environment(delegate.runtime.features.connection)
                 .environment(delegate.runtime.features.tracking)
+                .environment(delegate.runtime.features.trackingPill)
                 .environment(delegate.runtime.features.dailyTotals)
                 .environment(delegate.runtime.features.trackingAutomation)
                 .environment(delegate.runtime.features.taskRename)

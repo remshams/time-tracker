@@ -33,6 +33,7 @@
 		0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */; };
 		116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */; };
 		72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F85615390A489E1BD026F82 /* TrackingControls.swift */; };
+		7FBEEB35620238CE40748E5C /* TrackingPillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */; };
 		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
 		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
 		009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */; };
@@ -138,6 +139,7 @@
 		5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSummary.swift; sourceTree = "<group>"; };
 		06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
 		3F85615390A489E1BD026F82 /* TrackingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingControls.swift; sourceTree = "<group>"; };
+		71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingPillView.swift; sourceTree = "<group>"; };
 		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
 		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
 		E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogHistorySection.swift; sourceTree = "<group>"; };
@@ -392,6 +394,7 @@
 			isa = PBXGroup;
 			children = (
 				3F85615390A489E1BD026F82 /* TrackingControls.swift */,
+				71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */,
 				125E89E5A6E0417513C177E8 /* TrackingSettingsSection.swift */,
 			);
 			path = Tracking;
@@ -852,6 +855,7 @@
 				0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */,
 				116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */,
 				72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */,
+				7FBEEB35620238CE40748E5C /* TrackingPillView.swift in Sources */,
 				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
 				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
 				009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */,

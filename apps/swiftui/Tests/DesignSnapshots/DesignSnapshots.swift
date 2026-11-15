@@ -172,6 +172,7 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
         .environment(features.worklogHistory)
         .environment(features.connection)
         .environment(features.tracking)
+        .environment(features.trackingPill)
         .environment(features.dailyTotals)
         .environment(features.trackingAutomation)
         .environment(features.taskRename)
