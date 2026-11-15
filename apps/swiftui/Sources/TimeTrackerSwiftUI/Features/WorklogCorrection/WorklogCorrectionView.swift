@@ -57,7 +57,7 @@ struct WorklogCorrectionSheet: View {
                 LabeledContent("Duration") {
                     Text(formatClockDuration(end.timeIntervalSince(correction.start)))
                         .accessibilityIdentifier("worklog-correction.duration")
-                        .monospacedDigit()
+                        .font(TextRole.duration(.body))
                 }
             } else if correction.end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -67,7 +67,7 @@ struct WorklogCorrectionSheet: View {
                             max(0, context.date.timeIntervalSince(correction.start))
                         )
                     )
-                    .monospacedDigit()
+                    .font(TextRole.duration(.body))
                 }
             }
 
