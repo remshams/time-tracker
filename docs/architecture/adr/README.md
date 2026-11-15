@@ -52,4 +52,5 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) | Let daily totals load and roll over in their store | Accepted; partially superseded by ADR 0039. |
 | [0038](0038-move-the-remaining-feature-rules-out-of-tracker-sync.md) | Move the remaining feature rules out of TrackerSync | Accepted; partially superseded by ADR 0039. |
 | [0039](0039-let-the-stores-keep-their-own-values-current.md) | Let the stores keep their own values current | Accepted |
-| [0040](0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md) | Use design tokens for spacing, type and color in the macOS app | Accepted |
+| [0040](0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md) | Use design tokens for spacing, type and color in the macOS app | Accepted; partially superseded by ADR 0041. |
+| [0041](0041-add-icon-border-and-motion-tokens-for-the-tracking-pill.md) | Add icon, border and motion tokens for the tracking pill | Accepted |

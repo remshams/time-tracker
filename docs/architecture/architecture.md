@@ -308,7 +308,8 @@ such as `Features/WorklogCorrection` in both targets.
   The views take spacing, radii, fonts, opacities and colors from the design
   tokens in `Shared/DesignTokens`, and `scripts/swift-style.py` rejects number
   literals in view styling elsewhere
-  ([ADR 0040](adr/0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md)).
+  ([ADR 0040](adr/0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md),
+  [ADR 0041](adr/0041-add-icon-border-and-motion-tokens-for-the-tracking-pill.md)).
 
 ## Runtime flow
 
