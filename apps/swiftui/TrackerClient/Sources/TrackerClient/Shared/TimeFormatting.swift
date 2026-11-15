@@ -33,8 +33,6 @@ public struct DurationText: Equatable, Sendable {
         hoursAndMinutes = String(format: "%d:%02d", total / 3600, total / 60 % 60)
         self.seconds = String(format: ":%02d", total % 60)
     }
-
-    public var text: String { hoursAndMinutes + seconds }
 }
 
 /// A duration for VoiceOver in hours and minutes, such as "1 hour, 4 minutes". It reads seconds only under a minute.

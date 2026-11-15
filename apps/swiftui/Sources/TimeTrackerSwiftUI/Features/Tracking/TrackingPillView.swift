@@ -35,9 +35,9 @@ struct TrackingPillView: View {
         .disabled(!pill.isEnabled)
         .onHover { isHovering = $0 }
         .contextMenu { Button("Show Task") { pill.showTask() } }
-        .help(pill.help ?? "")
+        .help(shown.help(stale: pill.isStale))
         .accessibilityLabel(shown.actionLabel)
-        .accessibilityValue(pill.accessibilityValue ?? "")
+        .accessibilityValue(shown.accessibilityValue(stale: pill.isStale))
         .accessibilityAction(named: "Show Task") { pill.showTask() }
     }
 

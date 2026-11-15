@@ -33,7 +33,7 @@ enum IconSize {
 enum BorderWidth {
     /// The outline of a card.
     static let hairline: CGFloat = 1
-    /// The tracking pill's idle ring.
+    /// The tracking pill's rings.
     static let marker: CGFloat = 1.75
 }
 
