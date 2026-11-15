@@ -36,7 +36,7 @@ struct WorklogRow: View {
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: CornerRadius.medium))
         .overlay {
             RoundedRectangle(cornerRadius: CornerRadius.medium)
-                .stroke(.quaternary, lineWidth: 1)
+                .stroke(.quaternary, lineWidth: BorderWidth.hairline)
         }
         .contextMenu {
             WorklogContextMenu(worklog: worklog)

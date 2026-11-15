@@ -7,7 +7,7 @@ struct TaskIndicatorView: View {
 
     var body: some View {
         TaskIndicatorDot(indicator: TaskIndicator(taskID: taskID, isRunning: isRunning))
-            .frame(width: 16)
+            .frame(width: IconSize.regular)
             .accessibilityLabel(isRunning ? "Tracking" : "Not tracking")
             .accessibilityValue("Task color: \(TaskColor.forTaskID(taskID).rawValue)")
     }
