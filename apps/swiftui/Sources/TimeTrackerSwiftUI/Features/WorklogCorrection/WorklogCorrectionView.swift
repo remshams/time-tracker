@@ -13,7 +13,7 @@ struct WorklogCorrectionSheet: View {
                 .lineLimit(3)
                 .help(correction.taskName)
 
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 16) {
+            Grid(alignment: .leading, horizontalSpacing: Spacing.medium, verticalSpacing: Spacing.large) {
                 GridRow {
                     Text("Start")
                     DatePicker(
