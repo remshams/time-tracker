@@ -24,7 +24,9 @@ struct TaskIndicatorView: View {
             }
         }
         .frame(width: IconSize.regular, height: IconSize.regular)
+        // The image role keeps the label and the color value that the earlier symbol image exposed.
         .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isImage)
         .accessibilityLabel(isRunning ? "Tracking" : "Not tracking")
         .accessibilityValue("Task color: \(TaskColor.forTaskID(taskID).rawValue)")
     }

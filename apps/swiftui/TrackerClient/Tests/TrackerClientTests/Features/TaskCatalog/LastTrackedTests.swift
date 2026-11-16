@@ -19,13 +19,13 @@ final class LastTrackedTests: XCTestCase {
     }
 
     @MainActor
-    func testTaskWithoutAValidStartWasNeverTracked() {
+    func testTaskWithoutAValidStartWasNeverTracked() async {
         XCTAssertEqual(text(nil, today: "2026-11-16T00:00:00.000Z"), "Never")
         XCTAssertEqual(text("not a timestamp", today: "2026-11-16T00:00:00.000Z"), "Never")
     }
 
     @MainActor
-    func testStartTodayShowsItsLocalTime() {
+    func testStartTodayShowsItsLocalTime() async {
         XCTAssertEqual(text("2026-11-16T13:12:45.000Z", today: "2026-11-16T00:00:00.000Z"), "Today 13:12")
         XCTAssertEqual(
             text("2026-11-16T13:12:45.000Z", today: "2026-11-16T00:00:00.000Z", zone: "Europe/Berlin"),
@@ -33,7 +33,7 @@ final class LastTrackedTests: XCTestCase {
     }
 
     @MainActor
-    func testEarlierStartsThisWeekCountWholeDays() {
+    func testEarlierStartsThisWeekCountWholeDays() async {
         let today = "2026-11-16T09:00:00.000Z"
         XCTAssertEqual(text("2026-11-15T23:59:59.000Z", today: today), "Yesterday")
         XCTAssertEqual(text("2026-11-14T00:00:00.000Z", today: today), "2 days ago")
@@ -41,7 +41,7 @@ final class LastTrackedTests: XCTestCase {
     }
 
     @MainActor
-    func testStartsAWeekAgoOrLaterShowTheirDate() {
+    func testStartsAWeekAgoOrLaterShowTheirDate() async {
         let today = "2026-11-16T09:00:00.000Z"
         XCTAssertEqual(text("2026-11-09T12:00:00.000Z", today: today), "9 Nov 2026")
         XCTAssertEqual(text("2025-12-31T12:00:00.000Z", today: today), "31 Dec 2025")
@@ -51,7 +51,7 @@ final class LastTrackedTests: XCTestCase {
     }
 
     @MainActor
-    func testDaysFollowTheCalendarsTimeZone() {
+    func testDaysFollowTheCalendarsTimeZone() async {
         // 23:30 UTC on the 15th is 13:30 on the 16th at UTC+14.
         XCTAssertEqual(
             text("2026-11-15T23:30:00.000Z", today: "2026-11-16T09:00:00.000Z", zone: "Pacific/Kiritimati"),
