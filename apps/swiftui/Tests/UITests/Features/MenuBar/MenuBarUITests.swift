@@ -278,7 +278,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
                 let row = try XCTUnwrap(report.rows.first { $0.task.id == first.id })
                 let seconds = row.durationMicroseconds / 1_000_000
                 expected = seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
-                let displayed = String(format: "%02lld:%02lld:%02lld", seconds / 3600, seconds / 60 % 60, seconds % 60)
+                let displayed = windowDuration(row.durationMicroseconds)
                 waitUntil("The completed source total reaches the sidebar") {
                     self.element("task-sidebar.total.\(first.id)").value as? String == "Today's total: \(displayed)"
                 }

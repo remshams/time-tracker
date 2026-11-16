@@ -13,7 +13,9 @@ class DailyTotalsUITests: TrackerUITestCase {
         let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
         let report = try fixture.reports(start: day.start, end: day.end, at: now)
         launch()
-        for task in [first, unused] { assertSidebarTotal(task, report: report) }
+        assertSidebarTotal(first, report: report)
+        XCTAssertTrue(taskRow(unused).exists)
+        XCTAssertFalse(element("task-sidebar.total.\(unused.id)").exists, "A task without time today shows no total.")
         showTab("Archived")
         assertSidebarTotal(archived, report: report)
         waitUntil("The status item total matches the CLI report") {
@@ -21,7 +23,7 @@ class DailyTotalsUITests: TrackerUITestCase {
         }
         openStatusMenu()
         for task in [first, archived] {
-            let expected = clockDuration(report.rows.first { $0.task.id == task.id }?.durationMicroseconds ?? 0)
+            let expected = menuDuration(report.rows.first { $0.task.id == task.id }?.durationMicroseconds ?? 0)
             XCTAssertTrue(menuTask(task).label.contains(expected))
         }
         dismissStatusMenu()
@@ -63,15 +65,78 @@ class DailyTotalsUITests: TrackerUITestCase {
         XCTAssertEqual(try fixture.activeWorklog(), worklog)
     }
 
+    func testTodaySummarySplitsTheDayAndItsSegmentsShowTheirTasks() throws {
+        let first = try fixture.create("Larger share")
+        let second = try fixture.create("Smaller share")
+        let archived = try fixture.create("Archived share")
+        _ = try fixture.create("No share")
+        try completedToday(first, duration: 180)
+        try completedToday(second, duration: 60)
+        try completedToday(archived, duration: 60)
+        try fixture.archive(archived)
+        let now = Date()
+        let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
+        let report = try fixture.reports(start: day.start, end: day.end, at: now)
+        launch()
+        let summary = element("today-summary.total")
+        waitUntil("The summary shows today's total") {
+            summary.label.contains(self.spokenTotal(report.totalMicroseconds))
+        }
+        let shares = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today-summary.share."))
+        waitUntil("Each task with time today has one segment") { shares.count == 3 }
+        XCTAssertEqual(
+            (0..<shares.count).map { shares.element(boundBy: $0).identifier },
+            [first, archived, second].map { "today-summary.share.\($0.id)" },
+            "The largest share comes first, then the names decide.")
+        let firstShare = element("today-summary.share.\(first.id)")
+        XCTAssertTrue(firstShare.label.hasPrefix("\(first.name), "))
+        XCTAssertTrue(firstShare.label.hasSuffix(" percent"))
+
+        firstShare.click()
+        waitUntil("A segment selects its task") { self.element("task-details.task.\(first.id)").exists }
+        element("today-summary.share.\(archived.id)").click()
+        waitUntil("An archived task's segment opens the Archived tab") {
+            self.element("task-details.task.\(archived.id)").exists && self.taskRow(archived).exists
+        }
+    }
+
+    func testRowsShowWhenEachTaskLastRan() throws {
+        let today = try fixture.create("Ran today")
+        let never = try fixture.create("Never ran")
+        let log = try completedToday(today)
+        launch()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let started = try XCTUnwrap(formatter.date(from: log.start) ?? ISO8601DateFormatter().date(from: log.start))
+        let time = started.formatted(date: .omitted, time: .shortened)
+        waitUntil("The row of a task that ran today shows its start") {
+            self.taskRow(today).staticTexts["Today \(time)"].exists
+        }
+        XCTAssertTrue(taskRow(never).staticTexts["Never"].exists)
+    }
+
+    private func spokenTotal(_ microseconds: Int64) -> String {
+        let seconds = microseconds / 1_000_000
+        guard seconds >= 60 else { return "\(seconds) second\(seconds == 1 ? "" : "s")" }
+        let hours = seconds / 3600
+        let minutes = seconds / 60 % 60
+        let parts = [
+            hours > 0 ? "\(hours) hour\(hours == 1 ? "" : "s")" : nil,
+            minutes > 0 ? "\(minutes) minute\(minutes == 1 ? "" : "s")" : nil,
+        ]
+        return parts.compactMap { $0 }.joined(separator: ", ")
+    }
+
     private func assertSidebarTotal(_ task: FixtureTask, report: FixtureReport) {
         let seconds = report.rows.first { $0.task.id == task.id }?.durationMicroseconds ?? 0
-        let label = "Today's total: \(clockDuration(seconds))"
+        let label = "Today's total: \(windowDuration(seconds))"
         waitUntil("The sidebar total for \(task.name) matches the CLI") {
             self.taskRow(task).staticTexts[label].exists
         }
     }
 
-    private func clockDuration(_ microseconds: Int64) -> String {
+    private func menuDuration(_ microseconds: Int64) -> String {
         let seconds = microseconds / 1_000_000
         return String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
     }

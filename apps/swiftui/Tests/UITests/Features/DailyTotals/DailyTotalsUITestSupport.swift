@@ -12,6 +12,12 @@ extension TrackerUITestCase {
         return try fixture.completed(task, start: end.addingTimeInterval(-min(duration, available / 2)), end: end)
     }
 
+    /// A duration as the main window shows it, `H:MM:SS` without a leading zero.
+    func windowDuration(_ microseconds: Int64) -> String {
+        let seconds = microseconds / 1_000_000
+        return String(format: "%lld:%02lld:%02lld", seconds / 3600, seconds / 60 % 60, seconds % 60)
+    }
+
     func exactTodayDuration(_ task: FixtureTask) throws -> String {
         let now = Date()
         let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
