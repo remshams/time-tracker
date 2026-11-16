@@ -66,8 +66,6 @@ class DailyTotalsUITests: TrackerUITestCase {
     }
 
     func testTodaySummarySplitsTheDayAndItsSegmentsShowTheirTasks() throws {
-        // The names sort like the durations, so the order holds when the first minutes after midnight shorten the
-        // worklogs to the same length.
         let first = try fixture.create("A larger share")
         let archived = try fixture.create("B archived share")
         let second = try fixture.create("C smaller share")
@@ -95,9 +93,17 @@ class DailyTotalsUITests: TrackerUITestCase {
         let shares = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today-summary.share."))
         waitUntil("Each task with time today has one segment") { shares.count == 3 }
+        // Right after midnight `completedToday` shortens the worklogs, so the report decides the expected order:
+        // largest first, then by name.
+        let seconds = { (task: FixtureTask) -> Int64 in
+            (report.rows.first { $0.task.id == task.id }?.durationMicroseconds ?? 0) / 1_000_000
+        }
+        let expected = [first, archived, second].sorted {
+            seconds($0) != seconds($1) ? seconds($0) > seconds($1) : $0.name < $1.name
+        }
         XCTAssertEqual(
             (0..<shares.count).map { shares.element(boundBy: $0).identifier },
-            [first, archived, second].map { "today-summary.share.\($0.id)" },
+            expected.map { "today-summary.share.\($0.id)" },
             "The largest share comes first.")
         let firstShare = element("today-summary.share.\(first.id)")
         XCTAssertTrue(firstShare.label.hasPrefix("\(first.name), "))
