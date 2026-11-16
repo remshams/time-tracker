@@ -131,7 +131,7 @@ final class MenuPresentationTests: XCTestCase {
         let observer = menu.observer
         var changes = 0
         observer.onLabelChange = { changes += 1 }
-        XCTAssertEqual(observer.label.indicator.symbol, "circle.fill")
+        XCTAssertTrue(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking: First task")
         XCTAssertEqual(observer.label.totalText, "00:00")
         XCTAssertEqual(
@@ -243,7 +243,7 @@ final class MenuPresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         let menu = MenuHarness(fixture, showDailyTotal: true)
         let observer = menu.observer
-        XCTAssertEqual(observer.label.indicator.symbol, "circle")
+        XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. No task tracked yet")
         XCTAssertEqual(observer.label.totalText, "-")
         XCTAssertEqual(observer.content.totalText, "Unavailable")
@@ -253,7 +253,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertTrue(observer.content.todayTasks.isEmpty)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         try await menu.settled()
-        XCTAssertEqual(observer.label.indicator.symbol, "circle")
+        XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "No task tracked yet")
         XCTAssertEqual(observer.content.otherTasks.first?.durationText, "-")
         let content = observer.content
@@ -302,7 +302,7 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.settled()
         try await menu.settled()
         XCTAssertTrue(observer.content.isStale)
-        XCTAssertEqual(observer.label.indicator.symbol, "circle")
+        XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(observer.label.totalText, "~00:01")
         XCTAssertEqual(observer.content.dailyTotalsStatus, .cached)
