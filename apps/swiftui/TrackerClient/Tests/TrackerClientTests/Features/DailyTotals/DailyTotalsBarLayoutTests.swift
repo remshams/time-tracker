@@ -53,6 +53,14 @@ final class DailyTotalsBarLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testZeroWidthAndZeroFractionsGiveFiniteWidths() async {
+        let empty = DailyTotalsBarLayout(fractions: [0.5, 0.5], width: 0, gap: 2, minimum: 4)
+        XCTAssertEqual(empty.gap, 0)
+        assertWidths(empty.widths, [0, 0])
+        assertWidths(DailyTotalsBarLayout(fractions: [0, 0], width: 100, gap: 2, minimum: 4).widths, [4, 4])
+    }
+
+    @MainActor
     func testNoSharesHaveNoSegments() async {
         let layout = DailyTotalsBarLayout(fractions: [], width: 100, gap: 2, minimum: 4)
         assertWidths(layout.widths, [])
