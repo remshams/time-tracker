@@ -81,9 +81,17 @@ class DailyTotalsUITests: TrackerUITestCase {
         let report = try fixture.reports(start: day.start, end: day.end, at: now)
         launch()
         let summary = element("today-summary.total")
-        waitUntil("The summary shows today's total") {
-            summary.label.contains(self.spokenTotal(report.totalMicroseconds))
+        let spoken = spokenTotal(report.totalMicroseconds)
+        let shown = windowDuration(report.totalMicroseconds)
+        // VoiceOver reads the spoken total; the text shows the clock form.
+        let showsTotal = {
+            let texts = [summary.label, summary.value as? String ?? ""]
+            return texts.contains { $0.contains(spoken) || $0.contains(shown) }
         }
+        waitUntil("The summary shows today's total") { summary.exists && showsTotal() }
+        XCTAssertTrue(
+            showsTotal(),
+            "Expected \(spoken) or \(shown), got label \(summary.label), value \(String(describing: summary.value))")
         let shares = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today-summary.share."))
         waitUntil("Each task with time today has one segment") { shares.count == 3 }
