@@ -83,7 +83,7 @@ private struct TrackerSidebarRow: View {
         let total = dailyTotals.taskTotal(taskID: task.id)
         let shownRunning = !connection.stale && isRunning
         HStack(spacing: Spacing.small) {
-            TaskIndicatorView(taskID: task.id, isRunning: shownRunning, hasTimeToday: total.content?.hasTime == true)
+            TaskRowIndicator(total: total, taskID: task.id, isRunning: shownRunning)
                 .accessibilityIdentifier(shownRunning ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
             VStack(alignment: .leading, spacing: Spacing.xxSmall) {
                 Text(task.name)
@@ -137,6 +137,17 @@ private struct TrackerSidebarRow: View {
         .disabled(!showsStart)
         .help(tracking.active == nil ? "Start tracking \(task.name)" : "Stop the current timer and start \(task.name)")
         .accessibilityHidden(true)
+    }
+}
+
+/// The row's color mark. It reads the task's total here, so a tick redraws the mark and not the whole row.
+private struct TaskRowIndicator: View {
+    let total: TaskDailyTotal
+    let taskID: String
+    let isRunning: Bool
+
+    var body: some View {
+        TaskIndicatorView(taskID: taskID, isRunning: isRunning, hasTimeToday: total.content?.hasTime == true)
     }
 }
 
