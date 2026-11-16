@@ -128,7 +128,7 @@ private struct TrackingPillTrailing: View {
         let elapsed = state.elapsed ?? lastElapsed
         ZStack(alignment: .leading) {
             Text("00:00:00").hidden()
-            Text("\(elapsed.hoursAndMinutes)\(Text(elapsed.seconds).foregroundStyle(.secondary))")
+            DurationLabel(duration: elapsed)
                 .opacity(state.isRunning ? 1 : 0)
             Text("Start").opacity(state.isRunning ? 0 : 1)
         }

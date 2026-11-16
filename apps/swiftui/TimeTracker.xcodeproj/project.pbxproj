@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		514FB80C5D7E28612F5DEC8E /* DurationLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B97A0AE126FECB273EB49C2 /* DurationLabel.swift */; };
+		772635F03B29C3590CF54E9B /* TodaySummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7866040F6B5C114A5CF3D32 /* TodaySummary.swift */; };
 		0C391F78DA9ADAAB4A231999 /* RunLoopTrackerScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */; };
 		F30DD6C09A7D9D49A4CD415B /* SystemTrackerClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */; };
 		A53F467E0E26F6B210E885BA /* MenuShortcutSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */; };
@@ -108,6 +110,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		3B97A0AE126FECB273EB49C2 /* DurationLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationLabel.swift; sourceTree = "<group>"; };
+		F7866040F6B5C114A5CF3D32 /* TodaySummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodaySummary.swift; sourceTree = "<group>"; };
 		A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunLoopTrackerScheduler.swift; sourceTree = "<group>"; };
 		0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemTrackerClock.swift; sourceTree = "<group>"; };
 		FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuShortcutSettingsSection.swift; sourceTree = "<group>"; };
@@ -306,8 +310,25 @@
 			isa = PBXGroup;
 			children = (
 				B37F6E685A6DC999026F1A12 /* DesignTokens */,
+				8C0E2AD77BE57DADA769AAA5 /* Durations */,
 			);
 			path = Shared;
+			sourceTree = "<group>";
+		};
+		402A9F1B1FD9A87989A87012 /* DailyTotals */ = {
+			isa = PBXGroup;
+			children = (
+				F7866040F6B5C114A5CF3D32 /* TodaySummary.swift */,
+			);
+			path = DailyTotals;
+			sourceTree = "<group>";
+		};
+		8C0E2AD77BE57DADA769AAA5 /* Durations */ = {
+			isa = PBXGroup;
+			children = (
+				3B97A0AE126FECB273EB49C2 /* DurationLabel.swift */,
+			);
+			path = Durations;
 			sourceTree = "<group>";
 		};
 		B37F6E685A6DC999026F1A12 /* DesignTokens */ = {
@@ -323,6 +344,7 @@
 			children = (
 				67815C35FE40B6535CB0E7B6 /* MenuBar */,
 				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
+				402A9F1B1FD9A87989A87012 /* DailyTotals */,
 				F70000000000000000000003 /* ProgressPresentation */,
 				7B61613478C091D18A157689 /* TaskCreation */,
 				7896A35DF77F32F16827239B /* TaskEditing */,
@@ -828,6 +850,8 @@
 				9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */,
 				DEA4B7AF8F9DEC52BA16829B /* TrackerDetailPresentation.swift in Sources */,
 				65128E7FA626DF7686DAC227 /* DesignTokens.swift in Sources */,
+				514FB80C5D7E28612F5DEC8E /* DurationLabel.swift in Sources */,
+				772635F03B29C3590CF54E9B /* TodaySummary.swift in Sources */,
 				C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */,
 				EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */,
 				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,

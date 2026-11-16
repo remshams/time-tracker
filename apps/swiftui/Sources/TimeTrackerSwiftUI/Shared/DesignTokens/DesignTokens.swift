@@ -7,6 +7,8 @@ import TrackerClient
 
 /// The spacing scale for padding and stack, grid and spacer spacing, in points.
 enum Spacing {
+    /// The gap between a bar's segments, or between a task row's two lines.
+    static let xxSmall: CGFloat = 2
     static let xSmall: CGFloat = 4
     static let small: CGFloat = 8
     static let medium: CGFloat = 12
@@ -30,11 +32,22 @@ enum IconSize {
     static let button: CGFloat = 22
 }
 
+/// Heights and widths of today's bar in the sidebar, in points.
+enum BarSize {
+    static let height: CGFloat = 8
+    /// The line under the selected task's segment.
+    static let underline: CGFloat = 2
+    /// The narrowest segment, so a task with a few seconds stays visible and clickable.
+    static let minimumSegment: CGFloat = 4
+}
+
 enum BorderWidth {
     /// The outline of a card.
     static let hairline: CGFloat = 1
-    /// The tracking pill's rings.
+    /// The tracking pill's rings and a task indicator's ring.
     static let marker: CGFloat = 1.75
+    /// The halo around the running task's indicator.
+    static let halo: CGFloat = 3
 }
 
 /// Animation timing for interaction feedback.
@@ -61,10 +74,10 @@ enum TextRole {
     static let detailEmphasis = Font.subheadline.weight(.medium)
     static let caption = Font.caption
     static let captionEmphasis = Font.caption.weight(.medium)
-    /// The SF Symbol that marks a task's color.
-    static let taskMarker = Font.callout.weight(.semibold)
     /// The tracking pill's task name.
     static let status = Font.body
+    /// Today's total at the top of the sidebar.
+    static let dayTotal = Font.system(.title, design: .rounded, weight: .medium).monospacedDigit()
     /// A small symbol next to status text, such as the stale connection's `wifi.slash`.
     static let statusGlyph = Font.caption.weight(.semibold)
     /// The stop or play glyph inside a marker disc. It has a fixed size because the disc has one.
@@ -82,6 +95,8 @@ enum Emphasis {
     static let restingTint = 0.1
     static let hoverTint = 0.15
     static let pressedTint = 0.28
+    /// The halo around the running task's indicator.
+    static let halo = 0.35
     static let disabled = 0.5
 }
 
