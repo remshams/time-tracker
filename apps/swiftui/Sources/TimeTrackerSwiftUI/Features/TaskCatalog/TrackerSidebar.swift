@@ -64,8 +64,8 @@ struct TrackerSidebar: View {
 /// One task in the sidebar, always two lines tall: the color mark, the name, and when the task last ran or since when it
 /// runs. Today's total sits at the trailing edge once the task has time today. Hovering a row whose task isn't the
 /// tracking pill's and can start shows a start button in place of the total, so one task never shows two start or stop
-/// controls. The button starts the task and stops
-/// the running one. Keyboard and VoiceOver users start a task from the context menu or the row's accessibility action instead.
+/// controls. The button starts the task and stops the running one. Keyboard and VoiceOver users start a task from the
+/// context menu or the row's accessibility action instead.
 private struct TrackerSidebarRow: View {
     let task: TaskItem
     let availability: TrackingAvailability

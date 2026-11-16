@@ -31,8 +31,3 @@ public struct DailyTotalShare: Equatable, Sendable, Identifiable {
         return shares.sorted { ($1.seconds, $0.name, $0.taskID) < ($0.seconds, $1.name, $1.taskID) }
     }
 }
-
-/// A duration in whole seconds, as the window shows it.
-func wholeSeconds(_ duration: TimeInterval) -> Int {
-    Int(max(0, duration))
-}
