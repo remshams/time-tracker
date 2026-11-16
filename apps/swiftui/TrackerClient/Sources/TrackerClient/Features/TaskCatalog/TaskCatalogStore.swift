@@ -48,6 +48,13 @@ public final class TaskCatalogStore: ChangeGuardedStore {
         if switchSelection(to: taskID) { reloadHistory() }
     }
 
+    /// Changes to the task's tab and selects it, as when the user picks a task outside the sidebar. Does nothing for a
+    /// task the catalog doesn't hold.
+    public func showTask(id taskID: String) {
+        guard let task = tasks.first(where: { $0.id == taskID }) else { return }
+        showTask(task)
+    }
+
     /// Changes to the tab and selection of a task the tracker just created, and reloads the history once if either
     /// changed. The reload before this call may have failed. The catalog then doesn't hold the task, so `created`
     /// decides the tab, and that tab restores its remembered selection or its first task.
