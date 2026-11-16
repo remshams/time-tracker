@@ -24,9 +24,11 @@ TRACKING_AVAILABILITY = "Features/Tracking/TrackingAvailability.swift"
 TRACKING_PILL = "Features/Tracking/TrackingPill.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
 TASK_ORDER = "Features/TaskCatalog/TaskOrder.swift"
+LAST_TRACKED = "Features/TaskCatalog/LastTracked.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
 TOTALS = "Features/DailyTotals/DailyTotalsStore.swift"
+TOTAL_SHARE = "Features/DailyTotals/DailyTotalShare.swift"
 MENU = "Features/MenuBar/TrackerMenuContent.swift"
 MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
@@ -84,6 +86,7 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING, CATALOG,
         HISTORY, MENU_BAR_STORE, MENU_CLIPBOARD,
     ],
+    "Features/DailyTotals/DailyTotalShareTests.swift": [TOTAL_SHARE, TOTALS, TIME_FORMATTING],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
@@ -115,6 +118,7 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION,
         MOVE, CONNECTION, DELETION, BULK_ARCHIVING,
     ],
+    "Features/TaskCatalog/LastTrackedTests.swift": [LAST_TRACKED, TIME_FORMATTING],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG, TASK_ORDER],
     "Features/TaskCatalog/TaskOrderTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MODELS, TASK_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU,
@@ -176,11 +180,13 @@ TEST_PRODUCTION = {
 # suite mapped to TRACKING runs them. The observable stores assign through the
 # shared change-guarded helper. The dialog stores and the tracking error claim the
 # presentation gate. The tracking, daily totals and menu bar stores drive the display
-# clock. A direct change to a key file still selects only that file.
+# clock. The daily totals store builds the shares and the last tracked text. A direct
+# change to a key file still selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD, PRESENTATION_GATE, DISPLAY_CLOCK),
     **{store: (CHANGE_GUARD,) for store in (CATALOG, HISTORY, CONNECTION, AUTOMATION)},
-    **{store: (CHANGE_GUARD, DISPLAY_CLOCK) for store in (TOTALS, MENU_BAR_STORE)},
+    TOTALS: (CHANGE_GUARD, DISPLAY_CLOCK, TOTAL_SHARE, LAST_TRACKED),
+    MENU_BAR_STORE: (CHANGE_GUARD, DISPLAY_CLOCK),
     # The dialog flows and the tracking failures explain uncertain writes the same way. The sync's suites cover
     # the tracking failures, which TrackingStore records for the requests and the auto-pause.
     SYNC: (WRITE_FAILURE,),
