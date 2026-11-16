@@ -212,6 +212,24 @@ final class TaskCatalogTests: XCTestCase {
     }
 
     @MainActor
+    func testShowingATaskByIDSwitchesToItsTabAndIgnoresUnknownTasks() async {
+        let state = TaskCatalogStore()
+        let reloads = HistoryReloads()
+        state.reloadHistory = { reloads.count += 1 }
+        XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+
+        state.showTask(id: "missing-task")
+        XCTAssertEqual(reloads.count, 0, "A task the catalog doesn't hold changes nothing.")
+        XCTAssertEqual(state.tab, .active)
+        XCTAssertEqual(state.selectedTaskID, firstTask.id)
+
+        state.showTask(id: archivedTask.id)
+        XCTAssertEqual(reloads.count, 1)
+        XCTAssertEqual(state.tab, .archived)
+        XCTAssertEqual(state.selectedTaskID, archivedTask.id)
+    }
+
+    @MainActor
     func testAcceptedConnectionClearsBothTabMemoriesBeforeLoadingItsTaskList() async {
         let state = TaskCatalogStore()
         let otherArchived = TaskItem(

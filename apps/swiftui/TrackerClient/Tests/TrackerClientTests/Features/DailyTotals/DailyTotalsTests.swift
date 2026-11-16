@@ -117,6 +117,72 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     @MainActor
+    func testSharesFollowTheRunningWorklogAndNotifyOnlyWhenTheyChange() async throws {
+        let clock = FakeClock()
+        let catalog = TaskCatalogStore()
+        let tracking = TrackingStore()
+        let store = DailyTotalsStore(clock: clock, calendar: dailyCalendar(), catalog: catalog, tracking: tracking)
+        _ = catalog.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: activeWorklog)
+        tracking.acceptTaskList(active: activeWorklog)
+        let probe = ObservationProbe { _ = store.shares }
+        store.refreshTotals()
+        XCTAssertFalse(probe.consume(), "Without a report there are no shares.")
+        XCTAssertEqual(store.shares, [])
+        let request = try XCTUnwrap(store.begin())
+        store.accept(
+            TaskListTotalsRefresh(
+                taskList: TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog),
+                rows: [total(firstTask, 20), total(archivedTask, 60)]),
+            requested: request)
+        store.refreshTotals()
+        XCTAssertTrue(probe.consume())
+        XCTAssertEqual(store.shares.map(\.taskID), [archivedTask.id, firstTask.id])
+        XCTAssertEqual(store.shares.map(\.fraction), [0.75, 0.25])
+        store.refreshTotals()
+        XCTAssertFalse(probe.consume(), "An unchanged refresh must not redraw the bar.")
+        clock.now.addTimeInterval(41)
+        clock.uptime += 41
+        store.refreshTotals()
+        XCTAssertTrue(probe.consume())
+        XCTAssertEqual(store.shares.map(\.taskID), [firstTask.id, archivedTask.id], "The running task overtakes.")
+        XCTAssertEqual(store.shares.map(\.seconds), [61, 60])
+    }
+
+    @MainActor
+    func testDayChangesAtMidnightButNotWithTheConnection() async throws {
+        let clock = FakeClock()
+        let store = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let today = try XCTUnwrap(dailyCalendar().dateInterval(of: .day, for: clock.now))
+        XCTAssertEqual(store.day, today)
+        let probe = ObservationProbe { _ = store.day }
+        let request = try XCTUnwrap(store.begin())
+        store.accept(
+            TaskListTotalsRefresh(taskList: TaskListResources(tasks: [firstTask], active: nil), rows: []),
+            requested: request)
+        store.acceptConnection()
+        XCTAssertFalse(probe.consume(), "A new connection keeps the day.")
+        XCTAssertNil(store.totalDuration(active: nil), "A new connection drops the totals.")
+        XCTAssertEqual(store.loadStatus, .unavailable)
+        clock.now = today.end
+        store.acceptTaskList(reportRequested: false)
+        XCTAssertTrue(probe.consume())
+        XCTAssertEqual(store.day?.start, today.end)
+    }
+
+    @MainActor
+    func testLastTrackedCountsFromTheStoresDay() async throws {
+        let clock = FakeClock()
+        let store = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
+        let task = TaskItem(id: "task", name: "Task", archived: false, latestStart: "2025-01-01T00:00:00.000Z")
+        XCTAssertTrue(store.lastTracked(task).text.hasPrefix("Today "))
+        clock.now.addTimeInterval(86_400)
+        XCTAssertTrue(
+            store.lastTracked(task).text.hasPrefix("Today "), "The text changes only when the store's day does.")
+        store.acceptTaskList(reportRequested: false)
+        XCTAssertEqual(store.lastTracked(task).text, "Yesterday")
+    }
+
+    @MainActor
     func testAggregateProjectsRunningTaskWhenItsReportRowIsAbsent() async throws {
         let clock = FakeClock()
         let state = DailyTotalsStore(clock: clock, calendar: dailyCalendar())
@@ -430,7 +496,7 @@ final class DailyTotalsAppTests: XCTestCase {
         let totals = TaskTotalProbes(fixture.features.dailyTotals, taskIDs: [firstTask.id])
         var observedErrors: [String?] = []
         var observedStatuses: [DailyTotalsStatus] = []
-        var observedTexts: [String] = []
+        var observedSeconds: [Int?] = []
         var changedTotals: [Set<String>] = []
         for message in ["First report failure", "Second report failure"] {
             fixture.scheduler.poll?.fire()
@@ -439,13 +505,13 @@ final class DailyTotalsAppTests: XCTestCase {
             try await fixture.settled()
             observedErrors.append(fixture.totalsError)
             observedStatuses.append(fixture.features.dailyTotals.status)
-            observedTexts.append(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.text ?? "")
+            observedSeconds.append(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.seconds)
             changedTotals.append(totals.changed())
             assertRefreshed(fixture)
         }
         XCTAssertEqual(observedErrors, ["First report failure", "Second report failure"])
         XCTAssertEqual(observedStatuses, [.cached, .cached])
-        XCTAssertEqual(observedTexts, ["00:00:04", "00:00:04"])
+        XCTAssertEqual(observedSeconds, [4, 4])
         XCTAssertEqual(changedTotals, [Set([firstTask.id]), []], "Only the cached explanation changes the label.")
     }
 

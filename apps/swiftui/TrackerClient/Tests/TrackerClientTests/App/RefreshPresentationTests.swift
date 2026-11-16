@@ -76,8 +76,8 @@ final class RefreshPresentationTests: XCTestCase {
         assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), Set([secondTask.id]))
         XCTAssertFalse(lists.consume())
-        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:10")
-        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: secondTask.id).content?.text, "00:00:25")
+        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.seconds, 10)
+        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: secondTask.id).content?.seconds, 25)
         // Closing the menu that isn't open changes nothing.
         fixture.sync.setMenuVisible(false)
         XCTAssertEqual(totals.changed(), [], "An unchanged report must not redraw the rows again.")
@@ -110,8 +110,8 @@ final class RefreshPresentationTests: XCTestCase {
         assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), Set([firstTask.id]))
         XCTAssertFalse(lists.consume())
-        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:15")
-        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: secondTask.id).content?.text, "00:00:20")
+        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content?.seconds, 15)
+        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: secondTask.id).content?.seconds, 20)
     }
 
     @MainActor
@@ -132,7 +132,7 @@ final class RefreshPresentationTests: XCTestCase {
         assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), Set([firstTask.id, secondTask.id]))
         let first = fixture.features.dailyTotals.taskTotal(taskID: firstTask.id).content
-        XCTAssertEqual(first?.text, "00:00:10")
+        XCTAssertEqual(first?.seconds, 10)
         XCTAssertEqual(first?.explanation, fixture.features.dailyTotals.totalsExplanation)
         let second = fixture.features.dailyTotals.taskTotal(taskID: secondTask.id).content
         XCTAssertTrue(second?.explanation.contains("cached") == true)
@@ -163,10 +163,10 @@ final class RefreshPresentationTests: XCTestCase {
         try await fixture.settled()
         assertRefreshed(fixture)
         XCTAssertEqual(totals.changed(), [], "A removed task's label keeps its last total.")
-        XCTAssertEqual(removedTotal.content?.text, "00:00:20")
+        XCTAssertEqual(removedTotal.content?.seconds, 20)
         let replacement = fixture.features.dailyTotals.taskTotal(taskID: secondTask.id)
         XCTAssertFalse(replacement === removedTotal, "A removed task's total must stop receiving updates.")
         XCTAssertNil(replacement.content)
-        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: added.id).content?.text, "00:00:30")
+        XCTAssertEqual(fixture.features.dailyTotals.taskTotal(taskID: added.id).content?.seconds, 30)
     }
 }

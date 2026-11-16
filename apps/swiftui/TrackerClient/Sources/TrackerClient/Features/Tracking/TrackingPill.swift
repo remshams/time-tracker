@@ -105,8 +105,8 @@ public final class TrackingPill {
 
     /// Selects the shown task and changes to its tab.
     public func showTask() {
-        guard let shown, let task = catalog.tasks.first(where: { $0.id == shown.taskID }) else { return }
-        catalog.showTask(task)
+        guard let shown else { return }
+        catalog.showTask(id: shown.taskID)
     }
 
     private var current: TrackingPillState? {

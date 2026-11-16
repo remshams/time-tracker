@@ -2,8 +2,15 @@ import Foundation
 import Observation
 
 public struct TaskDailyTotalPresentation: Equatable, Sendable {
-    public let text: String
+    /// The task's time today in whole seconds, or `nil` while no report covers today.
+    public let seconds: Int?
     public let explanation: String
+
+    /// The time to show, or `nil` while it's unavailable.
+    public var duration: DurationText? { seconds.map(DurationText.init(seconds:)) }
+
+    /// Whether the task has at least a second today.
+    public var hasTime: Bool { (seconds ?? 0) > 0 }
 }
 
 /// Holds one task's daily total so a ticking timer redraws only that task's label.
@@ -42,6 +49,10 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     public private(set) var totalsExplanation = "Today's total is unavailable"
     /// Today's duration for each catalog task that a report covers.
     public private(set) var taskDurations: [String: TimeInterval] = [:]
+    /// Each catalog task's part of today's total in the order the bar shows them. Empty while no report covers today.
+    public private(set) var shares: [DailyTotalShare] = []
+    /// The current local day. It changes at midnight, so the views that read it, such as last tracked, change with it.
+    public private(set) var day: DateInterval?
     /// Takes in the task list that came with a report. `TrackerFeatures` sets it to `TrackerSync`'s task list
     /// handling.
     @ObservationIgnored var acceptReportedTaskList: @MainActor (TaskListResources) -> Void = { _ in }
@@ -64,7 +75,6 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     @ObservationIgnored private var anchorDate: Date?
     @ObservationIgnored private var anchorUptime: TimeInterval = 0
     @ObservationIgnored private var anchorGeneration = 0
-    @ObservationIgnored private(set) var day: DateInterval?
     @ObservationIgnored private(set) var loadStatus: DailyTotalsStatus = .unavailable
     @ObservationIgnored private(set) var error: String?
     @ObservationIgnored private var taskTotals: [String: TaskDailyTotalPresentation] = [:]
@@ -165,19 +175,23 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         let nextDay = calendar.dateInterval(of: .day, for: clock.now)
         guard nextDay != day else { return false }
         day = nextDay
+        dropTotals()
+        return true
+    }
+
+    /// Drops the totals of the previous connection.
+    func acceptConnection() {
+        // Only the totals start over, so the views that read the day don't redraw.
+        if !updateDay() { dropTotals() }
+    }
+
+    private func dropTotals() {
         rows = [:]
         request = nil
         reportedActive = nil
         anchorDate = nil
         loadStatus = .unavailable
         error = nil
-        return true
-    }
-
-    /// Drops the totals of the previous connection.
-    func acceptConnection() {
-        day = nil
-        updateDay()
     }
 
     func begin() -> Request? {
@@ -311,12 +325,12 @@ public final class DailyTotalsStore: ChangeGuardedStore {
             totals[task.id] = duration(taskID: task.id, active: active)
         }
         set(\.taskDurations, durations)
+        set(\.shares, DailyTotalShare.shares(of: tasks, durations: durations))
         taskTotals = Dictionary(
             uniqueKeysWithValues: tasks.map {
                 (
                     $0.id,
-                    TaskDailyTotalPresentation(
-                        text: durations[$0.id].map(formatClockDuration) ?? "-", explanation: explanation)
+                    TaskDailyTotalPresentation(seconds: durations[$0.id].map(wholeSeconds), explanation: explanation)
                 )
             })
         for (taskID, model) in taskTotalModels {
@@ -334,6 +348,12 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         let model = TaskDailyTotal(content: taskTotals[taskID])
         taskTotalModels[taskID] = model
         return model
+    }
+
+    /// When the task last started, counted from the current day. The store owns the day and the calendar, so a view
+    /// that reads this redraws at midnight.
+    public func lastTracked(_ task: TaskItem) -> LastTracked {
+        LastTracked(latestStart: task.latestStart, today: day?.start ?? clock.now, calendar: calendar)
     }
 
     private func baseDuration(taskID: String) -> TimeInterval {
