@@ -11,12 +11,12 @@ struct TodaySummary: View {
     var body: some View {
         let shares = dailyTotals.shares
         let selected = catalog.selectedTaskID
+        // The bar and the readout keep their place without shares, so the list doesn't move when the first time
+        // arrives.
         VStack(alignment: .leading, spacing: Spacing.small) {
             heading
-            if !shares.isEmpty {
-                DailyTotalsBar(shares: shares, selected: selected, hovered: $hovered)
-                readout(shares.first { $0.id == hovered } ?? shares.first { $0.id == selected })
-            }
+            DailyTotalsBar(shares: shares, selected: selected, hovered: $hovered)
+            readout(shares.first { $0.id == hovered } ?? shares.first { $0.id == selected })
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(dailyTotals.totalsExplanation)
@@ -30,9 +30,8 @@ struct TodaySummary: View {
                 .font(TextRole.heading)
                 .foregroundStyle(.secondary)
             total
+                .accessibilityIdentifier("today-summary.total")
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("today-summary.total")
     }
 
     @ViewBuilder private var total: some View {
@@ -43,10 +42,15 @@ struct TodaySummary: View {
                 .lineLimit(1)
                 .accessibilityLabel(spokenDuration(seconds))
         } else {
-            Text(dailyTotals.dayTotal == nil ? "Unavailable" : "Nothing tracked yet")
+            Text(placeholder)
                 .font(TextRole.detail)
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    private var placeholder: String {
+        if dailyTotals.dayTotal != nil { return "Nothing tracked yet" }
+        return dailyTotals.status == .loading ? "Loading" : "Unavailable"
     }
 
     /// The readout keeps its line while no share is focused, so the list below doesn't move. VoiceOver reads the same
@@ -70,8 +74,8 @@ struct TodaySummary: View {
     }
 }
 
-/// One segment per task with time today, as wide as the task's share. Every segment keeps its full color; a line
-/// under the selected one marks it.
+/// One segment per task with time today, as wide as the task's share, or an empty track without shares. Every segment
+/// keeps its full color; a line under the selected one marks it.
 private struct DailyTotalsBar: View {
     let shares: [DailyTotalShare]
     let selected: String?
@@ -80,14 +84,38 @@ private struct DailyTotalsBar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let usable = max(0, proxy.size.width - Spacing.xxSmall * CGFloat(shares.count - 1))
-            HStack(alignment: .top, spacing: Spacing.xxSmall) {
-                ForEach(shares) { share in
-                    segment(share, width: max(BarSize.minimumSegment, usable * share.fraction))
+            if shares.isEmpty {
+                RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                    .fill(.quaternary)
+                    .frame(height: BarSize.height)
+            } else {
+                let usable = max(0, proxy.size.width - Spacing.xxSmall * CGFloat(shares.count - 1))
+                HStack(alignment: .top, spacing: Spacing.xxSmall) {
+                    ForEach(Array(zip(shares, widths(in: usable))), id: \.0.id) { share, width in
+                        segment(share, width: width)
+                    }
                 }
             }
         }
         .frame(height: BarSize.height + Spacing.xxSmall + BarSize.underline)
+        // More tasks than minimum segments fit would run past the sidebar.
+        .clipped()
+    }
+
+    /// Each segment's width: the narrow shares get the minimum, and the wider ones split the rest by their share.
+    /// Raising one share to the minimum takes width from the others, which can push another one below it.
+    private func widths(in usable: CGFloat) -> [CGFloat] {
+        var narrow = Set<String>()
+        while true {
+            let rest = max(0, usable - BarSize.minimumSegment * CGFloat(narrow.count))
+            let wide = shares.filter { !narrow.contains($0.id) }
+            let fraction = wide.reduce(0) { $0 + $1.fraction }
+            let tooNarrow = wide.filter { fraction == 0 || rest * $0.fraction / fraction < BarSize.minimumSegment }
+            if tooNarrow.isEmpty {
+                return shares.map { narrow.contains($0.id) ? BarSize.minimumSegment : rest * $0.fraction / fraction }
+            }
+            narrow.formUnion(tooNarrow.map(\.id))
+        }
     }
 
     private func segment(_ share: DailyTotalShare, width: CGFloat) -> some View {

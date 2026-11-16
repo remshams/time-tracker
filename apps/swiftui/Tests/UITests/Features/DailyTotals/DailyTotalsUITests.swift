@@ -66,13 +66,15 @@ class DailyTotalsUITests: TrackerUITestCase {
     }
 
     func testTodaySummarySplitsTheDayAndItsSegmentsShowTheirTasks() throws {
-        let first = try fixture.create("Larger share")
-        let second = try fixture.create("Smaller share")
-        let archived = try fixture.create("Archived share")
-        _ = try fixture.create("No share")
+        // The names sort like the durations, so the order holds when the first minutes after midnight shorten the
+        // worklogs to the same length.
+        let first = try fixture.create("A larger share")
+        let archived = try fixture.create("B archived share")
+        let second = try fixture.create("C smaller share")
+        let unshared = try fixture.create("D no share")
         try completedToday(first, duration: 180)
+        try completedToday(archived, duration: 120)
         try completedToday(second, duration: 60)
-        try completedToday(archived, duration: 60)
         try fixture.archive(archived)
         let now = Date()
         let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
@@ -88,11 +90,12 @@ class DailyTotalsUITests: TrackerUITestCase {
         XCTAssertEqual(
             (0..<shares.count).map { shares.element(boundBy: $0).identifier },
             [first, archived, second].map { "today-summary.share.\($0.id)" },
-            "The largest share comes first, then the names decide.")
+            "The largest share comes first.")
         let firstShare = element("today-summary.share.\(first.id)")
         XCTAssertTrue(firstShare.label.hasPrefix("\(first.name), "))
         XCTAssertTrue(firstShare.label.hasSuffix(" percent"))
 
+        select(unshared)
         firstShare.click()
         waitUntil("A segment selects its task") { self.element("task-details.task.\(first.id)").exists }
         element("today-summary.share.\(archived.id)").click()
