@@ -89,33 +89,17 @@ private struct DailyTotalsBar: View {
                     .fill(.quaternary)
                     .frame(height: BarSize.height)
             } else {
-                let usable = max(0, proxy.size.width - Spacing.xxSmall * CGFloat(shares.count - 1))
-                HStack(alignment: .top, spacing: Spacing.xxSmall) {
-                    ForEach(Array(zip(shares, widths(in: usable))), id: \.0.id) { share, width in
+                let layout = DailyTotalsBarLayout(
+                    fractions: shares.map(\.fraction), width: proxy.size.width, gap: Spacing.xxSmall,
+                    minimum: BarSize.minimumSegment)
+                HStack(alignment: .top, spacing: layout.gap) {
+                    ForEach(Array(zip(shares, layout.widths)), id: \.0.id) { share, width in
                         segment(share, width: width)
                     }
                 }
             }
         }
         .frame(height: BarSize.height + Spacing.xxSmall + BarSize.underline)
-        // More tasks than minimum segments fit would run past the sidebar.
-        .clipped()
-    }
-
-    /// Each segment's width: the narrow shares get the minimum, and the wider ones split the rest by their share.
-    /// Raising one share to the minimum takes width from the others, which can push another one below it.
-    private func widths(in usable: CGFloat) -> [CGFloat] {
-        var narrow = Set<String>()
-        while true {
-            let rest = max(0, usable - BarSize.minimumSegment * CGFloat(narrow.count))
-            let wide = shares.filter { !narrow.contains($0.id) }
-            let fraction = wide.reduce(0) { $0 + $1.fraction }
-            let tooNarrow = wide.filter { fraction == 0 || rest * $0.fraction / fraction < BarSize.minimumSegment }
-            if tooNarrow.isEmpty {
-                return shares.map { narrow.contains($0.id) ? BarSize.minimumSegment : rest * $0.fraction / fraction }
-            }
-            narrow.formUnion(tooNarrow.map(\.id))
-        }
     }
 
     private func segment(_ share: DailyTotalShare, width: CGFloat) -> some View {
