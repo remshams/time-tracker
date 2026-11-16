@@ -8,7 +8,7 @@ private func task(_ id: String, _ name: String, archived: Bool = false) -> TaskI
 
 final class DailyTotalShareTests: XCTestCase {
     @MainActor
-    func testSharesRunLargestFirstThenByNameThenByID() {
+    func testSharesRunLargestFirstThenByNameThenByID() async {
         let tasks = [task("c", "Admin"), task("a", "Client"), task("b", "Admin"), task("d", "Review")]
         let shares = DailyTotalShare.shares(
             of: tasks, durations: ["a": 3600, "b": 1800, "c": 1800, "d": 3600.9])
@@ -17,7 +17,7 @@ final class DailyTotalShareTests: XCTestCase {
     }
 
     @MainActor
-    func testTasksWithoutAWholeSecondOrADurationAreLeftOut() {
+    func testTasksWithoutAWholeSecondOrADurationAreLeftOut() async {
         let tasks = [task("a", "Client"), task("b", "Admin"), task("c", "Review"), task("d", "Idle")]
         let shares = DailyTotalShare.shares(of: tasks, durations: ["a": 60, "b": 0.9, "c": -5])
         XCTAssertEqual(shares.map(\.taskID), ["a"])
@@ -27,14 +27,14 @@ final class DailyTotalShareTests: XCTestCase {
     }
 
     @MainActor
-    func testArchivedTasksWithTimeTodayGetAShare() {
+    func testArchivedTasksWithTimeTodayGetAShare() async {
         let shares = DailyTotalShare.shares(
             of: [task("a", "Client"), task("b", "Old", archived: true)], durations: ["a": 30, "b": 90])
         XCTAssertEqual(shares.map(\.taskID), ["b", "a"])
     }
 
     @MainActor
-    func testFractionsSplitTheSharedTimeAndRoundToPercent() {
+    func testFractionsSplitTheSharedTimeAndRoundToPercent() async {
         let shares = DailyTotalShare.shares(
             of: [task("a", "Client"), task("b", "Admin"), task("c", "Review")],
             durations: ["a": 7200, "b": 3600, "c": 1])
@@ -45,14 +45,14 @@ final class DailyTotalShareTests: XCTestCase {
     }
 
     @MainActor
-    func testAccessibilityLabelNamesTheTaskItsTimeAndItsPercent() {
+    func testAccessibilityLabelNamesTheTaskItsTimeAndItsPercent() async {
         let share = DailyTotalShare(taskID: "a", name: "Client A", seconds: 3840, fraction: 1.0 / 3)
         XCTAssertEqual(share.id, "a")
         XCTAssertEqual(share.accessibilityLabel, "Client A, 1 hour, 4 minutes, 33 percent")
     }
 
     @MainActor
-    func testTaskTotalOffersItsDurationAndWhetherItHasTime() {
+    func testTaskTotalOffersItsDurationAndWhetherItHasTime() async {
         let unavailable = TaskDailyTotalPresentation(seconds: nil, explanation: "")
         XCTAssertNil(unavailable.duration)
         XCTAssertFalse(unavailable.hasTime)
