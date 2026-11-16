@@ -17,7 +17,6 @@ public struct TaskIndicator: Equatable, Sendable {
     public let taskID: String?
     public let isRunning: Bool
     public var color: TaskColor? { taskID.map(TaskColor.forTaskID) }
-    public var symbol: String { isRunning ? "circle.fill" : "circle" }
 
     public init(taskID: String?, isRunning: Bool, isStale: Bool = false) {
         self.taskID = taskID

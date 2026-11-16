@@ -23,8 +23,8 @@ public final class TaskDailyTotal {
 
 /// Loads today's task totals and holds them for the whole app.
 ///
-/// Views read `status` and each task's `TaskDailyTotal`; the menu bar also reads the day's total, the explanation
-/// and each task's duration. The store requests the report, checks it and records a failure, and starts the next
+/// Views read `status`, the day's total, the shares, each task's `TaskDailyTotal`, and `day` through `lastTracked(_:)`,
+/// so last tracked changes at midnight; the menu bar also reads the explanation and each task's duration. The store requests the report, checks it and records a failure, and starts the next
 /// day at midnight. `TrackerSync` decides when to load. The store refreshes its values whenever their inputs change:
 /// a report, a task list, a failure, a new day or a `DisplayClock` tick. It reads the tasks from `TaskCatalogStore`
 /// and the running worklog from `TrackingStore`, and assigns each value only when it changes, so a tick redraws only
