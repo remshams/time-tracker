@@ -36,12 +36,12 @@ struct TodaySummary: View {
     }
 
     @ViewBuilder private var total: some View {
-        if let dayTotal = dailyTotals.dayTotal, Int(dayTotal) > 0 {
-            DurationLabel(duration: DurationText(seconds: Int(dayTotal)))
+        if let seconds = dailyTotals.dayTotal.map(Int.init), seconds > 0 {
+            DurationLabel(duration: DurationText(seconds: seconds))
                 .font(TextRole.dayTotal)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .accessibilityLabel(spokenDuration(Int(dayTotal)))
+                .accessibilityLabel(spokenDuration(seconds))
         } else {
             Text(dailyTotals.dayTotal == nil ? "Unavailable" : "Nothing tracked yet")
                 .font(TextRole.detail)
