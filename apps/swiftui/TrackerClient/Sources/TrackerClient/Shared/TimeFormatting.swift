@@ -16,8 +16,13 @@ func formatTimestamp(_ date: Date) -> String {
     isoFormatter.string(from: date)
 }
 
+/// A duration in whole seconds, never below zero, as the app shows it.
+func wholeSeconds(_ duration: TimeInterval) -> Int {
+    Int(max(0, duration))
+}
+
 public func formatClockDuration(_ seconds: TimeInterval) -> String {
-    let total = Int(max(0, seconds))
+    let total = wholeSeconds(seconds)
     return String(format: "%02d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
 }
 
