@@ -32,15 +32,6 @@ enum IconSize {
     static let button: CGFloat = 22
 }
 
-/// Heights and widths of today's bar in the sidebar, in points.
-enum BarSize {
-    static let height: CGFloat = 8
-    /// The line under the selected task's segment.
-    static let underline: CGFloat = 2
-    /// The narrowest segment, so a task with a few seconds stays visible and clickable.
-    static let minimumSegment: CGFloat = 4
-}
-
 enum BorderWidth {
     /// The outline of a card.
     static let hairline: CGFloat = 1

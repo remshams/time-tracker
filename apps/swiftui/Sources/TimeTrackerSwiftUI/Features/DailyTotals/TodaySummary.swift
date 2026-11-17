@@ -82,16 +82,22 @@ private struct DailyTotalsBar: View {
     @Binding var hovered: String?
     @Environment(TaskCatalogStore.self) private var catalog
 
+    private static let height: CGFloat = 8
+    /// The line under the selected task's segment.
+    private static let underline: CGFloat = 2
+    /// The narrowest segment, so a task with a few seconds stays visible and clickable.
+    private static let minimumSegment: CGFloat = 4
+
     var body: some View {
         GeometryReader { proxy in
             if shares.isEmpty {
                 RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                     .fill(.quaternary)
-                    .frame(height: BarSize.height)
+                    .frame(height: Self.height)
             } else {
                 let layout = DailyTotalsBarLayout(
                     fractions: shares.map(\.fraction), width: proxy.size.width, gap: Spacing.xxSmall,
-                    minimum: BarSize.minimumSegment)
+                    minimum: Self.minimumSegment)
                 HStack(alignment: .top, spacing: layout.gap) {
                     ForEach(Array(zip(shares, layout.widths)), id: \.0.id) { share, width in
                         segment(share, width: width)
@@ -99,7 +105,7 @@ private struct DailyTotalsBar: View {
                 }
             }
         }
-        .frame(height: BarSize.height + Spacing.xxSmall + BarSize.underline)
+        .frame(height: Self.height + Spacing.xxSmall + Self.underline)
     }
 
     private func segment(_ share: DailyTotalShare, width: CGFloat) -> some View {
@@ -111,10 +117,10 @@ private struct DailyTotalsBar: View {
             VStack(spacing: Spacing.xxSmall) {
                 RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                     .fill(color)
-                    .frame(height: BarSize.height)
+                    .frame(height: Self.height)
                 Capsule()
                     .fill(color)
-                    .frame(height: BarSize.underline)
+                    .frame(height: Self.underline)
                     .opacity(isSelected ? 1 : 0)
             }
             .frame(width: width)
