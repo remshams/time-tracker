@@ -204,16 +204,18 @@ VStack(alignment: .leading, spacing: Spacing.medium) {
 ```
 
 - `Spacing` is a 4-point scale: `xSmall` 4, `small` 8, `medium` 12, `large` 16, `xLarge` 24, `xxLarge` 32.
-  Pick the nearest step instead of adding an off-scale value.
+  `xxSmall` 2 is the gap between the parts of one element. Pick the nearest step instead of adding an
+  off-scale value.
 - `CornerRadius` has `small` 4 and `medium` 8.
 - `TextRole` names fonts by what the text is, such as `sheetTitle`, `detail` or `caption`, and builds on
   the system text styles. Use `TextRole.duration(_:)` for times, so the digits keep their width.
   Only `display` and `actionGlyph`, the glyph inside a marker disc, have a fixed size.
-- `Emphasis` holds the opacities for a resting tint, hover, pressed and disabled.
+- `Emphasis` holds the opacities for a resting tint, hover, pressed, a marker's halo and disabled.
 - `ColorRole` holds the semantic colors, `ColorRole.task(_:)`, the color for a task's `TaskColor`, and
   `ColorRole.actionDisc(_:in:)`, the disc behind a white action glyph.
   Hierarchical styles such as `.secondary` stay as they are.
-- `IconSize` has `marker` 10, `regular` 16 and `button` 22. `BorderWidth` has `hairline` 1 and `marker` 1.75.
+- `IconSize` has `marker` 10, `regular` 16 and `button` 22. `BorderWidth` has `hairline` 1, `marker` 1.75
+  and `halo` 3.
   `Motion` has `quick` and `standard` animations and the `pressScale` of a pressed marker.
 
 To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
