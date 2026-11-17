@@ -75,7 +75,7 @@ struct TodaySummary: View {
 }
 
 /// One segment per task with time today, as wide as the task's share, or an empty track without shares. Every segment
-/// keeps its full color; a line under the selected one marks it.
+/// keeps its full color; the selected one is taller.
 private struct DailyTotalsBar: View {
     let shares: [DailyTotalShare]
     let selected: String?
@@ -83,8 +83,8 @@ private struct DailyTotalsBar: View {
     @Environment(TaskCatalogStore.self) private var catalog
 
     private static let height: CGFloat = 8
-    /// The line under the selected task's segment.
-    private static let underline: CGFloat = 2
+    /// The selected task's segment. The bar keeps this height, so selecting a task doesn't move the list.
+    private static let selectedHeight: CGFloat = 12
     /// The narrowest segment, so a task with a few seconds stays visible and clickable.
     private static let minimumSegment: CGFloat = 4
 
@@ -94,18 +94,19 @@ private struct DailyTotalsBar: View {
                 RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                     .fill(.quaternary)
                     .frame(height: Self.height)
+                    .frame(maxHeight: .infinity)
             } else {
                 let layout = DailyTotalsBarLayout(
                     fractions: shares.map(\.fraction), width: proxy.size.width, gap: Spacing.xxSmall,
                     minimum: Self.minimumSegment)
-                HStack(alignment: .top, spacing: layout.gap) {
+                HStack(spacing: layout.gap) {
                     ForEach(Array(zip(shares, layout.widths)), id: \.0.id) { share, width in
                         segment(share, width: width)
                     }
                 }
             }
         }
-        .frame(height: Self.height + Spacing.xxSmall + Self.underline)
+        .frame(height: Self.selectedHeight)
     }
 
     private func segment(_ share: DailyTotalShare, width: CGFloat) -> some View {
@@ -114,17 +115,12 @@ private struct DailyTotalsBar: View {
         return Button {
             catalog.showTask(id: share.taskID)
         } label: {
-            VStack(spacing: Spacing.xxSmall) {
-                RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                    .fill(color)
-                    .frame(height: Self.height)
-                Capsule()
-                    .fill(color)
-                    .frame(height: Self.underline)
-                    .opacity(isSelected ? 1 : 0)
-            }
-            .frame(width: width)
-            .contentShape(Rectangle())
+            RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                .fill(color)
+                .frame(width: width, height: isSelected ? Self.selectedHeight : Self.height)
+                .frame(height: Self.selectedHeight)
+                .contentShape(Rectangle())
+                .animation(Motion.standard, value: isSelected)
         }
         .buttonStyle(.plain)
         .onHover { inside in

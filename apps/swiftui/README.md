@@ -120,7 +120,7 @@ Settings > Tasks > Task order controls the order of the sidebar's Active and Arc
 
 ## Today's totals
 
-The top of the sidebar shows today's total across all tasks and one bar that splits it by task, in task colors. The largest share comes first. Archived tasks with time today get a segment too. Point at a segment to read its task and share below the bar; otherwise that line shows the selected task. A line under a segment marks the selected task. Click a segment to select its task, which switches to the Archived tab for an archived task. VoiceOver reads the total, then each segment as a button with its task, time and share.
+The top of the sidebar shows today's total across all tasks and one bar that splits it by task, in task colors. The largest share comes first. Archived tasks with time today get a segment too. Point at a segment to read its task and share below the bar; otherwise that line shows the selected task. The selected task's segment is taller than the others. Click a segment to select its task, which switches to the Archived tab for an archived task. VoiceOver reads the total, then each segment as a button with its task, time and share.
 
 Each sidebar row has two lines: the task's color mark and name, then when it last ran, such as "Today 13:12", "Yesterday", "3 days ago" or a date, or "Running since 15:30" while it runs. The text changes at midnight. A task with time today shows its total at the trailing edge and a filled dot; a task without shows no total and a ring. The running task's dot has a halo. The main window shows durations as `H:MM:SS` without a leading zero and dims the seconds. While no report covers today, the rows show no totals and the summary says Unavailable.
 
