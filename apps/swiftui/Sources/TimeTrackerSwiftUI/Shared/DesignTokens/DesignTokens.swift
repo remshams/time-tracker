@@ -7,7 +7,7 @@ import TrackerClient
 
 /// The spacing scale for padding and stack, grid and spacer spacing, in points.
 enum Spacing {
-    /// The gap between a bar's segments, or between a task row's two lines.
+    /// The gap between the parts of one element.
     static let xxSmall: CGFloat = 2
     static let xSmall: CGFloat = 4
     static let small: CGFloat = 8
@@ -35,9 +35,9 @@ enum IconSize {
 enum BorderWidth {
     /// The outline of a card.
     static let hairline: CGFloat = 1
-    /// The tracking pill's rings and a task indicator's ring.
+    /// A marker's ring.
     static let marker: CGFloat = 1.75
-    /// The halo around the running task's indicator.
+    /// A halo around a marker.
     static let halo: CGFloat = 3
 }
 
@@ -67,7 +67,7 @@ enum TextRole {
     static let captionEmphasis = Font.caption.weight(.medium)
     /// The tracking pill's task name.
     static let status = Font.body
-    /// Today's total at the top of the sidebar.
+    /// A day's total where it is the main figure.
     static let dayTotal = Font.system(.title, design: .rounded, weight: .medium).monospacedDigit()
     /// A small symbol next to status text, such as the stale connection's `wifi.slash`.
     static let statusGlyph = Font.caption.weight(.semibold)
@@ -86,7 +86,7 @@ enum Emphasis {
     static let restingTint = 0.1
     static let hoverTint = 0.15
     static let pressedTint = 0.28
-    /// The halo around the running task's indicator.
+    /// A halo around a marker.
     static let halo = 0.35
     static let disabled = 0.5
 }
