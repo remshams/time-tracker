@@ -144,7 +144,7 @@ class DailyTotalsUITests: TrackerUITestCase {
         let now = Date()
         let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
         let report = try fixture.reports(start: day.start, end: day.end, at: now)
-        let expected = windowDuration(report.rows.first { $0.task.id == today.id }?.durationMicroseconds ?? 0)
+        let expected = spokenTotal(report.rows.first { $0.task.id == today.id }?.durationMicroseconds ?? 0)
         launch()
         let subtitle = element("task-details.subtitle")
         let expectations = [

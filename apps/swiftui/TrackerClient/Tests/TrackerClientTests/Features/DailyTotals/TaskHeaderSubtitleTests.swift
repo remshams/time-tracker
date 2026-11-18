@@ -18,22 +18,22 @@ private func total(_ seconds: Int?) -> TaskDailyTotalPresentation {
 final class TaskHeaderSubtitleTests: XCTestCase {
     @MainActor
     private func text(_ total: TaskDailyTotalPresentation?, running: Bool = false, _ latestStart: String?) -> String {
-        TaskHeaderSubtitle(total: total, isRunning: running, lastTracked: lastTracked(latestStart)).text
+        TaskHeaderSubtitle(total: total, isRunning: running, lastTracked: lastTracked(latestStart)).accessibilityLabel
     }
 
     @MainActor
     func testTimeTodayShowsOnlyTodaysTotal() async {
         let subtitle = TaskHeaderSubtitle(
             total: total(2712), isRunning: false, lastTracked: lastTracked("2026-11-16T08:00:00.000Z"))
-        XCTAssertEqual(subtitle, .today(DurationText(seconds: 2712)))
-        XCTAssertEqual(subtitle.text, "0:45:12 today")
-        XCTAssertEqual(text(total(1), "2026-11-16T08:00:00.000Z"), "0:00:01 today")
+        XCTAssertEqual(subtitle, .today(seconds: 2712))
+        XCTAssertEqual(subtitle.accessibilityLabel, "45 minutes today")
+        XCTAssertEqual(text(total(1), "2026-11-16T08:00:00.000Z"), "1 second today")
     }
 
     @MainActor
     func testRunningTaskShowsItsTotalFromTheFirstSecond() async {
-        XCTAssertEqual(text(total(0), running: true, "2026-11-16T08:59:59.000Z"), "0:00:00 today")
-        XCTAssertEqual(text(total(2712), running: true, "2026-11-15T23:10:00.000Z"), "0:45:12 today")
+        XCTAssertEqual(text(total(0), running: true, "2026-11-16T08:59:59.000Z"), "0 seconds today")
+        XCTAssertEqual(text(total(3720), running: true, "2026-11-15T23:10:00.000Z"), "1 hour, 2 minutes today")
     }
 
     @MainActor

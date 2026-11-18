@@ -13,6 +13,9 @@ struct TaskDetails: View {
                 Divider()
                 WorklogHistorySection()
             } else if catalog.isConfirmedEmpty {
+                // A later failed load keeps the empty list, so its error shows above the invitation.
+                WorklogHistoryError()
+                    .padding([.horizontal, .top], Spacing.xLarge)
                 EmptyTasksView()
             } else {
                 VStack(alignment: .leading, spacing: Spacing.large) {
