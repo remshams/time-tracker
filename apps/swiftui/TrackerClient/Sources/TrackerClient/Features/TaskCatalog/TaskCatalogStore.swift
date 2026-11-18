@@ -17,6 +17,9 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     public private(set) var selectedTask: TaskItem?
     /// Whether the tasks come from a task list the current connection sent. Before that, an empty list means nothing.
     public private(set) var loaded = false
+    /// Whether the tracker confirmed that it has no tasks, active or archived. The window then invites the user to
+    /// create the first one; while the list loads or after a failed first load, it doesn't.
+    public private(set) var isConfirmedEmpty = false
     // Each tab's last selection, restored when the user switches back to that tab.
     @ObservationIgnored private var activeSelection: String?
     @ObservationIgnored private var archivedSelection: String?
@@ -24,10 +27,6 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     /// once, after it creates the history store, which needs this store.
     @ObservationIgnored var reloadHistory: @MainActor () -> Void = {}
     private let orderRepository: (any TaskOrderRepository)?
-
-    /// Whether the tracker confirmed that it has no tasks, active or archived. The window then invites the user to
-    /// create the first one; while the list loads or after a failed first load, it doesn't.
-    public var isConfirmedEmpty: Bool { loaded && tasks.isEmpty }
 
     /// Starts with the saved order, or the default order without a repository.
     init(orderRepository: (any TaskOrderRepository)? = nil) {
@@ -149,5 +148,6 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     private func updateDerivedValues() {
         set(\.visibleTasks, tasks.filter { $0.archived == (tab == .archived) })
         set(\.selectedTask, tasks.first { $0.id == selectedTaskID })
+        set(\.isConfirmedEmpty, loaded && tasks.isEmpty)
     }
 }

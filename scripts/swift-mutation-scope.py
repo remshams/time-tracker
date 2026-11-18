@@ -90,7 +90,7 @@ TEST_PRODUCTION = {
     ],
     "Features/DailyTotals/DailyTotalShareTests.swift": [TOTAL_SHARE, TOTALS, TIME_FORMATTING],
     "Features/DailyTotals/DailyTotalsBarLayoutTests.swift": [BAR_LAYOUT],
-    "Features/DailyTotals/TaskHeaderSubtitleTests.swift": [HEADER_SUBTITLE, LAST_TRACKED, TIME_FORMATTING],
+    "Features/DailyTotals/TaskHeaderSubtitleTests.swift": [HEADER_SUBTITLE, LAST_TRACKED, TOTALS, TIME_FORMATTING],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
