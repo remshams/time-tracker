@@ -314,6 +314,21 @@ final class TaskCatalogTests: XCTestCase {
     }
 
     @MainActor
+    func testConfirmedEmptyNotifiesItsReadersOnlyWhenItChanges() async {
+        let state = TaskCatalogStore()
+        let probes = CatalogProbes(state)
+        XCTAssertFalse(state.acceptTaskList([], previousActive: nil, active: nil))
+        XCTAssertEqual(probes.changed(), ["loaded", "isConfirmedEmpty"])
+        XCTAssertFalse(state.acceptTaskList([], previousActive: nil, active: nil))
+        XCTAssertEqual(probes.changed(), [])
+        XCTAssertTrue(state.acceptTaskList([firstTask], previousActive: nil, active: nil))
+        XCTAssertTrue(probes.changed().contains("isConfirmedEmpty"))
+        let renamed = TaskItem(id: firstTask.id, name: "Renamed", archived: false, latestStart: firstTask.latestStart)
+        XCTAssertFalse(state.acceptTaskList([renamed], previousActive: nil, active: nil))
+        XCTAssertFalse(probes.changed().contains("isConfirmedEmpty"), "A rename keeps the catalog non-empty.")
+    }
+
+    @MainActor
     func testSelectionAndTabChangesNotifyTheirReaders() async {
         let state = TaskCatalogStore()
         XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
@@ -410,6 +425,7 @@ private final class CatalogProbes {
             ("selectedTaskID", ObservationProbe { _ = state.selectedTaskID }),
             ("selectedTask", ObservationProbe { _ = state.selectedTask }),
             ("loaded", ObservationProbe { _ = state.loaded }),
+            ("isConfirmedEmpty", ObservationProbe { _ = state.isConfirmedEmpty }),
         ]
     }
 
