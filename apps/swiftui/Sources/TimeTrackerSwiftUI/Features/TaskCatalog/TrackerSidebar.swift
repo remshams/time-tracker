@@ -180,7 +180,8 @@ private struct TrackerDailyTotalText: View {
     let isRunning: Bool
 
     var body: some View {
-        if let content = total.content, let duration = content.duration, content.hasTime || isRunning {
+        if let content = total.content, let seconds = content.shownSeconds(isRunning: isRunning) {
+            let duration = DurationText(seconds: seconds)
             DurationLabel(duration: duration)
                 .font(TextRole.duration())
                 .foregroundStyle(.primary)

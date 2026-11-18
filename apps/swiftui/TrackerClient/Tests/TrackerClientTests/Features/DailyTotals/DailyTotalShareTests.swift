@@ -52,16 +52,22 @@ final class DailyTotalShareTests: XCTestCase {
     }
 
     @MainActor
-    func testTaskTotalOffersItsDurationAndWhetherItHasTime() async {
+    func testTaskTotalSaysWhetherItHasTime() async {
+        XCTAssertFalse(TaskDailyTotalPresentation(seconds: nil, explanation: "").hasTime)
+        XCTAssertFalse(TaskDailyTotalPresentation(seconds: 0, explanation: "").hasTime)
+        XCTAssertTrue(TaskDailyTotalPresentation(seconds: 1, explanation: "").hasTime)
+    }
+
+    @MainActor
+    func testTaskTotalShowsItsSecondsWithTimeTodayOrWhileRunning() async {
         let unavailable = TaskDailyTotalPresentation(seconds: nil, explanation: "")
-        XCTAssertNil(unavailable.duration)
-        XCTAssertFalse(unavailable.hasTime)
+        XCTAssertNil(unavailable.shownSeconds(isRunning: false))
+        XCTAssertNil(unavailable.shownSeconds(isRunning: true), "An unavailable total shows nothing.")
         let zero = TaskDailyTotalPresentation(seconds: 0, explanation: "")
-        XCTAssertEqual(zero.duration, DurationText(seconds: 0))
-        XCTAssertFalse(zero.hasTime)
-        let timed = TaskDailyTotalPresentation(seconds: 1, explanation: "")
-        XCTAssertEqual(timed.duration?.hoursAndMinutes, "0:00")
-        XCTAssertEqual(timed.duration?.seconds, ":01")
-        XCTAssertTrue(timed.hasTime)
+        XCTAssertNil(zero.shownSeconds(isRunning: false))
+        XCTAssertEqual(zero.shownSeconds(isRunning: true), 0, "A running task shows its total from the first second.")
+        let timed = TaskDailyTotalPresentation(seconds: 2712, explanation: "")
+        XCTAssertEqual(timed.shownSeconds(isRunning: false), 2712)
+        XCTAssertEqual(timed.shownSeconds(isRunning: true), 2712)
     }
 }
