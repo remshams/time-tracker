@@ -12,7 +12,7 @@ public enum TaskHeaderSubtitle: Equatable, Sendable {
     /// Builds the subtitle from the task's daily total, which is `nil` or has no seconds while today's totals are
     /// unavailable. A running task shows its total from its first second.
     public init(total: TaskDailyTotalPresentation?, isRunning: Bool, lastTracked: LastTracked) {
-        if let total, let seconds = total.seconds, total.hasTime || isRunning {
+        if let seconds = total?.shownSeconds(isRunning: isRunning) {
             self = .today(seconds: seconds)
             return
         }

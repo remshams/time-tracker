@@ -6,11 +6,16 @@ public struct TaskDailyTotalPresentation: Equatable, Sendable {
     public let seconds: Int?
     public let explanation: String
 
-    /// The time to show, or `nil` while it's unavailable.
-    public var duration: DurationText? { seconds.map(DurationText.init(seconds:)) }
-
     /// Whether the task has at least a second today.
     public var hasTime: Bool { (seconds ?? 0) > 0 }
+
+    /// The seconds the window shows as today's total: while the task has time today or runs, also before its first
+    /// second. `nil` without time today or while the total is unavailable. The sidebar row and the task header share
+    /// this rule.
+    public func shownSeconds(isRunning: Bool) -> Int? {
+        guard let seconds, hasTime || isRunning else { return nil }
+        return seconds
+    }
 }
 
 /// Holds one task's daily total so a ticking timer redraws only that task's label.
