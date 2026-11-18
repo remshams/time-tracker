@@ -25,11 +25,11 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     @ObservationIgnored var reloadHistory: @MainActor () -> Void = {}
     private let orderRepository: (any TaskOrderRepository)?
 
-    /// Starts with the saved order, or the default order without a repository.
     /// Whether the tracker confirmed that it has no tasks, active or archived. The window then invites the user to
     /// create the first one; while the list loads or after a failed first load, it doesn't.
     public var isConfirmedEmpty: Bool { loaded && tasks.isEmpty }
 
+    /// Starts with the saved order, or the default order without a repository.
     init(orderRepository: (any TaskOrderRepository)? = nil) {
         self.orderRepository = orderRepository
         taskOrder = orderRepository?.load() ?? .newestFirst
