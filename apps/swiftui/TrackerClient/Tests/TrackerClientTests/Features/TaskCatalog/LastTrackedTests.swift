@@ -51,6 +51,19 @@ final class LastTrackedTests: XCTestCase {
     }
 
     @MainActor
+    func testDayNamesTheCaseForTheHeader() async {
+        let today = parseTimestamp("2026-11-16T09:00:00.000Z")!
+        func day(_ latestStart: String?) -> LastTracked.Day {
+            LastTracked(latestStart: latestStart, today: today, calendar: calendar("UTC"), locale: locale).day
+        }
+        XCTAssertEqual(day("2026-11-16T13:12:00.000Z"), .today(time: "13:12"))
+        XCTAssertEqual(day("2026-11-15T13:12:00.000Z"), .yesterday)
+        XCTAssertEqual(day("2026-11-13T13:12:00.000Z"), .daysAgo(3))
+        XCTAssertEqual(day("2026-11-04T13:12:00.000Z"), .date("4 Nov 2026"))
+        XCTAssertEqual(day(nil), .never)
+    }
+
+    @MainActor
     func testDaysFollowTheCalendarsTimeZone() async {
         // 23:30 UTC on the 15th is 13:30 on the 16th at UTC+14.
         XCTAssertEqual(
