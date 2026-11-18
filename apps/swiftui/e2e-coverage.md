@@ -51,7 +51,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | Index | Workflow | Native evidence |
 | --- | --- | --- |
 | 1 | Launch, isolation, cleanup, diagnostics | [SmokeUITests](Tests/UITests/App/SmokeUITests.swift) and [shared support](Tests/UITests/Support/TrackerUITestCase.swift) |
-| 2 | Active/Archived, ordering, ID selection | [TaskCatalogUITests](Tests/UITests/Features/TaskCatalog/TaskCatalogUITests.swift) |
+| 2 | Active/Archived, ordering, ID selection, the empty state without tasks and with only archived tasks | [TaskCatalogUITests](Tests/UITests/Features/TaskCatalog/TaskCatalogUITests.swift) |
 | 3 | Creation entry points, validation, cancellation, timer preservation | [TaskCreationUITests](Tests/UITests/Features/TaskCreation/TaskCreationUITests.swift) |
 | 4 | Start and stop from the toolbar pill, switch from the sidebar context menu, exact running identity after relaunch | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
 | 5 | History order, 50-row pagination, empty/running states, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/Features/WorklogHistory/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
@@ -69,7 +69,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 17 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 18 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
 | 19 | Quit with a running timer and relaunch. The single tracker window has no dedicated test; reopening it after closing runs in `ServerLifecycleUITests` | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
-| 20 | Daily totals against CLI reports, overnight/live totals, source clearing, today's split and its segments, hidden zero totals, last tracked in the rows | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
+| 20 | Daily totals against CLI reports, overnight/live totals, source clearing, today's split and its segments, hidden zero totals, last tracked in the rows, today's total or last tracked in the task header | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
 | 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
 | 23 | One dialog at a time: the task row and task list context menus, the worklog row context menu and the worklog actions menu open normally and stay closed while a sheet or the tracking failure alert is open | [OpenDialogUITests](Tests/UITests/App/OpenDialogUITests.swift) |

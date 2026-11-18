@@ -6,7 +6,10 @@ import TrackerClient
 struct DurationLabel: View {
     let duration: DurationText
 
-    var body: some View {
+    var body: some View { Self.text(duration) }
+
+    /// The same duration as a `Text`, for a line that continues after it.
+    static func text(_ duration: DurationText) -> Text {
         Text("\(duration.hoursAndMinutes)\(Text(duration.seconds).foregroundStyle(.secondary))")
     }
 }

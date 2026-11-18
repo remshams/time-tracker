@@ -48,12 +48,12 @@ struct TrackerWindow: View {
         } detail: {
             TrackerDetailPresentation()
                 .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        TrackingPillView()
-                    }
-                    .sharedBackgroundVisibility(.hidden)
-                    ToolbarItemGroup(placement: .primaryAction) {
-                        TrackerTaskToolbar()
+                    // Without tasks, the empty state's button is the only action.
+                    if !catalog.isConfirmedEmpty {
+                        ToolbarItem(placement: .principal) {
+                            TrackingPillView()
+                        }
+                        .sharedBackgroundVisibility(.hidden)
                     }
                 }
         }

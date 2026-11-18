@@ -133,6 +133,29 @@ class DailyTotalsUITests: TrackerUITestCase {
         XCTAssertTrue(taskRow(never).staticTexts["Never"].exists)
     }
 
+    func testTaskHeaderShowsTodaysTotalOrWhenTheTaskLastRan() throws {
+        let today = try fixture.create("Header today")
+        let yesterday = try fixture.create("Header yesterday")
+        let never = try fixture.create("Header never")
+        try completedToday(today)
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        _ = try fixture.completed(
+            yesterday, start: startOfDay.addingTimeInterval(-7200), end: startOfDay.addingTimeInterval(-3600))
+        let now = Date()
+        let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
+        let report = try fixture.reports(start: day.start, end: day.end, at: now)
+        let expected = windowDuration(report.rows.first { $0.task.id == today.id }?.durationMicroseconds ?? 0)
+        launch()
+        let subtitle = element("task-details.subtitle")
+        let expectations = [
+            (today, "\(expected) today"), (yesterday, "Last tracked yesterday"), (never, "Not tracked yet"),
+        ]
+        for (task, text) in expectations {
+            select(task)
+            waitUntil("The header of \(task.name) reads \(text)") { subtitle.label == text }
+        }
+    }
+
     private func spokenTotal(_ microseconds: Int64) -> String {
         let seconds = microseconds / 1_000_000
         guard seconds >= 60 else { return "\(seconds) second\(seconds == 1 ? "" : "s")" }
