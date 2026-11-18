@@ -300,6 +300,20 @@ final class TaskCatalogTests: XCTestCase {
     }
 
     @MainActor
+    func testOnlyALoadedEmptyListConfirmsThatThereAreNoTasks() async {
+        let state = TaskCatalogStore()
+        XCTAssertFalse(state.isConfirmedEmpty, "Before the first load, an empty list means nothing.")
+        XCTAssertFalse(state.acceptTaskList([], previousActive: nil, active: nil))
+        XCTAssertTrue(state.isConfirmedEmpty)
+        XCTAssertFalse(state.acceptTaskList([archivedTask], previousActive: nil, active: nil))
+        XCTAssertFalse(state.isConfirmedEmpty, "An archived task counts.")
+        XCTAssertFalse(state.acceptTaskList([], previousActive: nil, active: nil))
+        XCTAssertTrue(state.isConfirmedEmpty)
+        state.acceptConnection()
+        XCTAssertFalse(state.isConfirmedEmpty, "A new connection hasn't sent its tasks yet.")
+    }
+
+    @MainActor
     func testSelectionAndTabChangesNotifyTheirReaders() async {
         let state = TaskCatalogStore()
         XCTAssertTrue(state.acceptTaskList([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
@@ -313,7 +327,7 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertEqual(state.visibleTasks, [archivedTask])
         XCTAssertEqual(state.selectedTask, archivedTask)
         state.acceptConnection()
-        XCTAssertEqual(probes.changed(), ["selectedTaskID", "selectedTask"])
+        XCTAssertEqual(probes.changed(), ["selectedTaskID", "selectedTask", "loaded"])
         XCTAssertNil(state.selectedTask)
         XCTAssertEqual(state.tab, .archived)
     }
@@ -395,6 +409,7 @@ private final class CatalogProbes {
             ("visibleTasks", ObservationProbe { _ = state.visibleTasks }),
             ("selectedTaskID", ObservationProbe { _ = state.selectedTaskID }),
             ("selectedTask", ObservationProbe { _ = state.selectedTask }),
+            ("loaded", ObservationProbe { _ = state.loaded }),
         ]
     }
 

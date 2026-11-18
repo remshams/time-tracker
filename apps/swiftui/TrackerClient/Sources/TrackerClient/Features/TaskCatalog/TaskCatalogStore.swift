@@ -15,6 +15,8 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     public private(set) var tab: TaskTab = .active
     public private(set) var visibleTasks: [TaskItem] = []
     public private(set) var selectedTask: TaskItem?
+    /// Whether the tasks come from a task list the current connection sent. Before that, an empty list means nothing.
+    public private(set) var loaded = false
     // Each tab's last selection, restored when the user switches back to that tab.
     @ObservationIgnored private var activeSelection: String?
     @ObservationIgnored private var archivedSelection: String?
@@ -24,6 +26,10 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     private let orderRepository: (any TaskOrderRepository)?
 
     /// Starts with the saved order, or the default order without a repository.
+    /// Whether the tracker confirmed that it has no tasks, active or archived. The window then invites the user to
+    /// create the first one; while the list loads or after a failed first load, it doesn't.
+    public var isConfirmedEmpty: Bool { loaded && tasks.isEmpty }
+
     init(orderRepository: (any TaskOrderRepository)? = nil) {
         self.orderRepository = orderRepository
         taskOrder = orderRepository?.load() ?? .newestFirst
@@ -91,8 +97,9 @@ public final class TaskCatalogStore: ChangeGuardedStore {
         activeSelection = taskID
     }
 
-    /// Forgets both tabs' selections for a new connection. The tab stays.
+    /// Forgets both tabs' selections and the loaded state for a new connection. The tab stays.
     func acceptConnection() {
+        set(\.loaded, false)
         activeSelection = nil
         archivedSelection = nil
         set(\.selectedTaskID, nil)
@@ -105,6 +112,7 @@ public final class TaskCatalogStore: ChangeGuardedStore {
     func acceptTaskList(_ newTasks: [TaskItem], previousActive: WorklogItem?, active: WorklogItem?) -> Bool {
         let previousTask = selectedTaskID
         let previousLatest = selectedTask?.latestStart
+        set(\.loaded, true)
         set(\.tasks, taskOrder.sorted(newTasks))
         if selectedTaskID.flatMap({ matchingTaskID($0, in: tab) }) == nil {
             set(\.selectedTaskID, firstTaskID(in: tab))

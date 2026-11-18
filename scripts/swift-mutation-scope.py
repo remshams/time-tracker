@@ -30,6 +30,7 @@ TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
 TOTALS = "Features/DailyTotals/DailyTotalsStore.swift"
 TOTAL_SHARE = "Features/DailyTotals/DailyTotalShare.swift"
 BAR_LAYOUT = "Features/DailyTotals/DailyTotalsBarLayout.swift"
+HEADER_SUBTITLE = "Features/DailyTotals/TaskHeaderSubtitle.swift"
 MENU = "Features/MenuBar/TrackerMenuContent.swift"
 MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
@@ -89,6 +90,7 @@ TEST_PRODUCTION = {
     ],
     "Features/DailyTotals/DailyTotalShareTests.swift": [TOTAL_SHARE, TOTALS, TIME_FORMATTING],
     "Features/DailyTotals/DailyTotalsBarLayoutTests.swift": [BAR_LAYOUT],
+    "Features/DailyTotals/TaskHeaderSubtitleTests.swift": [HEADER_SUBTITLE, LAST_TRACKED, TIME_FORMATTING],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
