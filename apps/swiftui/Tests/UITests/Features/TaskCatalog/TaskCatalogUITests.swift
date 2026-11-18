@@ -4,10 +4,24 @@ class TaskCatalogUITests: TrackerUITestCase {
     func testEmptyStorageAndEmptyTabsShowTheirEmptyStates() throws {
         launch()
         XCTAssertTrue(element("task-sidebar.empty").waitForExistence(timeout: timeout))
-        XCTAssertTrue(app.staticTexts["Select a task"].exists)
+        let create = app.buttons["Create your first task"]
+        XCTAssertTrue(create.waitForExistence(timeout: timeout))
+        XCTAssertTrue(create.isEnabled)
+        XCTAssertFalse(app.staticTexts["Select a task"].exists)
+        XCTAssertFalse(app.staticTexts["Nothing running"].exists, "Without tasks the toolbar shows no pill.")
         showTab("Archived")
         XCTAssertTrue(element("task-sidebar.empty").exists)
         XCTAssertTrue(try fixture.tasks().isEmpty)
+    }
+
+    func testOnlyArchivedTasksShowTheRegularEmptyTab() throws {
+        let archived = try fixture.create("Only archived")
+        try fixture.archive(archived)
+        launch()
+        XCTAssertTrue(element("task-sidebar.empty").waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.staticTexts["Select a task"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["Create your first task"].exists)
+        XCTAssertTrue(app.staticTexts["Nothing running"].exists)
     }
 
     func testTabsRememberIndependentSelectionsAndDuplicateNamesUseTheirIDs() throws {
