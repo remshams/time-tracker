@@ -123,6 +123,9 @@ final class ConnectionUITests: ConnectionUITestCase {
         launch()
         assertConnectionStatus("Unavailable")
         XCTAssertFalse(element("task-sidebar.task.\(local.id)").exists)
+        XCTAssertTrue(element("worklog-history.error").waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["Create your first task"].exists, "A failed first load isn't an empty catalog.")
+        XCTAssertFalse(app.staticTexts["Select a task"].exists)
         XCTAssertFalse(app.buttons["New task"].isEnabled)
         XCTAssertEqual(try fixture.tasks().map(\.id), [local.id])
     }

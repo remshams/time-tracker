@@ -48,9 +48,9 @@ private struct TaskHeaderSubtitleText: View {
             lastTracked: dailyTotals.lastTracked(task))
         Group {
             switch subtitle {
-            case .today(let duration):
+            case .today(let seconds):
                 // The total takes the primary color, like the row's, and its seconds stay dimmed.
-                let total = DurationLabel.text(duration)
+                let total = DurationLabel.text(DurationText(seconds: seconds))
                     .font(TextRole.duration(.subheadline))
                     .foregroundStyle(.primary)
                 Text("\(total) today")
@@ -62,7 +62,7 @@ private struct TaskHeaderSubtitleText: View {
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(subtitle.text)
+        .accessibilityLabel(subtitle.accessibilityLabel)
         .accessibilityIdentifier("task-details.subtitle")
     }
 }
@@ -106,7 +106,6 @@ private struct TaskHeaderActions: View {
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
         .controlSize(.large)
-        .foregroundStyle(.secondary)
         .fixedSize()
     }
 }
