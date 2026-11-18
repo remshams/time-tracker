@@ -14,6 +14,23 @@ class TaskCatalogUITests: TrackerUITestCase {
         XCTAssertTrue(try fixture.tasks().isEmpty)
     }
 
+    func testEmptyStateButtonCreatesTheFirstTask() throws {
+        launch()
+        let create = app.buttons["Create your first task"]
+        XCTAssertTrue(create.waitForExistence(timeout: timeout))
+        create.click()
+        XCTAssertTrue(element("task-name.input").waitForExistence(timeout: timeout))
+        app.textFields["task-name.input"].typeText("First task")
+        app.buttons["task-name.submit"].click()
+        waitUntil("Creation sheet closes") { !self.element("task-name.input").exists }
+        let created = try XCTUnwrap(fixture.tasks().first)
+        XCTAssertEqual(created.name, "First task")
+        waitUntil("The created task's header replaces the invitation") {
+            self.element("task-details.task.\(created.id)").exists && !create.exists
+        }
+        XCTAssertTrue(app.buttons["Start tracking"].waitForExistence(timeout: timeout), "The pill comes back.")
+    }
+
     func testOnlyArchivedTasksShowTheRegularEmptyTab() throws {
         let archived = try fixture.create("Only archived")
         try fixture.archive(archived)

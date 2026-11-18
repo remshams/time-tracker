@@ -134,16 +134,18 @@ class DailyTotalsUITests: TrackerUITestCase {
     }
 
     func testTaskHeaderShowsTodaysTotalOrWhenTheTaskLastRan() throws {
+        // The fixture, the report and the app must share one local day, and today's worklog needs whole seconds.
+        let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: Date()))
+        try XCTSkipIf(
+            Date().timeIntervalSince(day.start) < 300 || day.end.timeIntervalSince(Date()) < 300,
+            "The test doesn't run within five minutes of midnight.")
         let today = try fixture.create("Header today")
         let yesterday = try fixture.create("Header yesterday")
         let never = try fixture.create("Header never")
         try completedToday(today)
-        let startOfDay = Calendar.current.startOfDay(for: Date())
         _ = try fixture.completed(
-            yesterday, start: startOfDay.addingTimeInterval(-7200), end: startOfDay.addingTimeInterval(-3600))
-        let now = Date()
-        let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
-        let report = try fixture.reports(start: day.start, end: day.end, at: now)
+            yesterday, start: day.start.addingTimeInterval(-7200), end: day.start.addingTimeInterval(-3600))
+        let report = try fixture.reports(start: day.start, end: day.end, at: Date())
         let expected = spokenTotal(report.rows.first { $0.task.id == today.id }?.durationMicroseconds ?? 0)
         launch()
         let subtitle = element("task-details.subtitle")
