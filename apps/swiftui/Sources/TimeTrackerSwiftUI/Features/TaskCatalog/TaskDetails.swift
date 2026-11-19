@@ -11,7 +11,7 @@ struct TaskDetails: View {
             if let task = catalog.selectedTask {
                 TaskHeader(task: task)
                 Divider()
-                WorklogHistorySection()
+                WorklogHistorySection(taskID: task.id)
             } else if catalog.isConfirmedEmpty {
                 // A later failed load keeps the empty list, so its error shows above the invitation.
                 WorklogHistoryError()

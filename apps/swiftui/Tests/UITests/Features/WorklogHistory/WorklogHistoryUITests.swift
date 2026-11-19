@@ -77,7 +77,42 @@ class WorklogHistoryUITests: TrackerUITestCase {
         select(running)
         XCTAssertTrue(element("worklog-history.row.\(log.id)").waitForExistence(timeout: timeout))
         XCTAssertFalse(element("worklog-history.empty").exists)
-        XCTAssertTrue(element("worklog-history.row.\(log.id)").staticTexts.matching(NSPredicate(format: "value CONTAINS 'Running' OR label CONTAINS 'Running'")).firstMatch.exists)
+        let summary = element("worklog-history.summary.\(log.id)")
+        XCTAssertTrue(summary.label.contains(" to now"), summary.label)
+        XCTAssertTrue(summary.label.hasSuffix(", running"), summary.label)
+    }
+
+    func testHistoryGroupsWorklogsByDayAndSplitsAWorklogAtMidnight() throws {
+        let calendar = Calendar.current
+        let now = Date()
+        let midnight = calendar.startOfDay(for: now)
+        try XCTSkipIf(
+            now.timeIntervalSince(midnight) < 3600 || calendar.dateInterval(of: .day, for: now)!.end.timeIntervalSince(now) < 300,
+            "The test doesn't run in the first hour of the day or within five minutes of midnight.")
+        let task = try fixture.create("Day groups")
+        let today = try fixture.completed(task, start: midnight.addingTimeInterval(1800), end: midnight.addingTimeInterval(2700))
+        let night = try fixture.completed(task, start: midnight.addingTimeInterval(-1800), end: midnight.addingTimeInterval(600))
+        let yesterday = try fixture.completed(task, start: midnight.addingTimeInterval(-7200), end: midnight.addingTimeInterval(-5400))
+        launch()
+        select(task)
+        let todayHeader = element("worklog-history.day.Today")
+        let yesterdayHeader = element("worklog-history.day.Yesterday")
+        XCTAssertTrue(todayHeader.waitForExistence(timeout: timeout))
+        XCTAssertTrue(yesterdayHeader.exists)
+        XCTAssertLessThan(todayHeader.frame.minY, yesterdayHeader.frame.minY)
+        // Today holds 15 minutes of its own and the night's 10 minutes after midnight.
+        waitUntil("Today's header reads its total") { todayHeader.label == "Today, 25 minutes" }
+        // Yesterday holds its own 30 minutes and the night's 30 minutes before midnight.
+        XCTAssertEqual(yesterdayHeader.label, "Yesterday, 1 hour")
+        let parts = DateFormatter()
+        parts.dateFormat = "yyyy-MM-dd"
+        let continued = element("worklog-history.summary.\(night.id).\(parts.string(from: midnight))")
+        XCTAssertTrue(continued.exists)
+        XCTAssertTrue(continued.label.hasSuffix(", 10 minutes"), continued.label)
+        XCTAssertTrue(element("worklog-history.summary.\(night.id)").label.hasSuffix(", 30 minutes"))
+        let order = [today.id, "\(night.id).\(parts.string(from: midnight))", night.id, yesterday.id]
+            .map { element("worklog-history.row.\($0)").frame.minY }
+        XCTAssertEqual(order, order.sorted(), "Newest rows come first, and today's rows come before yesterday's.")
     }
 
     private enum HistoryRowBinding: String {

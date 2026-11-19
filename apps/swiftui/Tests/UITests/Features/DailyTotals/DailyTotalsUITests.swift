@@ -159,15 +159,7 @@ class DailyTotalsUITests: TrackerUITestCase {
     }
 
     private func spokenTotal(_ microseconds: Int64) -> String {
-        let seconds = microseconds / 1_000_000
-        guard seconds >= 60 else { return "\(seconds) second\(seconds == 1 ? "" : "s")" }
-        let hours = seconds / 3600
-        let minutes = seconds / 60 % 60
-        let parts = [
-            hours > 0 ? "\(hours) hour\(hours == 1 ? "" : "s")" : nil,
-            minutes > 0 ? "\(minutes) minute\(minutes == 1 ? "" : "s")" : nil,
-        ]
-        return parts.compactMap { $0 }.joined(separator: ", ")
+        spokenDuration(Int(microseconds / 1_000_000))
     }
 
     private func assertSidebarTotal(_ task: FixtureTask, report: FixtureReport) {
