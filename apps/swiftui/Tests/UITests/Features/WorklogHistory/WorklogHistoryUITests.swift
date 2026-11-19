@@ -45,6 +45,9 @@ class WorklogHistoryUITests: TrackerUITestCase {
             waitUntil("Older page finishes") { !pagination.exists }
             scrollHistoryUntilVisible(element("worklog-history.row.\(expected[0])"), upward: true)
             let scroll = element("worklog-history.scroll")
+            // The newest row can turn hittable while it is still cut off at the top edge. Scrolling once more shows
+            // the top of the list with the whole row.
+            scroll.scroll(byDeltaX: 0, deltaY: 450)
             var observed: [String] = []
             for _ in 0..<50 {
                 let visible = try visibleHistoryRows(in: scroll, binding: binding)
