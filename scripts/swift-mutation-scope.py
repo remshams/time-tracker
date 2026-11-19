@@ -27,6 +27,8 @@ TASK_ORDER = "Features/TaskCatalog/TaskOrder.swift"
 LAST_TRACKED = "Features/TaskCatalog/LastTracked.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
+WORKLOG_DAYS = "Features/WorklogHistory/WorklogDays.swift"
+HOUR_AXIS = "Features/WorklogHistory/WorklogHourAxis.swift"
 TOTALS = "Features/DailyTotals/DailyTotalsStore.swift"
 TOTAL_SHARE = "Features/DailyTotals/DailyTotalShare.swift"
 BAR_LAYOUT = "Features/DailyTotals/DailyTotalsBarLayout.swift"
@@ -161,6 +163,10 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, HISTORY, TRACKING, CATALOG, CONNECTION,
     ],
     "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY, CATALOG, CONNECTION],
+    "Features/WorklogHistory/WorklogDaysTests.swift": [
+        WORKLOG_DAYS, HOUR_AXIS, FEATURES, SYNC, HISTORY, TRACKING, TOTALS, CATALOG, CONNECTION,
+    ],
+    "Features/WorklogHistory/WorklogHourAxisTests.swift": [HOUR_AXIS, WORKLOG_DAYS],
     "Features/WorklogMove/WorklogMoveTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION,
         CORRECTION, MENU_SOURCES, DELETION,

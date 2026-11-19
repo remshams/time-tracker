@@ -69,7 +69,7 @@ public final class DailyTotalsStore: ChangeGuardedStore {
     private let connection: ConnectionStore
     private let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
-    private let calendar: Calendar
+    let calendar: Calendar
     private let catalog: TaskCatalogStore
     private let tracking: TrackingStore
     // Views observe only the public values and each task's model. Ignoring the rest keeps a tick from redrawing
@@ -355,10 +355,15 @@ public final class DailyTotalsStore: ChangeGuardedStore {
         return model
     }
 
+    /// The start of the current day. Reading it observes `day`, so a view that reads it redraws at midnight.
+    func today() -> Date {
+        day?.start ?? clock.now
+    }
+
     /// When the task last started, counted from the current day. The store owns the day and the calendar, so a view
     /// that reads this redraws at midnight.
     public func lastTracked(_ task: TaskItem) -> LastTracked {
-        LastTracked(latestStart: task.latestStart, today: day?.start ?? clock.now, calendar: calendar)
+        LastTracked(latestStart: task.latestStart, today: today(), calendar: calendar)
     }
 
     private func baseDuration(taskID: String) -> TimeInterval {
