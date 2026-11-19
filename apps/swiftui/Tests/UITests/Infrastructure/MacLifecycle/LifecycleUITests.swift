@@ -155,7 +155,8 @@ final class ServerLifecycleUITests: LifecycleUITests {
         let proxy = try fixture.enableProxy()
         launch()
         select(task)
-        let elapsed = element("tracking.elapsed")
+        // The sidebar shows the running task's total with its seconds, which the display tick advances.
+        let elapsed = element("task-sidebar.total.\(task.id)")
         XCTAssertTrue(elapsed.waitForExistence(timeout: timeout))
         try proxy.arm(method: "GET", path: "/v1/state/daily-overview", mode: .holdBefore)
         _ = try proxy.waitForHeldRequest()
