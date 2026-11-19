@@ -90,9 +90,11 @@ class WorklogHistoryUITests: TrackerUITestCase {
             now.timeIntervalSince(midnight) < 3600 || calendar.dateInterval(of: .day, for: now)!.end.timeIntervalSince(now) < 300,
             "The test doesn't run in the first hour of the day or within five minutes of midnight.")
         let task = try fixture.create("Day groups")
-        let today = try fixture.completed(task, start: midnight.addingTimeInterval(1800), end: midnight.addingTimeInterval(2700))
-        let night = try fixture.completed(task, start: midnight.addingTimeInterval(-1800), end: midnight.addingTimeInterval(600))
+        // The fixture starts and then stops each worklog, so they go in oldest first; a start before a later worklog
+        // would overlap it.
         let yesterday = try fixture.completed(task, start: midnight.addingTimeInterval(-7200), end: midnight.addingTimeInterval(-5400))
+        let night = try fixture.completed(task, start: midnight.addingTimeInterval(-1800), end: midnight.addingTimeInterval(600))
+        let today = try fixture.completed(task, start: midnight.addingTimeInterval(1800), end: midnight.addingTimeInterval(2700))
         launch()
         select(task)
         let todayHeader = element("worklog-history.day.Today")
