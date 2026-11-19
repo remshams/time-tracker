@@ -45,7 +45,8 @@ struct WorklogRow: View {
                 .fill(isHovered ? AnyShapeStyle(.quinary) : AnyShapeStyle(.clear))
                 .padding(.horizontal, -Spacing.small)
         }
-        .contentShape(Rectangle())
+        // No content shape: it would also become the row's accessibility shape, which breaks hit testing once the
+        // history scrolls. The range, the bar's track and the duration cover the row for the double click.
         .onHover { isHovered = $0 }
         .onTapGesture(count: 2) {
             if correction.canOpen { correction.open(worklogID: row.worklog.id) }
