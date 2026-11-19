@@ -38,6 +38,8 @@ final class WorklogHourAxisTests: XCTestCase {
         XCTAssertEqual([early.startHour, early.endHour], [0, 8], "The start stops at midnight; the end keeps going.")
         let late = axis([("22:00", "23:30")])
         XCTAssertEqual([late.startHour, late.endHour], [16, 24], "The end stops at midnight; the start keeps going.")
+        let odd = axis([("10:00", "11:00")])
+        XCTAssertEqual([odd.startHour, odd.endHour], [6, 14], "An odd number of missing hours widens the start more.")
         let moment = axis([("10:00", "10:00")])
         XCTAssertEqual([moment.startHour, moment.endHour], [6, 14])
     }

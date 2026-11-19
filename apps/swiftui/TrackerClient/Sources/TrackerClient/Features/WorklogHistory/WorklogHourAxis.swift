@@ -17,11 +17,11 @@ public struct WorklogHourAxis: Equatable, Sendable {
             low = Int(first.rounded(.down))
             high = max(low, Int(last.rounded(.up)))
         }
-        // Widen both ways, earlier first, until the axis is wide enough. A full day always is.
-        while high - low < Self.minimumSpan {
-            if low > 0 { low -= 1 }
-            if high - low < Self.minimumSpan, high < 24 { high += 1 }
-        }
+        // Widen both ways, the start by the larger half, then give what midnight blocks on one side to the other.
+        let missing = max(0, Self.minimumSpan - (high - low))
+        let earlier = min(low, (missing + 1) / 2)
+        high = min(24, high + missing - earlier)
+        low = min(low - earlier, high - Self.minimumSpan)
         startHour = low
         endHour = high
     }
