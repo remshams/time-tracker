@@ -135,20 +135,22 @@ private struct WorklogPart {
         let running = worklog.end == nil
         let end = max(start, (running ? runningEnd : parseTimestamp(worklog.end)) ?? start)
         let known = !running || runningEnd != nil
-        var parts: [WorklogPart] = []
-        var day = calendar.startOfDay(for: start)
-        repeat {
-            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+        let firstDay = calendar.startOfDay(for: start)
+        var lastDay = calendar.startOfDay(for: end)
+        // A worklog that ends at midnight ends on the day before.
+        if lastDay == end { lastDay = calendar.date(byAdding: .day, value: -1, to: lastDay) ?? lastDay }
+        let days = calendar.dateComponents([.day], from: firstDay, to: lastDay).day ?? 0
+        return (0...max(0, days)).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: firstDay),
+                let next = calendar.date(byAdding: .day, value: 1, to: day)
+            else { return nil }
             let partStart = max(start, day)
             let partEnd = min(end, next)
-            parts.append(
-                WorklogPart(
-                    worklog: worklog, worklogStart: start, worklogEnd: end, day: day, start: partStart, end: partEnd,
-                    isFirst: parts.isEmpty, isRunning: running && partEnd == end,
-                    seconds: known ? wholeSeconds(partEnd.timeIntervalSince(partStart)) : nil))
-            day = next
-        } while day < end
-        return parts
+            return WorklogPart(
+                worklog: worklog, worklogStart: start, worklogEnd: end, day: day, start: partStart, end: partEnd,
+                isFirst: offset == 0, isRunning: running && partEnd == end,
+                seconds: known ? wholeSeconds(partEnd.timeIntervalSince(partStart)) : nil)
+        }
     }
 }
 

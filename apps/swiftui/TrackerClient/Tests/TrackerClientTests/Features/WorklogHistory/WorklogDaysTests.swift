@@ -127,6 +127,13 @@ final class WorklogDaysTests: XCTestCase {
     }
 
     @MainActor
+    func testMomentAtMidnightStaysOnItsDay() async {
+        let result = days([worklog("moment", "2026-11-18T00:00:00.000Z", "2026-11-18T00:00:00.000Z")])
+        XCTAssertEqual(result.days.map(\.title), ["Today"])
+        XCTAssertEqual(result.days[0].rows.map(\.seconds), [0])
+    }
+
+    @MainActor
     func testRunningWorklogEndsNowAndOnlyItsLastPartRuns() async {
         let result = days(
             [worklog("running", "2026-11-17T23:10:00.000Z", nil)], runningEnd: "2026-11-18T00:05:30.000Z")
@@ -233,5 +240,29 @@ final class WorklogDaysTests: XCTestCase {
         XCTAssertEqual(
             partial.days.map(\.totalSeconds), [90, 30, nil],
             "Without a daily total for the task, today adds its rows, and the oldest day hides its partial total.")
+    }
+
+    @MainActor
+    func testAnotherTasksRunningWorklogDoesNotShowAnEmptyDailyTotal() async throws {
+        let fixture = Fixture(reports: true, calendar: calendar())
+        defer { fixture.cleanup() }
+        fixture.sync.setWindowVisible(true)
+        // The first task runs. The report has no time for the second task, although its history has a worklog today.
+        try await fixture.start(
+            TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog),
+            rows: [TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 0)])
+        let features = fixture.features
+        fixture.advanceClock(by: 600)
+        fixture.scheduler.display?.fire()
+        let today = WorklogItem(
+            id: "worklog-today", taskId: secondTask.id, start: "2025-01-01T00:02:00.000Z",
+            end: "2025-01-01T00:03:00.000Z")
+        features.worklogHistory.accept(HistoryPage(worklogs: [today], nextCursor: nil, reset: false), cursor: nil)
+        let shown = WorklogDays(
+            history: features.worklogHistory, tracking: features.tracking, dailyTotals: features.dailyTotals,
+            taskID: secondTask.id)
+        XCTAssertEqual(
+            shown.days.map(\.totalSeconds), [60],
+            "A task that doesn't run and has no time in the report shows the sum of its rows.")
     }
 }
