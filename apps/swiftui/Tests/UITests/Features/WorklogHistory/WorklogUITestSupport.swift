@@ -19,8 +19,9 @@ extension TrackerUITestCase {
         openWorklogAction(log, title: "Move to task...", sheetID: "worklog-move.search")
     }
 
-    /// Waits until the history row shows the stored duration of a completed worklog.
+    /// Waits until the history row reads the stored duration of a completed worklog.
     /// A new duration proves that the history reloaded after another client changed the times.
+    /// A worklog that crosses midnight shows its part on its start day in that row.
     func waitForHistoryDuration(of log: FixtureWorklog, file: StaticString = #filePath, line: UInt = #line) {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -30,12 +31,24 @@ extension TrackerUITestCase {
             XCTFail("Worklog \(log.id) has no completed timestamps.", file: file, line: line)
             return
         }
-        let total = Int(max(0, end.timeIntervalSince(start)))
-        let duration = String(format: "%02d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
-        let row = element("worklog-history.row.\(log.id)")
-        waitUntil("History shows the stored duration \(duration)", file: file, line: line) {
-            row.staticTexts[duration].exists
+        let midnight = Calendar.current.dateInterval(of: .day, for: start)?.end ?? end
+        let duration = spokenDuration(Int(max(0, min(end, midnight).timeIntervalSince(start))))
+        let summary = element("worklog-history.summary.\(log.id)")
+        waitUntil("History reads the stored duration \(duration)", file: file, line: line) {
+            summary.exists && summary.label.hasSuffix(", \(duration)")
         }
+    }
+
+    /// A duration as VoiceOver reads it in the window, such as "1 hour, 4 minutes". Seconds count only under a minute.
+    func spokenDuration(_ seconds: Int) -> String {
+        guard seconds >= 60 else { return "\(seconds) second\(seconds == 1 ? "" : "s")" }
+        let hours = seconds / 3600
+        let minutes = seconds / 60 % 60
+        let parts = [
+            hours > 0 ? "\(hours) hour\(hours == 1 ? "" : "s")" : nil,
+            minutes > 0 ? "\(minutes) minute\(minutes == 1 ? "" : "s")" : nil,
+        ]
+        return parts.compactMap { $0 }.joined(separator: ", ")
     }
 
     func stepMinute(_ identifier: String, direction: XCUIKeyboardKey = .upArrow) {

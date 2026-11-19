@@ -39,6 +39,8 @@ enum BorderWidth {
     static let marker: CGFloat = 1.75
     /// A halo around a marker.
     static let halo: CGFloat = 3
+    /// The "now" needle at the end of a running worklog's bar.
+    static let needle: CGFloat = 2
 }
 
 /// Animation timing for interaction feedback.
@@ -89,6 +91,10 @@ enum Emphasis {
     /// A halo around a marker.
     static let halo = 0.35
     static let disabled = 0.5
+    /// A finished worklog's bar while its row isn't hovered.
+    static let restingBar = 0.82
+    /// The fill under the hatching of a running worklog's bar.
+    static let runningFill = 0.28
 }
 
 enum ColorRole {

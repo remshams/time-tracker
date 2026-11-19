@@ -37,6 +37,7 @@
 		72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F85615390A489E1BD026F82 /* TrackingControls.swift */; };
 		7FBEEB35620238CE40748E5C /* TrackingPillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */; };
 		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
+		7A1C40E1B2D3F40712A9C6E1 /* WorklogBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C40E1B2D3F40712A9C6E2 /* WorklogBar.swift */; };
 		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
 		009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */; };
 		99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */; };
@@ -146,6 +147,7 @@
 		3F85615390A489E1BD026F82 /* TrackingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingControls.swift; sourceTree = "<group>"; };
 		71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingPillView.swift; sourceTree = "<group>"; };
 		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
+		7A1C40E1B2D3F40712A9C6E2 /* WorklogBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogBar.swift; sourceTree = "<group>"; };
 		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
 		E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogHistorySection.swift; sourceTree = "<group>"; };
 		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
@@ -429,6 +431,7 @@
 			isa = PBXGroup;
 			children = (
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
+				7A1C40E1B2D3F40712A9C6E2 /* WorklogBar.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
 				E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */,
 			);
@@ -885,6 +888,7 @@
 				72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */,
 				7FBEEB35620238CE40748E5C /* TrackingPillView.swift in Sources */,
 				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
+				7A1C40E1B2D3F40712A9C6E1 /* WorklogBar.swift in Sources */,
 				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
 				009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */,
 				99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */,
