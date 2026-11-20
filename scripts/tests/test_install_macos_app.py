@@ -54,7 +54,9 @@ class BuildTests(unittest.TestCase):
 
 
 class QuitTests(unittest.TestCase):
-    QUIT = ["osascript", "-e", 'tell application id "com.timetracker.swiftui" to quit']
+    QUIT = ["osascript", "-e", 'if application id "com.timetracker.swiftui" is running then '
+            'tell application id "com.timetracker.swiftui" to quit']
+    RUNNING = 'ASN:0x1-"Time_Tracker":'
 
     def test_app_that_is_not_running_is_left_alone(self):
         with patch.object(INSTALL, "output", return_value="") as output, \
@@ -71,15 +73,27 @@ class QuitTests(unittest.TestCase):
             INSTALL.quit_app("com.timetracker.swiftui")
         self.assertEqual([call.args[0] for call in run.call_args_list], [self.QUIT, self.QUIT])
 
-    def test_app_that_keeps_running_fails_after_the_timeout(self):
+    def quit_until_timeout(self, request):
         clock = iter([0, 5, INSTALL.QUIT_TIMEOUT + 1])
-        with patch.object(INSTALL, "output", return_value='ASN:0x1-"Time_Tracker":'), \
-                patch.object(INSTALL.subprocess, "run") as run, \
+        with patch.object(INSTALL, "output", return_value=self.RUNNING), \
+                patch.object(INSTALL.subprocess, "run", side_effect=request) as run, \
                 patch.object(INSTALL.time, "monotonic", side_effect=lambda: next(clock)), \
-                patch.object(INSTALL.time, "sleep"), \
-                self.assertRaisesRegex(ValueError, "did not quit within 10 seconds"):
+                patch.object(INSTALL.time, "sleep"), self.assertRaises(ValueError) as raised:
             INSTALL.quit_app("com.timetracker.swiftui")
         self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.kwargs["timeout"], INSTALL.QUIT_TIMEOUT - 5)
+        return str(raised.exception)
+
+    def test_app_that_keeps_running_fails_after_the_timeout_with_the_last_error(self):
+        message = self.quit_until_timeout(lambda *_, **__: completed(stderr="Not authorized (-1743)\n", returncode=1))
+        self.assertEqual(message, "Time Tracker did not quit within 10 seconds; quit it and try again\n"
+                                  "Not authorized (-1743)")
+
+    def test_quit_request_that_hangs_is_cut_off_at_the_timeout(self):
+        def hang(command, **keywords):
+            raise subprocess.TimeoutExpired(command, keywords["timeout"])
+
+        self.assertIn("may be showing a dialog", self.quit_until_timeout(hang))
 
 
 class InstallTests(unittest.TestCase):
@@ -123,6 +137,31 @@ class InstallTests(unittest.TestCase):
             self.install(codesign_error=subprocess.CalledProcessError(1, ["codesign"], stderr="invalid"))
         self.assertTrue((self.installed / "Contents/old").is_file())
         self.assertEqual(list(self.installed.parent.iterdir()), [self.installed])
+
+    def test_failed_swap_puts_the_installed_app_back(self):
+        (self.installed / "Contents").mkdir(parents=True)
+        (self.installed / "Contents/old").write_text("old build", encoding="utf-8")
+        rename = Path.rename
+
+        def fail_for_staged(path, target):
+            if path.name == self.installed.name and path != self.installed:
+                raise OSError("rename failed")
+            return rename(path, target)
+
+        with patch.object(INSTALL.Path, "rename", fail_for_staged), self.assertRaisesRegex(OSError, "rename failed"):
+            self.install()
+        self.assertTrue((self.installed / "Contents/old").is_file())
+        self.assertEqual(list(self.installed.parent.iterdir()), [self.installed])
+
+    def test_replaces_a_symlinked_app(self):
+        target = self.root / "elsewhere/TimeTracker.app"
+        target.mkdir(parents=True)
+        self.installed.parent.mkdir()
+        self.installed.symlink_to(target)
+        self.install()
+        self.assertFalse(self.installed.is_symlink())
+        self.assertTrue((self.installed / "Contents/build").is_file())
+        self.assertTrue(target.is_dir())
 
 
 class MainTests(unittest.TestCase):
