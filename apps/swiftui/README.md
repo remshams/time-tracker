@@ -20,7 +20,7 @@ python3 scripts/install-macos-app.py
 
 The script builds Release into `.build/native-release`, quits every running copy of the app, replaces `~/Applications/TimeTracker.app` and starts it. Pass `--no-launch` to leave it closed. It keeps no backup; to go back, check out the version you want and run the script again. Settings and data carry over because the bundle ID doesn't change.
 
-The build records the commit in the app's `TTGitRevision` key, with `-dirty` appended when the checkout has uncommitted or untracked files. To see which version is installed:
+The script records the commit in the app's `TTGitRevision` key, with `-dirty` appended when the checkout has uncommitted or untracked files. Builds from Xcode leave the key empty. To see which version is installed:
 
 ```sh
 plutil -extract TTGitRevision raw ~/Applications/TimeTracker.app/Contents/Info.plist
