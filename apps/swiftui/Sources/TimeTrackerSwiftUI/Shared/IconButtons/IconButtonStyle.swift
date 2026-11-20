@@ -36,5 +36,7 @@ private struct IconButtonBody: View {
             .opacity(isEnabled ? 1 : Emphasis.disabled)
             .animation(Motion.quick, value: tint)
             .onHover { isHovered = $0 }
+            // A disabled button gets no hover events, so the pointer may have left by the time it is enabled again.
+            .onChange(of: isEnabled) { if !isEnabled { isHovered = false } }
     }
 }
