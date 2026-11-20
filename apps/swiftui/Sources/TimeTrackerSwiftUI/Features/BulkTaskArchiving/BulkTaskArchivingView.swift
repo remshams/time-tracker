@@ -37,7 +37,7 @@ struct BulkTaskArchivingSheet: View {
                     }
                     .frame(width: IconSize.regular, height: IconSize.regular)
                 }
-                .buttonStyle(IconButtonStyle(diameter: IconSize.button))
+                .buttonStyle(.icon(.compact))
                 .disabled(archiving.isSubmitting || archiving.isLoading)
                 .help("Refresh preview")
                 .accessibilityLabel(archiving.isLoading ? "Refreshing preview" : "Refresh preview")

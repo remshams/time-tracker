@@ -2,14 +2,32 @@ import SwiftUI
 
 /// An icon-only button that looks like plain text at rest. Hovering an enabled button shows a neutral circle behind the
 /// glyph and pressing deepens it, as macOS toolbar buttons do. A disabled button dims and shows no circle. Menus take
-/// the style through `.menuStyle(.button)`.
+/// the style through `.menuStyle(.button)`. Apply it with `.buttonStyle(.icon(.large))` or `.icon(.compact)`.
 struct IconButtonStyle: ButtonStyle {
-    /// The circle's diameter, which is also the button's hit area.
-    let diameter: CGFloat
+    let size: IconButtonSize
 
     func makeBody(configuration: Configuration) -> some View {
-        IconButtonBody(configuration: configuration, diameter: diameter)
+        IconButtonBody(configuration: configuration, diameter: size.diameter)
     }
+}
+
+/// How big an icon button's circle, and so its hit area, is.
+enum IconButtonSize {
+    /// For the task header.
+    case large
+    /// For compact rows and sheets.
+    case compact
+
+    var diameter: CGFloat {
+        switch self {
+        case .large: IconSize.largeButton
+        case .compact: IconSize.button
+        }
+    }
+}
+
+extension ButtonStyle where Self == IconButtonStyle {
+    static func icon(_ size: IconButtonSize) -> IconButtonStyle { IconButtonStyle(size: size) }
 }
 
 extension EnvironmentValues {

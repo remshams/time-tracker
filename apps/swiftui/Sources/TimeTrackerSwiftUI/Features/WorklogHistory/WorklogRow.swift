@@ -74,7 +74,7 @@ private struct WorklogActionsMenu: View {
                 .labelStyle(.iconOnly)
         }
         .menuStyle(.button)
-        .buttonStyle(IconButtonStyle(diameter: IconSize.button))
+        .buttonStyle(.icon(.compact))
         .menuIndicator(.hidden)
         .frame(width: HistoryColumns.actions)
         .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
