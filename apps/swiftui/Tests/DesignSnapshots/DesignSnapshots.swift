@@ -202,13 +202,15 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     window.orderFrontRegardless()
     spinRunLoop(1.5)
 
-    // The second lock check catches a screen that locked during the capture, which leaves the image blank.
+    // The check after the capture catches a screen that locked during it, which leaves the image blank.
+    let lockedBefore = isScreenLocked()
+    let image = lockedBefore ? nil : windowServerImage(of: window)
     let flat: Bool
     let bitmap: NSBitmapImageRep
-    if !isScreenLocked(), let image = windowServerImage(of: window), !isScreenLocked() {
+    if let image, !isScreenLocked() {
         flat = false
         bitmap = NSBitmapImageRep(cgImage: image)
-    } else if isScreenLocked() {
+    } else if lockedBefore || isScreenLocked() {
         flat = true
         bitmap = try inProcessImage(of: window)
     } else {
@@ -225,10 +227,11 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     guard let png = bitmap.representation(using: .png, properties: [:]) else {
         throw BridgeFailure(message: "AppKit couldn't encode the snapshot as a PNG.")
     }
-    try png.write(to: url)
-    // A capture of the other kind from an earlier run would show older code next to this one.
+    // A capture of the other kind from an earlier run would show older code next to this one. Deleting it first means
+    // a failed delete leaves no new PNG that the flat-capture report would miss.
     let other = snapshotURL(flat: !flat)
     if FileManager.default.fileExists(atPath: other.path) { try FileManager.default.removeItem(at: other) }
+    try png.write(to: url)
     print(url.path)
     window.orderOut(nil)
     window.close()
@@ -272,8 +275,8 @@ private func inProcessImage(of window: NSWindow) throws -> NSBitmapImageRep {
     return bitmap
 }
 
-/// The window server stops compositing while the screen is locked and returns blank images. The run checks before
-/// each capture, because the screen can lock while it runs.
+/// The window server stops compositing while the screen is locked and returns blank images. The run checks before and
+/// after each capture, because the screen can lock while it runs.
 private func isScreenLocked() -> Bool {
     let session = CGSessionCopyCurrentDictionary() as? [String: Any]
     return session?["CGSSessionScreenIsLocked"] as? Bool == true
