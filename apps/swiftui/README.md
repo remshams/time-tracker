@@ -10,6 +10,22 @@ The app builds for Apple Silicon only, in Debug and Release. Rust's default targ
 
 Xcode keeps build output in DerivedData. The project signs local builds ad hoc and does not require an Apple Developer account for the current app capabilities.
 
+## Install the checked-out version
+
+To use the current checkout as your everyday app, run this from the repository root:
+
+```sh
+python3 scripts/install-macos-app.py
+```
+
+The script builds Release into `.build/native-release`, quits every running copy of the app, replaces `~/Applications/TimeTracker.app` and starts it. Pass `--no-launch` to leave it closed. It keeps no backup; to go back, check out the version you want and run the script again. Settings and data carry over because the bundle ID doesn't change.
+
+The build records the commit in the app's `TTGitRevision` key, with `-dirty` appended when the checkout has uncommitted or untracked files. To see which version is installed:
+
+```sh
+plutil -extract TTGitRevision raw ~/Applications/TimeTracker.app/Contents/Info.plist
+```
+
 ## Connect to a server
 
 Open Time Tracker > Settings, or click the gear in the sidebar header. Choose Server and enter the full HTTP or HTTPS origin, including the server's port. Click Test connection to check it, then Connect to use it. The app saves the successful selection for the next launch. A failed connection change keeps the previous data source and saved settings. You can change the connection while a dialog is open. Saving that dialog afterwards sends the request to the new data source, where it can fail, for example with a "not found" error.
