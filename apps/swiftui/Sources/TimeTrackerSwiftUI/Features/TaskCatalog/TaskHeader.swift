@@ -104,8 +104,7 @@ private struct TaskHeaderActions: View {
                     : task.archived ? "Unarchive this task" : "Archive this task")
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .controlSize(.large)
-        .fixedSize()
+        .buttonStyle(.icon(.large))
+        .imageScale(.large)
     }
 }

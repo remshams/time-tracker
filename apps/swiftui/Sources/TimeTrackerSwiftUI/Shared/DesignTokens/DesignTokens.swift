@@ -28,8 +28,10 @@ enum IconSize {
     static let marker: CGFloat = 10
     /// A task indicator, a small spinner, or the tracking pill's marker slot.
     static let regular: CGFloat = 16
-    /// The disc of a sidebar row's start button.
+    /// The disc of a sidebar row's start button, and the hover circle of a compact icon button.
     static let button: CGFloat = 22
+    /// The hover circle of an icon button in the task header.
+    static let largeButton: CGFloat = 28
 }
 
 enum BorderWidth {

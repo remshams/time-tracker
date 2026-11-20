@@ -53,10 +53,13 @@ private struct Scenario {
     let tasks: [TaskItem]
     let active: WorklogItem?
     let select: String?
+    /// Shows every icon button as hovered, for reviewing the hover circle.
+    var showsHover = false
 }
 
 private let scenarios: [Scenario] = [
     Scenario(name: "tracking", tasks: fixtureTasks, active: fixtureActive, select: "t1"),
+    Scenario(name: "tracking-hover", tasks: fixtureTasks, active: fixtureActive, select: "t1", showsHover: true),
     Scenario(name: "idle", tasks: fixtureTasks, active: nil, select: "t2"),
     Scenario(name: "empty", tasks: [], active: nil, select: nil),
 ]
@@ -185,6 +188,7 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
         .environment(features.worklogMove)
         .environment(features.bulkTaskArchiving)
         .environment(features.worklogCorrection)
+        .environment(\.iconButtonsShowHover, scenario.showsHover)
 
     let controller = NSHostingController(rootView: root)
     controller.sceneBridgingOptions = [.toolbars, .title]
