@@ -20,6 +20,8 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>TTGitRevision</key>
+    <string>$(TT_GIT_REVISION)</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
