@@ -155,10 +155,9 @@ private func spinRunLoop(_ seconds: TimeInterval) {
 /// The app's default window size and the minimum content size that `TrackerWindow` allows.
 private let windowSizes = [NSSize(width: 1100, height: 760), NSSize(width: 760, height: 480)]
 
-/// Returns the PNG and whether the window server drew it. It didn't if the screen was locked; then the views were drawn
-/// in-process without glass or vibrancy.
+/// Returns the PNG and whether it's flat: drawn in-process without glass because the screen was locked.
 private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: NSSize, to directory: URL) throws
-    -> (url: URL, fromWindowServer: Bool)
+    -> (url: URL, flat: Bool)
 {
     let client = FixtureClient(tasks: scenario.tasks, active: scenario.active)
     let features = TrackerFeatures(
@@ -203,15 +202,15 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     window.orderFrontRegardless()
     spinRunLoop(1.5)
 
-    let fromWindowServer = !isScreenLocked()
+    let flat = isScreenLocked()
     let bitmap: NSBitmapImageRep
-    if fromWindowServer {
+    if flat {
+        bitmap = try inProcessImage(of: window)
+    } else {
         guard let image = windowServerImage(of: window) else {
             throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
         }
         bitmap = NSBitmapImageRep(cgImage: image)
-    } else {
-        bitmap = try inProcessImage(of: window)
     }
     let suffix = appearance == .darkAqua ? "dark" : "light"
     // The file name uses the window's final size, because SwiftUI adds the toolbar to the content's minimum height.
@@ -220,15 +219,15 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
         directory.appendingPathComponent(
             "\(scenario.name)-\(suffix)\(flat ? "-flat" : "")-\(Int(captured.width))x\(Int(captured.height)).png")
     }
-    let url = snapshotURL(flat: !fromWindowServer)
+    let url = snapshotURL(flat: flat)
     try bitmap.representation(using: .png, properties: [:])?.write(to: url)
     // A capture of the other kind from an earlier run would show older code next to this one.
-    try? FileManager.default.removeItem(at: snapshotURL(flat: fromWindowServer))
+    try? FileManager.default.removeItem(at: snapshotURL(flat: !flat))
     print(url.path)
     window.orderOut(nil)
     window.close()
     features.sync.setWindowVisible(false)
-    return (url, fromWindowServer)
+    return (url, flat)
 }
 
 /// AppKit moves a titled window back onto a screen when it's shown or resized, which put the snapshot windows on the
@@ -306,9 +305,9 @@ struct DesignSnapshots {
         for scenario in scenarios {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 for size in windowSizes {
-                    let (url, fromWindowServer) = try render(
+                    let (url, flat) = try render(
                         scenario, appearance: appearance, size: size, to: directory)
-                    if !fromWindowServer { flatFiles.append(url) }
+                    if flat { flatFiles.append(url) }
                 }
             }
         }
