@@ -255,6 +255,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. No task tracked yet")
         XCTAssertEqual(observer.label.totalText, "-")
+        XCTAssertEqual(observer.label.spokenTotal, "-")
         XCTAssertEqual(observer.content.totalText.text, "Unavailable")
         XCTAssertEqual(observer.content.totalsExplanation, "Today's total is unavailable")
         XCTAssertNil(observer.content.activeWorklogID)
@@ -294,6 +295,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(observer.content.dailyTotalsStatus, .unavailable)
         XCTAssertEqual(observer.content.totalsExplanation, "Today's report failed")
         XCTAssertEqual(observer.label.totalText, "-")
+        XCTAssertEqual(observer.label.spokenTotal, "-")
     }
 
     @MainActor
