@@ -3,7 +3,6 @@
 
 import argparse
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,25 +52,39 @@ def quit_app(identifier: str) -> None:
     # Quits every copy with this bundle ID, including a Debug build, because two copies would both claim the menu bar.
     # AppleScript reaches one copy per request, so the loop asks again until none is left. A request can fail while a
     # copy is shutting down, so only the timeout counts as a failure.
+    script = f'if application id "{identifier}" is running then tell application id "{identifier}" to quit'
     deadline = time.monotonic() + QUIT_TIMEOUT
+    error = ""
     while is_running(identifier):
-        if time.monotonic() > deadline:
-            raise ValueError(f"Time Tracker did not quit within {QUIT_TIMEOUT} seconds; quit it and try again")
-        subprocess.run(["osascript", "-e", f'tell application id "{identifier}" to quit'],
-                       capture_output=True, check=False)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError(f"Time Tracker did not quit within {QUIT_TIMEOUT} seconds; quit it and try again"
+                             + (f"\n{error}" if error else ""))
+        try:
+            error = subprocess.run(["osascript", "-e", script], capture_output=True, text=True,
+                                   timeout=remaining, check=False).stderr.strip()
+        except subprocess.TimeoutExpired:
+            error = "The quit request did not return; the app may be showing a dialog"
         time.sleep(0.5)
 
 
 def install(built: Path, installed: Path) -> None:
-    # Copies and verifies the new app first, so a failed copy leaves the installed app in place.
+    # Copies and verifies the new app before touching the installed one, then swaps them with two renames, so a
+    # failure leaves either the old or the new app in place.
     installed.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".TimeTracker-", dir=installed.parent) as staging:
         staged = Path(staging) / installed.name
         output(["ditto", str(built), str(staged)])
         output(["codesign", "--verify", "--deep", "--strict", str(staged)])
-        if installed.exists():
-            shutil.rmtree(installed)
-        staged.rename(installed)
+        previous = Path(staging) / "previous.app"
+        if installed.is_symlink() or installed.exists():
+            installed.rename(previous)
+        try:
+            staged.rename(installed)
+        except OSError:
+            if previous.is_symlink() or previous.exists():
+                previous.rename(installed)
+            raise
 
 
 def main() -> int:
