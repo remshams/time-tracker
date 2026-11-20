@@ -71,7 +71,7 @@ private struct WorklogDeletionSummary: View {
             Spacer(minLength: Spacing.medium)
             DurationLabel(duration: DurationText(duration: duration))
                 .font(TextRole.duration(.title3).weight(.medium))
-                .accessibilityLabel("Duration \(spokenDuration(Int(max(0, duration))))")
+                .accessibilityLabel("Duration \(spokenDuration(Int(duration)))")
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("worklog-deletion.summary")
