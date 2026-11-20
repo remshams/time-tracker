@@ -81,7 +81,7 @@ def install(built: Path, installed: Path) -> None:
             installed.rename(previous)
         try:
             staged.rename(installed)
-        except OSError:
+        except BaseException:
             if previous.is_symlink() or previous.exists():
                 previous.rename(installed)
             raise

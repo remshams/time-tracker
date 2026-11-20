@@ -138,20 +138,26 @@ class InstallTests(unittest.TestCase):
         self.assertTrue((self.installed / "Contents/old").is_file())
         self.assertEqual(list(self.installed.parent.iterdir()), [self.installed])
 
-    def test_failed_swap_puts_the_installed_app_back(self):
+    def fail_swap(self, error):
         (self.installed / "Contents").mkdir(parents=True)
         (self.installed / "Contents/old").write_text("old build", encoding="utf-8")
         rename = Path.rename
 
         def fail_for_staged(path, target):
             if path.name == self.installed.name and path != self.installed:
-                raise OSError("rename failed")
+                raise error
             return rename(path, target)
 
-        with patch.object(INSTALL.Path, "rename", fail_for_staged), self.assertRaisesRegex(OSError, "rename failed"):
+        with patch.object(INSTALL.Path, "rename", fail_for_staged), self.assertRaises(type(error)):
             self.install()
         self.assertTrue((self.installed / "Contents/old").is_file())
         self.assertEqual(list(self.installed.parent.iterdir()), [self.installed])
+
+    def test_failed_swap_puts_the_installed_app_back(self):
+        self.fail_swap(OSError("rename failed"))
+
+    def test_interrupted_swap_puts_the_installed_app_back(self):
+        self.fail_swap(KeyboardInterrupt())
 
     def test_replaces_a_symlinked_app(self):
         target = self.root / "elsewhere/TimeTracker.app"
