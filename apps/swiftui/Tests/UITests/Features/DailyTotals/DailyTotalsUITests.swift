@@ -19,11 +19,11 @@ class DailyTotalsUITests: TrackerUITestCase {
         showTab("Archived")
         assertSidebarTotal(archived, report: report)
         waitUntil("The status item total matches the CLI report") {
-            self.statusButton.value as? String == self.minuteDuration(report.totalMicroseconds)
+            self.statusButton.value as? String == self.spokenMinuteTotal(report.totalMicroseconds)
         }
         openStatusMenu()
         for task in [first, archived] {
-            let expected = menuDuration(report.rows.first { $0.task.id == task.id }?.durationMicroseconds ?? 0)
+            let expected = spokenTotal(report.rows.first { $0.task.id == task.id }?.durationMicroseconds ?? 0)
             XCTAssertTrue(menuTask(task).label.contains(expected))
         }
         dismissStatusMenu()
@@ -41,7 +41,7 @@ class DailyTotalsUITests: TrackerUITestCase {
         launch()
         assertSidebarTotal(task, report: report)
         waitUntil("The status item shows only today's overnight portion") {
-            self.statusButton.value as? String == self.minuteDuration(report.totalMicroseconds)
+            self.statusButton.value as? String == self.spokenMinuteTotal(report.totalMicroseconds)
         }
     }
 
@@ -170,14 +170,10 @@ class DailyTotalsUITests: TrackerUITestCase {
         }
     }
 
-    private func menuDuration(_ microseconds: Int64) -> String {
-        let seconds = microseconds / 1_000_000
-        return String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
-    }
-
-    private func minuteDuration(_ microseconds: Int64) -> String {
-        let minutes = microseconds / 60_000_000
-        return String(format: "%02d:%02d", minutes / 60, minutes % 60)
+    /// The status item's total as VoiceOver reads it, in whole minutes, such as "2 minutes" or "0 minutes".
+    private func spokenMinuteTotal(_ microseconds: Int64) -> String {
+        let minutes = Int(microseconds / 60_000_000)
+        return minutes == 0 ? "0 minutes" : spokenDuration(minutes * 60)
     }
 
     private func parseDuration(_ text: String) -> TimeInterval? {
