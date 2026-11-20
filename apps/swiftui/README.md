@@ -289,7 +289,7 @@ Design reviews compare screenshots of the tracker window in light and dark with 
 apps/swiftui/render-design-snapshots.sh [output-dir]
 ```
 
-The script compiles the `TrackerClient` sources and the app's views against a fixture client in `Tests/DesignSnapshots`. It doesn't build the Rust bridge or launch the app. The fixture has English task names and a clock frozen at 2026-11-13 15:42 UTC, so repeated runs on one Mac produce the same window. Dates and times follow the Mac's time zone and locale. The window opens far off-screen, and the process never appears in the Dock or takes keyboard focus.
+The script compiles the `TrackerClient` sources and the app's views against a fixture client in `Tests/DesignSnapshots`. It doesn't build the Rust bridge or launch the app. The fixture has English task names and a clock frozen at 2026-11-13 15:42 UTC, so repeated runs on one Mac produce the same window. Dates and times follow the Mac's time zone and locale. The window stays far off-screen, so it never shows on the desktop, and the process never appears in the Dock or takes keyboard focus.
 
 It writes 12 PNGs to `apps/swiftui/design-snapshots/`, which git ignores, or to `output-dir`. The `tracking`, `idle` and `empty` scenarios each get light and dark captures at the default window size and at the minimum size. File names give the window size in points, such as `idle-dark-760x532.png`. The minimum window is 532 points tall because `TrackerWindow` keeps its content at least 760×480 and the toolbar adds the rest.
 

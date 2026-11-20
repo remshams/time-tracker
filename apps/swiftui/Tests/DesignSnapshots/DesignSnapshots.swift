@@ -185,7 +185,7 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
 
     let controller = NSHostingController(rootView: root)
     controller.sceneBridgingOptions = [.toolbars, .title]
-    let window = NSWindow(
+    let window = OffscreenWindow(
         contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
         backing: .buffered, defer: false)
@@ -214,6 +214,12 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     window.orderOut(nil)
     window.close()
     features.sync.setWindowVisible(false)
+}
+
+/// AppKit moves a titled window back onto a screen when it's shown or resized, which put the snapshot windows on the
+/// user's desktop. Keeping the requested frame leaves the window offscreen, and the window server still renders it.
+private final class OffscreenWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 private typealias WindowImageFunction = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
