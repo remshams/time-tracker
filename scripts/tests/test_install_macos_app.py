@@ -1,6 +1,7 @@
 import importlib.util
 import io
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -53,50 +54,75 @@ class BuildTests(unittest.TestCase):
 
 
 class QuitTests(unittest.TestCase):
-    def test_app_that_is_not_running_is_left_alone(self):
-        with patch.object(INSTALL, "output", return_value="false") as output:
-            INSTALL.quit_app("com.timetracker.swiftui")
-        output.assert_called_once_with(["osascript", "-e", 'application id "com.timetracker.swiftui" is running'])
+    QUIT = ["osascript", "-e", 'tell application id "com.timetracker.swiftui" to quit']
 
-    def test_running_app_is_quit_and_awaited(self):
-        answers = iter(["true", "", "true", "false"])
-        with patch.object(INSTALL, "output", side_effect=lambda command: next(answers)) as output, \
+    def test_app_that_is_not_running_is_left_alone(self):
+        with patch.object(INSTALL, "output", return_value="") as output, \
+                patch.object(INSTALL.subprocess, "run") as run:
+            INSTALL.quit_app("com.timetracker.swiftui")
+        output.assert_called_once_with(["lsappinfo", "find", "bundleid=com.timetracker.swiftui"])
+        run.assert_not_called()
+
+    def test_asks_again_until_every_copy_has_quit(self):
+        copies = iter(['ASN:0x1-"Time_Tracker":\nASN:0x2-"Time_Tracker":', 'ASN:0x2-"Time_Tracker":', ""])
+        with patch.object(INSTALL, "output", side_effect=lambda command: next(copies)), \
+                patch.object(INSTALL.subprocess, "run", return_value=completed(returncode=1)) as run, \
                 patch.object(INSTALL.time, "sleep"):
             INSTALL.quit_app("com.timetracker.swiftui")
-        self.assertIn(["osascript", "-e", 'tell application id "com.timetracker.swiftui" to quit'],
-                      [call.args[0] for call in output.call_args_list])
-        self.assertEqual(output.call_count, 4)
+        self.assertEqual([call.args[0] for call in run.call_args_list], [self.QUIT, self.QUIT])
 
     def test_app_that_keeps_running_fails_after_the_timeout(self):
         clock = iter([0, 5, INSTALL.QUIT_TIMEOUT + 1])
-        with patch.object(INSTALL, "output", side_effect=lambda command: "" if "to quit" in command[-1] else "true"), \
+        with patch.object(INSTALL, "output", return_value='ASN:0x1-"Time_Tracker":'), \
+                patch.object(INSTALL.subprocess, "run") as run, \
                 patch.object(INSTALL.time, "monotonic", side_effect=lambda: next(clock)), \
-                patch.object(INSTALL.time, "sleep") as sleep, \
+                patch.object(INSTALL.time, "sleep"), \
                 self.assertRaisesRegex(ValueError, "did not quit within 10 seconds"):
             INSTALL.quit_app("com.timetracker.swiftui")
-        self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(run.call_count, 1)
 
 
 class InstallTests(unittest.TestCase):
-    def test_replaces_the_installed_app_and_verifies_the_signature(self):
-        with tempfile.TemporaryDirectory() as directory:
-            built = Path(directory) / "built/TimeTracker.app"
-            installed = Path(directory) / "Applications/TimeTracker.app"
-            (installed / "Contents").mkdir(parents=True)
-            (installed / "Contents/old").write_text("old build", encoding="utf-8")
-            with patch.object(INSTALL, "output") as output:
-                INSTALL.install(built, installed)
-            self.assertFalse(installed.exists())
-        self.assertEqual([call.args[0] for call in output.call_args_list],
-                         [["ditto", str(built), str(installed)],
-                          ["codesign", "--verify", "--deep", "--strict", str(installed)]])
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.built = self.root / "built/TimeTracker.app"
+        (self.built / "Contents").mkdir(parents=True)
+        (self.built / "Contents/build").write_text("new build", encoding="utf-8")
+        self.installed = self.root / "Applications/TimeTracker.app"
+
+    def install(self, codesign_error=None):
+        def run(command):
+            if command[0] == "ditto":
+                shutil.copytree(command[1], command[2])
+            elif codesign_error:
+                raise codesign_error
+            return ""
+
+        with patch.object(INSTALL, "output", side_effect=run) as output:
+            INSTALL.install(self.built, self.installed)
+        return [call.args[0] for call in output.call_args_list]
+
+    def test_replaces_the_installed_app_with_the_verified_build(self):
+        (self.installed / "Contents").mkdir(parents=True)
+        (self.installed / "Contents/old").write_text("old build", encoding="utf-8")
+        commands = self.install()
+        self.assertEqual(sorted(path.name for path in (self.installed / "Contents").iterdir()), ["build"])
+        self.assertEqual(commands[1][:4], ["codesign", "--verify", "--deep", "--strict"])
+        self.assertEqual(list(self.installed.parent.iterdir()), [self.installed])
 
     def test_creates_the_applications_folder_for_a_first_install(self):
-        with tempfile.TemporaryDirectory() as directory:
-            installed = Path(directory) / "Applications/TimeTracker.app"
-            with patch.object(INSTALL, "output"):
-                INSTALL.install(Path(directory) / "built.app", installed)
-            self.assertTrue(installed.parent.is_dir())
+        self.install()
+        self.assertTrue((self.installed / "Contents/build").is_file())
+
+    def test_failed_verification_keeps_the_installed_app(self):
+        (self.installed / "Contents").mkdir(parents=True)
+        (self.installed / "Contents/old").write_text("old build", encoding="utf-8")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.install(codesign_error=subprocess.CalledProcessError(1, ["codesign"], stderr="invalid"))
+        self.assertTrue((self.installed / "Contents/old").is_file())
+        self.assertEqual(list(self.installed.parent.iterdir()), [self.installed])
 
 
 class MainTests(unittest.TestCase):

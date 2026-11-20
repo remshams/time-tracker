@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -45,27 +46,32 @@ def bundle_identifier(app: Path) -> str:
 
 
 def is_running(identifier: str) -> bool:
-    return output(["osascript", "-e", f'application id "{identifier}" is running']) == "true"
+    return bool(output(["lsappinfo", "find", f"bundleid={identifier}"]))
 
 
 def quit_app(identifier: str) -> None:
     # Quits every copy with this bundle ID, including a Debug build, because two copies would both claim the menu bar.
-    if not is_running(identifier):
-        return
-    output(["osascript", "-e", f'tell application id "{identifier}" to quit'])
+    # AppleScript reaches one copy per request, so the loop asks again until none is left. A request can fail while a
+    # copy is shutting down, so only the timeout counts as a failure.
     deadline = time.monotonic() + QUIT_TIMEOUT
     while is_running(identifier):
         if time.monotonic() > deadline:
             raise ValueError(f"Time Tracker did not quit within {QUIT_TIMEOUT} seconds; quit it and try again")
-        time.sleep(0.2)
+        subprocess.run(["osascript", "-e", f'tell application id "{identifier}" to quit'],
+                       capture_output=True, check=False)
+        time.sleep(0.5)
 
 
 def install(built: Path, installed: Path) -> None:
-    if installed.exists():
-        shutil.rmtree(installed)
+    # Copies and verifies the new app first, so a failed copy leaves the installed app in place.
     installed.parent.mkdir(parents=True, exist_ok=True)
-    output(["ditto", str(built), str(installed)])
-    output(["codesign", "--verify", "--deep", "--strict", str(installed)])
+    with tempfile.TemporaryDirectory(prefix=".TimeTracker-", dir=installed.parent) as staging:
+        staged = Path(staging) / installed.name
+        output(["ditto", str(built), str(staged)])
+        output(["codesign", "--verify", "--deep", "--strict", str(staged)])
+        if installed.exists():
+            shutil.rmtree(installed)
+        staged.rename(installed)
 
 
 def main() -> int:
