@@ -77,9 +77,9 @@ def install(built: Path, installed: Path) -> None:
         output(["ditto", str(built), str(staged)])
         output(["codesign", "--verify", "--deep", "--strict", str(staged)])
         previous = Path(staging) / "previous.app"
-        if installed.is_symlink() or installed.exists():
-            installed.rename(previous)
         try:
+            if installed.is_symlink() or installed.exists():
+                installed.rename(previous)
             staged.rename(installed)
         except BaseException:
             if previous.is_symlink() or previous.exists():
