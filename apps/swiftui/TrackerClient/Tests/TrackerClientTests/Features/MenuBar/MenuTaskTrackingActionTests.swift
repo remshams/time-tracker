@@ -22,7 +22,8 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         fixture.features.tracking.startTracking(taskID: secondTask.id)
         let content = TrackerMenuContent(fixture.features.menuSources.read())
         XCTAssertFalse(content.canStopTracking)
-        let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
+        let running = TrackerMenuTask(
+            task: firstTask, durationText: MenuDurationText(placeholder: "-"), isRunning: true, canStart: true)
         XCTAssertNil(running.trackingAction(in: content))
         let idle = try XCTUnwrap(content.otherTasks.first { $0.id == secondTask.id })
         XCTAssertFalse(idle.canStart)
@@ -36,7 +37,8 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let content = TrackerMenuContent(fixture.features.menuSources.read())
         XCTAssertNil(content.activeWorklogID)
-        let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
+        let running = TrackerMenuTask(
+            task: firstTask, durationText: MenuDurationText(placeholder: "-"), isRunning: true, canStart: true)
         XCTAssertNil(running.trackingAction(in: content))
     }
 
@@ -51,8 +53,10 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         try await fixture.settled()
         let content = TrackerMenuContent(fixture.features.menuSources.read())
         XCTAssertTrue(content.isStale)
-        let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
-        let idle = TrackerMenuTask(task: secondTask, durationText: "-", isRunning: false, canStart: true)
+        let running = TrackerMenuTask(
+            task: firstTask, durationText: MenuDurationText(placeholder: "-"), isRunning: true, canStart: true)
+        let idle = TrackerMenuTask(
+            task: secondTask, durationText: MenuDurationText(placeholder: "-"), isRunning: false, canStart: true)
         XCTAssertNil(running.trackingAction(in: content))
         XCTAssertNil(idle.trackingAction(in: content))
     }

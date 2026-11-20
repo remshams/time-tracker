@@ -23,9 +23,9 @@ final class MenuLiveValuesTests: XCTestCase {
         fixture.clock.uptime += 1
         timer.fire()
         try await menu.settled()
-        XCTAssertEqual(observer.values.elapsedText, "00:00:31")
-        XCTAssertEqual(observer.values.totalText, "00:00:11")
-        XCTAssertEqual(observer.values.taskDurationTexts, [firstTask.id: "00:00:11"])
+        XCTAssertEqual(observer.values.elapsedText?.text, "0:00:31")
+        XCTAssertEqual(observer.values.totalText.text, "0:00:11")
+        XCTAssertEqual(observer.values.taskDurationTexts.mapValues(\.text), [firstTask.id: "0:00:11"])
         XCTAssertEqual(observer.content, original)
         XCTAssertEqual(valuesChanges, 1)
         timer.fire()
@@ -65,11 +65,11 @@ final class MenuLiveValuesTests: XCTestCase {
         try await fixture.taskValue(completed)
         try await menu.settled()
         XCTAssertEqual(observer.content, original)
-        XCTAssertEqual(observer.values.totalText, "00:01:10")
-        XCTAssertEqual(observer.values.taskDurationTexts, [firstTask.id: "00:00:20"])
+        XCTAssertEqual(observer.values.totalText.text, "0:01:10")
+        XCTAssertEqual(observer.values.taskDurationTexts.mapValues(\.text), [firstTask.id: "0:00:20"])
         observer.menuClosed()
         XCTAssertEqual(Set(observer.content.todayTasks.map(\.id)), [firstTask.id, secondTask.id])
-        XCTAssertEqual(observer.values.taskDurationTexts[secondTask.id], "00:00:50")
+        XCTAssertEqual(observer.values.taskDurationTexts[secondTask.id]?.text, "0:00:50")
     }
 
     @MainActor
@@ -100,7 +100,9 @@ final class MenuLiveValuesTests: XCTestCase {
             XCTAssertNil(observer.values.elapsedText)
             observer.menuClosed()
             XCTAssertEqual(observer.content.activeWorklogID, active?.id)
-            XCTAssertEqual(observer.values.elapsedText, active == nil ? nil : fixture.features.tracking.timerText)
+            XCTAssertEqual(
+                observer.values.elapsedText,
+                active == nil ? nil : fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) })
         }
     }
 
@@ -140,14 +142,15 @@ final class MenuLiveValuesTests: XCTestCase {
         try await menu.settled()
         XCTAssertEqual(observer.content.connectionSettings, .local)
         XCTAssertNil(observer.values.elapsedText)
-        XCTAssertEqual(observer.values.totalText, "Unavailable")
-        XCTAssertEqual(observer.values.taskDurationTexts, [firstTask.id: "-"])
+        XCTAssertEqual(observer.values.totalText.text, "Unavailable")
+        XCTAssertEqual(observer.values.taskDurationTexts.mapValues(\.text), [firstTask.id: "-"])
         XCTAssertEqual(
             observer.values.totalsExplanation,
             "The connection changed. Reopen the menu to see the current tracker.")
         observer.menuClosed()
         XCTAssertEqual(observer.content.connectionSettings, serverSettings)
-        XCTAssertEqual(observer.values.elapsedText, fixture.features.tracking.timerText)
+        XCTAssertEqual(
+            observer.values.elapsedText, fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) })
     }
 
     @MainActor
@@ -169,11 +172,13 @@ final class MenuLiveValuesTests: XCTestCase {
         try await fixture.taskValue(completed)
         try await menu.settled()
         XCTAssertEqual(observer.content.dailyTotalsStatus, .current)
-        XCTAssertEqual(observer.values.totalText, "~00:01:30")
+        XCTAssertEqual(observer.values.totalText.text, "~0:01:30")
+        XCTAssertEqual(observer.values.totalText.seconds, ":30")
+        XCTAssertEqual(observer.values.totalText.spoken, "about 1 minute")
         XCTAssertEqual(
             observer.values.totalsExplanation,
             "Today's total uses cached tracker state. Running time may be unconfirmed.")
         observer.menuClosed()
-        XCTAssertEqual(observer.values.totalText, "~00:01:30")
+        XCTAssertEqual(observer.values.totalText.text, "~0:01:30")
     }
 }

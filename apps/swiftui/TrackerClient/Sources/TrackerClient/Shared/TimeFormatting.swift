@@ -21,11 +21,6 @@ func wholeSeconds(_ duration: TimeInterval) -> Int {
     Int(max(0, duration))
 }
 
-public func formatClockDuration(_ seconds: TimeInterval) -> String {
-    let total = wholeSeconds(seconds)
-    return String(format: "%02d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
-}
-
 /// A duration as `H:MM:SS` without a leading zero on the hour, split so a view can dim the seconds.
 public struct DurationText: Equatable, Sendable {
     /// The hours and minutes, such as "1:04".
@@ -37,6 +32,11 @@ public struct DurationText: Equatable, Sendable {
         let total = max(0, seconds)
         hoursAndMinutes = String(format: "%d:%02d", total / 3600, total / 60 % 60)
         self.seconds = String(format: ":%02d", total % 60)
+    }
+
+    /// The whole seconds of `duration`, never below zero.
+    public init(duration: TimeInterval) {
+        self.init(seconds: wholeSeconds(duration))
     }
 }
 

@@ -10,7 +10,7 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
     public var isStale: Bool
     public var tasks: [TaskItem]
     public var active: WorklogItem?
-    public var timerText: String
+    public var elapsedSeconds: Int?
     public var trackingError: String?
     public var runningTaskName: String
     public var autoPauseStatusText: String?
@@ -22,15 +22,21 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
     public var taskDurations: [String: TimeInterval]
     public var lastTrackedTaskID: String?
 
-    // The text helpers are main-actor isolated because `formatClockDuration` is.
-    /// The day's total as the menu shows it, or "Unavailable" while no total is known.
-    @MainActor var dayTotalText: String {
-        dayTotal.map(formatClockDuration) ?? "Unavailable"
+    // The text helpers are main-actor isolated because `DurationText` is.
+    /// The running worklog's time as the menu shows it, or "Unavailable" before the tracker state is confirmed.
+    @MainActor var elapsedText: MenuDurationText {
+        elapsedSeconds.map { MenuDurationText(seconds: $0) } ?? MenuDurationText(placeholder: "Unavailable")
+    }
+
+    /// The day's total as the menu shows it, marked while it's cached, or "Unavailable" while no total is known.
+    @MainActor var dayTotalText: MenuDurationText {
+        dayTotal.map { MenuDurationText(seconds: wholeSeconds($0), cached: dailyTotalsStatus == .cached) }
+            ?? MenuDurationText(placeholder: "Unavailable")
     }
 
     /// The task's time today as the menu shows it, or "-" while no duration is known.
-    @MainActor func durationText(taskID: String) -> String {
-        taskDurations[taskID].map(formatClockDuration) ?? "-"
+    @MainActor func durationText(taskID: String) -> MenuDurationText {
+        taskDurations[taskID].map { MenuDurationText(seconds: wholeSeconds($0)) } ?? MenuDurationText(placeholder: "-")
     }
 }
 
@@ -55,7 +61,7 @@ public struct TrackerMenuSources: Sendable {
             isStale: connection.stale,
             tasks: catalog.tasks,
             active: tracking.active,
-            timerText: tracking.timerText,
+            elapsedSeconds: tracking.elapsedSeconds,
             trackingError: tracking.error,
             runningTaskName: runningTaskName,
             autoPauseStatusText: automation.statusText,

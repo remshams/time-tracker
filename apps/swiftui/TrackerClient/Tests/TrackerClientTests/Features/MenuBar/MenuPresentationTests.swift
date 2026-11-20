@@ -58,11 +58,14 @@ final class MenuPresentationTests: XCTestCase {
             XCTAssertTrue(windowTimer.consume(), "Freezing a menu must not freeze the window's clock.")
             try await menu.settled()
             let totals = fixture.features.dailyTotals
-            XCTAssertEqual(observer.values.elapsedText, fixture.features.tracking.timerText)
-            XCTAssertEqual(observer.values.totalText, totals.dayTotal.map(formatClockDuration))
+            XCTAssertEqual(
+                observer.values.elapsedText,
+                fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) })
+            XCTAssertEqual(
+                observer.values.totalText, totals.dayTotal.map { MenuDurationText(seconds: wholeSeconds($0)) })
             XCTAssertEqual(
                 observer.values.taskDurationTexts[firstTask.id],
-                totals.taskDurations[firstTask.id].map(formatClockDuration))
+                totals.taskDurations[firstTask.id].map { MenuDurationText(seconds: wholeSeconds($0)) })
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
             XCTAssertEqual(observer.content, originalContent)
@@ -83,7 +86,9 @@ final class MenuPresentationTests: XCTestCase {
         observer.menuClosed()
         XCTAssertNotEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 1)
-        XCTAssertEqual(observer.content.elapsedText, fixture.features.tracking.timerText)
+        XCTAssertEqual(
+            observer.content.elapsedText, fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) }
+        )
         XCTAssertTrue(observer.content.canStopTracking)
     }
 
@@ -133,23 +138,27 @@ final class MenuPresentationTests: XCTestCase {
         observer.onLabelChange = { changes += 1 }
         XCTAssertTrue(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking: First task")
-        XCTAssertEqual(observer.label.totalText, "00:00")
+        XCTAssertEqual(observer.label.totalText, "0:00")
         XCTAssertEqual(
             observer.label.help,
-            "Tracking: First task\nTotal today: 00:00\nTime logged today in your local time zone")
+            "Tracking: First task\nTotal today: 0:00\nTime logged today in your local time zone")
+        XCTAssertEqual(observer.label.spokenTotal, "0 minutes")
         try await menu.tick(1)
         XCTAssertEqual(changes, 0, "Seconds in accessibility or help text must not invalidate the status label.")
         try await menu.tick(49)
-        XCTAssertEqual(observer.label.totalText, "00:01")
+        XCTAssertEqual(observer.label.totalText, "0:01")
+        XCTAssertEqual(observer.label.spokenTotal, "1 minute")
         XCTAssertEqual(changes, 1)
         observer.setShowDailyTotal(false)
         XCTAssertNil(observer.label.totalText)
+        XCTAssertNil(observer.label.spokenTotal)
         XCTAssertEqual(observer.label.help, observer.label.status)
         XCTAssertEqual(changes, 2)
         try await menu.tick(3_600)
         XCTAssertEqual(changes, 2)
         observer.setShowDailyTotal(true)
-        XCTAssertEqual(observer.label.totalText, "01:01")
+        XCTAssertEqual(observer.label.totalText, "1:01")
+        XCTAssertEqual(observer.label.spokenTotal, "1 hour, 1 minute")
         XCTAssertEqual(changes, 3)
     }
 
@@ -164,18 +173,18 @@ final class MenuPresentationTests: XCTestCase {
         let observer = menu.observer
         fixture.advanceClock(by: 60)
         menu.menuOpened()
-        XCTAssertEqual(observer.content.totalText, "00:01:05")
-        XCTAssertEqual(observer.label.totalText, "00:01")
+        XCTAssertEqual(observer.content.totalText.text, "0:01:05")
+        XCTAssertEqual(observer.label.totalText, "0:01")
         fixture.advanceClock(by: 60)
         observer.setShowDailyTotal(false)
-        XCTAssertEqual(observer.content.totalText, "00:01:05")
-        XCTAssertEqual(observer.label.totalText, "00:01")
+        XCTAssertEqual(observer.content.totalText.text, "0:01:05")
+        XCTAssertEqual(observer.label.totalText, "0:01")
         menu.menuClosed()
-        XCTAssertEqual(observer.content.totalText, "00:02:05")
+        XCTAssertEqual(observer.content.totalText.text, "0:02:05")
         XCTAssertNil(observer.label.totalText)
         observer.setShowDailyTotal(true)
-        XCTAssertEqual(observer.label.totalText, "00:02")
-        XCTAssertEqual(observer.content.totalText, "00:02:05")
+        XCTAssertEqual(observer.label.totalText, "0:02")
+        XCTAssertEqual(observer.content.totalText.text, "0:02:05")
     }
 
     @MainActor
@@ -195,12 +204,12 @@ final class MenuPresentationTests: XCTestCase {
                 active: activeWorklog), rows: rows)
         let observer = MenuHarness(fixture, showDailyTotal: true).observer
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [archivedTask.id, firstTask.id])
-        XCTAssertEqual(observer.content.todayTasks.map(\.durationText), ["00:00:30", "00:00:10"])
+        XCTAssertEqual(observer.content.todayTasks.map(\.durationText.text), ["0:00:30", "0:00:10"])
         XCTAssertEqual(observer.content.todayTasks.map(\.isRunning), [false, true])
         XCTAssertEqual(observer.content.todayTasks.map(\.canStart), [false, false])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [another.id, twin.id, secondTask.id])
         XCTAssertTrue(observer.content.otherTasks.allSatisfy(\.canStart))
-        XCTAssertEqual(observer.content.totalText, "00:00:40")
+        XCTAssertEqual(observer.content.totalText.text, "0:00:40")
         XCTAssertEqual(observer.content.activeWorklogID, activeWorklog.id)
         XCTAssertTrue(observer.content.canStopTracking)
     }
@@ -246,7 +255,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. No task tracked yet")
         XCTAssertEqual(observer.label.totalText, "-")
-        XCTAssertEqual(observer.content.totalText, "Unavailable")
+        XCTAssertEqual(observer.content.totalText.text, "Unavailable")
         XCTAssertEqual(observer.content.totalsExplanation, "Today's total is unavailable")
         XCTAssertNil(observer.content.activeWorklogID)
         XCTAssertNil(observer.content.elapsedText)
@@ -255,7 +264,7 @@ final class MenuPresentationTests: XCTestCase {
         try await menu.settled()
         XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "No task tracked yet")
-        XCTAssertEqual(observer.content.otherTasks.first?.durationText, "-")
+        XCTAssertEqual(observer.content.otherTasks.first?.durationText.text, "-")
         let content = observer.content
         var labelChanges = 0
         var valueChanges = 0
@@ -304,7 +313,8 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertTrue(observer.content.isStale)
         XCTAssertFalse(observer.label.indicator.isRunning)
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. Last confirmed task: First task")
-        XCTAssertEqual(observer.label.totalText, "~00:01")
+        XCTAssertEqual(observer.label.totalText, "~0:01")
+        XCTAssertEqual(observer.label.spokenTotal, "about 1 minute")
         XCTAssertEqual(observer.content.dailyTotalsStatus, .cached)
         XCTAssertEqual(
             observer.content.totalsExplanation,

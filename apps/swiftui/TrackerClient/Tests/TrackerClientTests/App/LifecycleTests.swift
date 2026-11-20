@@ -46,7 +46,7 @@ final class LifecycleTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
         XCTAssertNil(fixture.scheduler.display)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:30")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 30)
         fixture.sync.setMenuVisible(true)
         let refresh = try await fixture.client.next()
         refresh.succeed(resources)
@@ -57,7 +57,7 @@ final class LifecycleTests: XCTestCase {
         let operationCount = fixture.client.operations.count
         fixture.advanceClock(by: 9)
         timer?.fire()
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:39")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 39)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         fixture.sync.setMenuVisible(false)
         XCTAssertTrue(timer?.cancelled == true)
@@ -125,7 +125,7 @@ final class LifecycleTests: XCTestCase {
         refresh.succeed(emptyTaskListResources)
         try await fixture.settled()
         XCTAssertNil(fixture.scheduler.display)
-        XCTAssertEqual(fixture.features.tracking.timerText, "Idle")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, nil)
     }
 
     @MainActor
@@ -151,7 +151,7 @@ final class LifecycleTests: XCTestCase {
         let wake = try await fixture.client.next()
         XCTAssertEqual(wake.operation, .refresh(.local))
         XCTAssertEqual(fixture.features.tracking.elapsed(), 3_930)
-        XCTAssertEqual(fixture.features.tracking.timerText, "01:05:30", "Wake shows the new time before the reply.")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 3930, "Wake shows the new time before the reply.")
         wake.succeed(resources)
         try await fixture.settled()
         XCTAssertNotNil(fixture.scheduler.display)

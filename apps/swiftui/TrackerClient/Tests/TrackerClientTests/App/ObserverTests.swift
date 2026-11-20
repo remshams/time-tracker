@@ -31,7 +31,7 @@ final class ObserverTests: XCTestCase {
 
         fixture.advanceClock(by: 4)
         display.fire()
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 34)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
     }
 
@@ -47,7 +47,7 @@ final class ObserverTests: XCTestCase {
         fixture.advanceClock(by: 4)
 
         fixture.sync.setWindowVisible(true)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 34)
         XCTAssertNotNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         request.succeed(resources)

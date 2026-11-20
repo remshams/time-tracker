@@ -426,8 +426,8 @@ final class DailyTotalsAppTests: XCTestCase {
     @MainActor
     func testAggregateFormatsExactMicrosecondSumsAtSecondAndMinuteBoundaries() async throws {
         for (count, microseconds, expectedSeconds, expectedText) in [
-            (10, Int64(100_000), TimeInterval(1), "00:00:01"),
-            (200, Int64(300_000), TimeInterval(60), "00:01:00"),
+            (10, Int64(100_000), TimeInterval(1), "0:00:01"),
+            (200, Int64(300_000), TimeInterval(60), "0:01:00"),
         ] {
             let fixture = Fixture(reports: true, calendar: dailyCalendar())
             defer { fixture.cleanup() }
@@ -456,7 +456,7 @@ final class DailyTotalsAppTests: XCTestCase {
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
         try await fixture.settled()
         XCTAssertEqual(fixture.totalDuration, 0)
-        XCTAssertEqual(fixture.totalDurationText, "00:00:00")
+        XCTAssertEqual(fixture.totalDurationText, "0:00:00")
         fixture.clock.now.addTimeInterval(86_400)
         XCTAssertNil(fixture.totalDuration)
         XCTAssertEqual(fixture.totalDurationText, "Unavailable")
@@ -470,7 +470,7 @@ final class DailyTotalsAppTests: XCTestCase {
         let initialRows = resources.catalog.value.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: 400_000) }
         try await fixture.start(resources, rows: initialRows)
         XCTAssertEqual(try XCTUnwrap(fixture.totalDuration), 0.8, accuracy: 0.000001)
-        XCTAssertEqual(fixture.totalDurationText, "00:00:00")
+        XCTAssertEqual(fixture.totalDurationText, "0:00:00")
         let totals = TaskTotalProbes(fixture.features.dailyTotals, taskIDs: resources.catalog.value.map(\.id))
         let contentChanges = ObservationProbe { ViewReads.content(fixture.features) }
         fixture.scheduler.poll?.fire()
@@ -479,9 +479,9 @@ final class DailyTotalsAppTests: XCTestCase {
         report.succeed(TaskListTotalsRefresh(taskList: resources, rows: updatedRows))
         try await fixture.settled()
         for task in resources.catalog.value {
-            XCTAssertEqual(fixture.durationText(taskID: task.id), "00:00:00")
+            XCTAssertEqual(fixture.durationText(taskID: task.id), "0:00:00")
         }
-        XCTAssertEqual(fixture.totalDurationText, "00:00:01")
+        XCTAssertEqual(fixture.totalDurationText, "0:00:01")
         XCTAssertEqual(totals.changed(), [])
         XCTAssertFalse(contentChanges.consume())
         assertRefreshed(fixture)
@@ -698,7 +698,7 @@ final class DailyTotalsAppTests: XCTestCase {
         let resources = TaskListResources(tasks: [secondTask, archivedTask, firstTask], active: activeWorklog)
         try await fixture.start(resources, rows: [total(firstTask, 20), total(archivedTask, 50)])
         XCTAssertEqual(fixture.todayTasks.map(\.id), [archivedTask.id, firstTask.id])
-        XCTAssertEqual(fixture.durationText(taskID: firstTask.id), "00:00:20")
+        XCTAssertEqual(fixture.durationText(taskID: firstTask.id), "0:00:20")
         XCTAssertEqual(fixture.features.menuBar.dailyDuration(taskID: secondTask.id), 0)
         XCTAssertTrue(fixture.features.worklogHistory.worklogs.isEmpty)
         let count = fixture.client.operations.count
@@ -1112,14 +1112,17 @@ private extension Fixture {
     var totalDuration: TimeInterval? {
         features.dailyTotals.totalDuration(active: features.tracking.active)
     }
-    var totalDurationText: String { totalDuration.map(formatClockDuration) ?? "Unavailable" }
+    var totalDurationText: String {
+        totalDuration.map { MenuDurationText(seconds: wholeSeconds($0)).text } ?? "Unavailable"
+    }
     /// Tasks with time logged today, in task list order.
     var todayTasks: [TaskItem] {
         features.taskCatalog.tasks.filter { (features.menuBar.dailyDuration(taskID: $0.id) ?? 0) > 0 }
     }
 
     func durationText(taskID: String) -> String {
-        features.menuBar.dailyDuration(taskID: taskID).map(formatClockDuration) ?? "Unavailable"
+        features.menuBar.dailyDuration(taskID: taskID).map { MenuDurationText(seconds: wholeSeconds($0)).text }
+            ?? "Unavailable"
     }
 }
 

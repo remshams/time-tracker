@@ -88,7 +88,7 @@ enum ViewReads {
         for task in features.taskCatalog.tasks { _ = features.trackingAvailability.canStart(taskID: task.id) }
     }
 
-    static func timer(_ features: TrackerFeatures) { _ = features.tracking.timerText }
+    static func timer(_ features: TrackerFeatures) { _ = features.tracking.elapsedSeconds }
 
     static func taskCreation(_ features: TrackerFeatures) {
         let store = features.taskCreation
@@ -183,8 +183,8 @@ func assertRefreshed(_ fixture: Fixture, file: StaticString = #filePath, line: U
     let explanation = totals.explanation()
     XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
     XCTAssertEqual(
-        features.tracking.timerText,
-        features.tracking.displayText(),
+        features.tracking.elapsedSeconds,
+        features.connection.confirmed ? features.tracking.elapsed().map { Int($0) } : nil,
         file: file, line: line)
     XCTAssertEqual(
         totals.shares, DailyTotalShare.shares(of: features.taskCatalog.tasks, durations: totals.taskDurations),

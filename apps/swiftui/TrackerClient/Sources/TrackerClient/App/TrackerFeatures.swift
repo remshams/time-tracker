@@ -18,7 +18,7 @@ public final class TrackerFeatures {
     public let worklogHistory: WorklogHistoryStore
     /// Views read the connection settings and status here, connect and retry; the sync writes the settings and status.
     public let connection: ConnectionStore
-    /// Views read the running worklog, the tracking error and the timer text here, start and stop tracking and
+    /// Views read the running worklog, the tracking error and the elapsed time here, start and stop tracking and
     /// dismiss the error; the sync hands in each loaded task list.
     public let tracking: TrackingStore
     /// Views read today's status and task totals here; the store loads them when the sync asks it to.
