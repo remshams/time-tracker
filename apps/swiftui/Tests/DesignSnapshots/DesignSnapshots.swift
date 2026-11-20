@@ -155,7 +155,11 @@ private func spinRunLoop(_ seconds: TimeInterval) {
 /// The app's default window size and the minimum content size that `TrackerWindow` allows.
 private let windowSizes = [NSSize(width: 1100, height: 760), NSSize(width: 760, height: 480)]
 
-private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: NSSize, to directory: URL) throws {
+/// Returns the PNG and whether the window server drew it. It didn't if the screen was locked; then the views were drawn
+/// in-process without glass or vibrancy.
+private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: NSSize, to directory: URL) throws
+    -> (url: URL, fromWindowServer: Bool)
+{
     let client = FixtureClient(tasks: scenario.tasks, active: scenario.active)
     let features = TrackerFeatures(
         client: client, clock: FixedClock(), scheduler: RunLoopTrackerScheduler(), settings: MemorySettings(),
@@ -199,21 +203,32 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     window.orderFrontRegardless()
     spinRunLoop(1.5)
 
-    requireUnlockedScreen()
-    guard let image = windowServerImage(of: window) else {
-        throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
+    let fromWindowServer = !isScreenLocked()
+    let bitmap: NSBitmapImageRep
+    if fromWindowServer {
+        guard let image = windowServerImage(of: window) else {
+            throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
+        }
+        bitmap = NSBitmapImageRep(cgImage: image)
+    } else {
+        bitmap = try inProcessImage(of: window)
     }
-    let bitmap = NSBitmapImageRep(cgImage: image)
     let suffix = appearance == .darkAqua ? "dark" : "light"
     // The file name uses the window's final size, because SwiftUI adds the toolbar to the content's minimum height.
     let captured = window.frame.size
-    let url = directory.appendingPathComponent(
-        "\(scenario.name)-\(suffix)-\(Int(captured.width))x\(Int(captured.height)).png")
+    func snapshotURL(flat: Bool) -> URL {
+        directory.appendingPathComponent(
+            "\(scenario.name)-\(suffix)\(flat ? "-flat" : "")-\(Int(captured.width))x\(Int(captured.height)).png")
+    }
+    let url = snapshotURL(flat: !fromWindowServer)
     try bitmap.representation(using: .png, properties: [:])?.write(to: url)
+    // A capture of the other kind from an earlier run would show older code next to this one.
+    try? FileManager.default.removeItem(at: snapshotURL(flat: fromWindowServer))
     print(url.path)
     window.orderOut(nil)
     window.close()
     features.sync.setWindowVisible(false)
+    return (url, fromWindowServer)
 }
 
 /// AppKit moves a titled window back onto a screen when it's shown or resized, which put the snapshot windows on the
@@ -239,36 +254,65 @@ private func windowServerImage(of window: NSWindow) -> CGImage? {
     )?.takeRetainedValue()
 }
 
-/// The window server stops compositing while the screen is locked and returns blank images, and drawing the views
-/// in-process loses the glass and vibrancy, so the run stops instead. It checks again before each capture in case the
-/// screen locks during a run.
-private func requireUnlockedScreen() {
-    if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-        session["CGSSessionScreenIsLocked"] as? Bool == true
-    {
-        FileHandle.standardError.write(
-            Data("The screen is locked, so the window server can't render snapshots. Unlock it and run again.\n".utf8))
-        exit(1)
+/// Draws the window's views into a bitmap. It works while the screen is locked, but only the window server composites
+/// glass, so the sidebar list and the toolbar lose their glass, selection, and colors. `CALayer.render(in:)` is worse:
+/// it leaves the whole sidebar blank.
+private func inProcessImage(of window: NSWindow) throws -> NSBitmapImageRep {
+    guard let frameView = window.contentView?.superview,
+        let bitmap = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds)
+    else {
+        throw BridgeFailure(message: "AppKit couldn't create a bitmap for the snapshot window.")
     }
+    frameView.cacheDisplay(in: frameView.bounds, to: bitmap)
+    return bitmap
+}
+
+/// The window server stops compositing while the screen is locked and returns blank images. The run checks before
+/// each capture, because the screen can lock while it runs.
+private func isScreenLocked() -> Bool {
+    let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+    return session?["CGSSessionScreenIsLocked"] as? Bool == true
+}
+
+/// Agents read this to tell the user which design checks the flat snapshots can't support.
+private func reportFlatSnapshots(_ files: [URL]) {
+    let names = files.map { "  \($0.lastPathComponent)" }.joined(separator: "\n")
+    let message = """
+        The screen was locked, so the window server didn't draw the snapshot window. These \(files.count) snapshots \
+        were drawn in-process instead and have "-flat" in their names:
+        \(names)
+        The detail pane, the worklog history, the sidebar's daily total and bar, the Active/Archived picker, and \
+        the connection footer look as they do in the app. Content inside the glass is wrong: the sidebar and \
+        toolbar have no glass, the selected task row is a solid black bar that hides its name and time, the task \
+        color dots in the list and the tracking pill are white, and in dark mode the task list and pill text is \
+        dark on a dark background. Don't judge the task list, the tracking pill, glass, vibrancy, or contrast \
+        against the glass from these snapshots. Tell the user that these checks were skipped because the screen \
+        was locked, or ask them to unlock the Mac and run the script again.
+
+        """
+    FileHandle.standardError.write(Data(message.utf8))
 }
 
 @main
 struct DesignSnapshots {
     static func main() throws {
-        requireUnlockedScreen()
         let app = NSApplication.shared
         // Prohibited keeps the snapshot process out of the Dock and away from keyboard focus.
         app.setActivationPolicy(.prohibited)
         let arguments = CommandLine.arguments
         let directory = URL(fileURLWithPath: arguments.count > 1 ? arguments[1] : "design-snapshots")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var flatFiles: [URL] = []
         for scenario in scenarios {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 for size in windowSizes {
-                    try render(scenario, appearance: appearance, size: size, to: directory)
+                    let (url, fromWindowServer) = try render(
+                        scenario, appearance: appearance, size: size, to: directory)
+                    if !fromWindowServer { flatFiles.append(url) }
                 }
             }
         }
+        if !flatFiles.isEmpty { reportFlatSnapshots(flatFiles) }
     }
 }
 

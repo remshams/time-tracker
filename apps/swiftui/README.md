@@ -283,7 +283,7 @@ This check compiles the production `TrackerSplitLayout` without the Rust bridge 
 
 ## Design snapshots
 
-Design reviews compare screenshots of the tracker window in light and dark with fixed data. On a Mac with Xcode selected and an unlocked desktop session, run:
+Design reviews compare screenshots of the tracker window in light and dark with fixed data. On a Mac with Xcode selected, run:
 
 ```sh
 apps/swiftui/render-design-snapshots.sh [output-dir]
@@ -293,7 +293,9 @@ The script compiles the `TrackerClient` sources and the app's views against a fi
 
 It writes 12 PNGs to `apps/swiftui/design-snapshots/`, which git ignores, or to `output-dir`. The `tracking`, `idle` and `empty` scenarios each get light and dark captures at the default window size and at the minimum size. File names give the window size in points, such as `idle-dark-760x532.png`. The minimum window is 532 points tall because `TrackerWindow` keeps its content at least 760×480 and the toolbar adds the rest.
 
-The captures come from the window server, so they show the glass sidebar and vibrant text as the app does. A process may capture its own windows without the Screen Recording permission. The window server doesn't draw windows while the screen is locked, and drawing the views in-process loses glass and vibrancy, so there is no fallback. The script stops with a message if the screen is locked when it starts or before any capture; unlock the Mac and run it again. CI doesn't run it.
+The captures come from the window server, so they show the glass sidebar and vibrant text as the app does. A process may capture its own windows without the Screen Recording permission. CI doesn't run the script.
+
+The window server doesn't draw windows while the screen is locked. The script then draws the views in-process instead and adds `-flat` to the file names, such as `idle-dark-flat-760x532.png`. It checks before each capture, so a run can mix both kinds if the screen locks or unlocks during it. Each capture deletes the other kind's file for the same scenario, appearance and size, so an output folder never holds a stale capture next to a fresh one. Flat captures show the detail pane, the worklog history, and the sidebar header and footer correctly, but not the sidebar's task list, the toolbar's tracking pill, or glass: the selected row is a black bar, the task color dots are white, and in dark mode the list text is dark. After a run with flat captures, the script lists them on standard error and says which checks they can't support, so an agent can tell the user what it couldn't check.
 
 ## Coverage and mutation testing
 
