@@ -35,3 +35,6 @@ id_ed25519
 .aws/
 .ssh/
 apps/swiftui/design-snapshots/
+
+# Per-checkout xcode-build-server config for editors such as Zed.
+apps/swiftui/buildServer.json
