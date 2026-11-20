@@ -90,7 +90,7 @@ extension NSMutableAttributedString {
     /// Dims the seconds of `duration`, whose text ends at `end`, as the main window does.
     func dimSeconds(of duration: MenuDurationText, endingAt end: Int) {
         let length = (duration.seconds as NSString).length
-        guard length > 0, end >= length else { return }
+        guard length > 0 else { return }
         addAttribute(
             .foregroundColor, value: NSColor.secondaryLabelColor, range: NSRange(location: end - length, length: length)
         )
