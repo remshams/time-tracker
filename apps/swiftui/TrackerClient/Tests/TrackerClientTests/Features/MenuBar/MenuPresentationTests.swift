@@ -316,6 +316,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(observer.label.totalText, "~0:01")
         XCTAssertEqual(observer.label.spokenTotal, "about 1 minute")
         XCTAssertEqual(observer.content.dailyTotalsStatus, .cached)
+        XCTAssertEqual(observer.content.totalText.text, "~0:01:30")
         XCTAssertEqual(
             observer.content.totalsExplanation,
             "Today's total uses cached tracker state. Running time may be unconfirmed.")

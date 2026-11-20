@@ -17,6 +17,7 @@ struct MenuValueField {
     func show(_ value: MenuDurationText) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = label.alignment
+        paragraph.lineBreakMode = label.lineBreakMode
         let text = NSMutableAttributedString(
             string: value.text,
             attributes: [
