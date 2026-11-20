@@ -36,20 +36,21 @@ struct TrackerStatusMenuBuilder {
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         addText(content.connectionStatusText, value: serverURL, to: menu)
         if content.isStale { addText("Showing last confirmed state", to: menu) }
-        let elapsedField = addText(content.runningTaskName, value: content.elapsedText, to: menu, liveValue: true)
+        let elapsedField = addText(content.runningTaskName, value: content.elapsedText?.text, to: menu, liveValue: true)
+        content.elapsedText.map { elapsedField?.show($0) }
         if let status = content.autoPauseStatusText { addText(status, to: menu) }
         if let error = content.trackingError { addText(error, to: menu) }
         menu.addItem(.separator())
         addText(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today", to: menu)
         let totalField = addText(
-            "Total", value: content.totalText, to: menu,
+            "Total", value: content.totalText.text, to: menu,
             help: content.totalsExplanation, liveValue: true)
+        totalField?.show(content.totalText)
         menu.addItem(.separator())
         var taskRows: [String: MenuTaskRow] = [:]
         for entry in content.todayTasks {
             let item = addTask(
-                entry, title: MenuTaskRow.title(entry, duration: entry.durationText),
-                help: content.totalsExplanation, content: content,
+                entry, duration: entry.durationText, help: content.totalsExplanation, content: content,
                 appearance: appearance, to: menu)
             let row = MenuTaskRow(item: item, entry: entry, isStale: content.isStale)
             taskRows[entry.id] = row
@@ -71,9 +72,7 @@ struct TrackerStatusMenuBuilder {
             submenu.appearance = appearance
             submenu.autoenablesItems = false
             for entry in content.otherTasks {
-                addTask(
-                    entry, title: entry.task.name, help: nil, content: content,
-                    appearance: appearance, to: submenu)
+                addTask(entry, duration: nil, help: nil, content: content, appearance: appearance, to: submenu)
             }
             let parent = NSMenuItem(title: "Start tracking", action: nil, keyEquivalent: "")
             parent.submenu = submenu
@@ -88,9 +87,11 @@ struct TrackerStatusMenuBuilder {
 
     @discardableResult
     private func addTask(
-        _ entry: TrackerMenuTask, title: String, help: String?,
+        _ entry: TrackerMenuTask, duration: MenuDurationText?, help: String?,
         content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu
     ) -> NSMenuItem {
+        let title = duration.map { MenuTaskRow.title(entry, duration: $0.text) } ?? entry.task.name
+        let spokenTitle = duration.map { MenuTaskRow.title(entry, duration: $0.spoken) } ?? entry.task.name
         let isRunning = entry.isRunning && !content.isStale
         let trackingAction = entry.trackingAction(in: content).map { action -> TrackerMenuCommand.Action in
             switch action {
@@ -136,7 +137,7 @@ struct TrackerStatusMenuBuilder {
         item.toolTip =
             trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
         let status = MenuTaskRow.accessibilityStatus(isRunning: entry.isRunning, isStale: content.isStale)
-        item.setAccessibilityLabel("\(title), \(status)")
+        item.setAccessibilityLabel("\(spokenTitle), \(status)")
         return item
     }
 
