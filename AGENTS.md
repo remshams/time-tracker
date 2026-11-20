@@ -58,6 +58,10 @@ unchanged while the architecture-docs standard is piloted; don't update it.
 - When several agents work on PRs in parallel, the orchestrating agent requests the reviews, one PR at a time. Sub-agents do not post `@coderabbitai` commands.
 - If CodeRabbit replies that the rate limit is exceeded, wait the stated time, then trigger the request again. Count from when its message was posted; the number in it does not count down.
 
+## Install the macOS app locally
+
+- When the user asks to install the current version on this machine, run `python3 scripts/install-macos-app.py` and report its last line. It builds Release, quits the running app, replaces `~/Applications/TimeTracker.app` and relaunches it. Don't look for another procedure or make a backup.
+
 ## End-to-end tests
 
 - Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
