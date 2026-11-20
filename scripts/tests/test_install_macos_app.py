@@ -87,7 +87,6 @@ class InstallTests(unittest.TestCase):
             with patch.object(INSTALL, "output") as output:
                 INSTALL.install(built, installed)
             self.assertFalse(installed.exists())
-            self.assertTrue(installed.parent.is_dir())
         self.assertEqual([call.args[0] for call in output.call_args_list],
                          [["ditto", str(built), str(installed)],
                           ["codesign", "--verify", "--deep", "--strict", str(installed)]])

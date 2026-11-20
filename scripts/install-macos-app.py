@@ -80,7 +80,7 @@ def main() -> int:
         if not arguments.no_launch:
             output(["open", str(INSTALLED_APP)])
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
-        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) and error.stderr else ""
+        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else ""
         print(f"Install failed: {error}" + (f"\n{detail}" if detail else ""), file=sys.stderr)
         return 1
     print(f"Installed {build_revision} at {INSTALLED_APP}" + ("" if arguments.no_launch else " and launched it"))
