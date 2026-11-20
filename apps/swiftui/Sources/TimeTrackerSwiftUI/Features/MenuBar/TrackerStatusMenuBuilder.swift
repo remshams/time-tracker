@@ -37,7 +37,7 @@ struct TrackerStatusMenuBuilder {
         addText(content.connectionStatusText, value: serverURL, to: menu)
         if content.isStale { addText("Showing last confirmed state", to: menu) }
         let elapsedField = addText(content.runningTaskName, value: content.elapsedText?.text, to: menu, liveValue: true)
-        content.elapsedText.map { elapsedField?.show($0) }
+        if let elapsed = content.elapsedText { elapsedField?.show(elapsed) }
         if let status = content.autoPauseStatusText { addText(status, to: menu) }
         if let error = content.trackingError { addText(error, to: menu) }
         menu.addItem(.separator())
