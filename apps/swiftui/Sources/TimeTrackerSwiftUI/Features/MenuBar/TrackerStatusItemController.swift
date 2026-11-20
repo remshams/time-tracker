@@ -69,7 +69,7 @@ final class TrackerStatusItemController: NSObject {
             ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
-        button.setAccessibilityValue(label.totalText ?? "")
+        button.setAccessibilityValue(label.spokenTotal ?? "")
         button.setAccessibilityHelp(
             "\(label.help)\nClick to start or stop tracking. Right-click or use the Open menu shortcut to open the menu."
         )
@@ -126,7 +126,7 @@ final class TrackerStatusItemController: NSObject {
 
     private func updateMenuValues(_ values: TrackerMenuValues) {
         guard let shownMenu else { return }
-        shownMenu.elapsedField?.update(values.elapsedText ?? "Unavailable")
+        shownMenu.elapsedField?.update(values.elapsedText ?? MenuDurationText(placeholder: "Unavailable"))
         shownMenu.totalField?.update(values.totalText, help: values.totalsExplanation)
         for (taskID, row) in shownMenu.taskRows {
             guard let duration = values.taskDurationTexts[taskID] else { continue }

@@ -55,18 +55,16 @@ struct WorklogCorrectionSheet: View {
 
             if let end = correction.end, end > correction.start {
                 LabeledContent("Duration") {
-                    Text(formatClockDuration(end.timeIntervalSince(correction.start)))
+                    DurationLabel(duration: DurationText(duration: end.timeIntervalSince(correction.start)))
                         .accessibilityIdentifier("worklog-correction.duration")
                         .font(TextRole.duration(.body))
                 }
             } else if correction.end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    LabeledContent(
-                        "Elapsed after save",
-                        value: formatClockDuration(
-                            max(0, context.date.timeIntervalSince(correction.start))
-                        )
-                    )
+                    LabeledContent("Elapsed after save") {
+                        DurationLabel(
+                            duration: DurationText(duration: context.date.timeIntervalSince(correction.start)))
+                    }
                     .font(TextRole.duration(.body))
                 }
             }
