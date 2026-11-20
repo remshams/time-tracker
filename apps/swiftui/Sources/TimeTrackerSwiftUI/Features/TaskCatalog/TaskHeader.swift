@@ -106,6 +106,5 @@ private struct TaskHeaderActions: View {
         .labelStyle(.iconOnly)
         .buttonStyle(IconButtonStyle(diameter: IconSize.largeButton))
         .imageScale(.large)
-        .fixedSize()
     }
 }
