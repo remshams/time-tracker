@@ -205,12 +205,13 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     // The check after the capture catches a screen that locked during it, which leaves the image blank.
     let lockedBefore = isScreenLocked()
     let image = lockedBefore ? nil : windowServerImage(of: window)
+    let lockedAfter = isScreenLocked()
     let flat: Bool
     let bitmap: NSBitmapImageRep
-    if let image, !isScreenLocked() {
+    if let image, !lockedAfter {
         flat = false
         bitmap = NSBitmapImageRep(cgImage: image)
-    } else if lockedBefore || isScreenLocked() {
+    } else if lockedBefore || lockedAfter {
         flat = true
         bitmap = try inProcessImage(of: window)
     } else {
