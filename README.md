@@ -33,6 +33,7 @@ cargo install --path apps/tui   # install the binary as `tt`
 cargo run -p tracker-cli -- --help
 cargo install --path apps/cli   # install the binary as `tt-cli`
 cargo install --path apps/server # install the binary as `tt-server`
+python3 scripts/install-macos-app.py # macOS: build and install the native app in ~/Applications
 ```
 
 ### Command line interface
