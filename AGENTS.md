@@ -60,7 +60,7 @@ unchanged while the architecture-docs standard is piloted; don't update it.
 
 ## Install the macOS app locally
 
-- When the user asks to install the current version on this machine, run `python3 scripts/install-macos-app.py` and report its last line. It builds Release, quits the running app, replaces `~/Applications/TimeTracker.app` and relaunches it. Don't look for another procedure or make a backup.
+- When the user asks to install the current version on this machine, run `python3 scripts/install-macos-app.py` and report its output. It builds Release, quits the running app, replaces `~/Applications/TimeTracker.app` and relaunches it. Don't look for another procedure or make a backup.
 
 ## End-to-end tests
 
