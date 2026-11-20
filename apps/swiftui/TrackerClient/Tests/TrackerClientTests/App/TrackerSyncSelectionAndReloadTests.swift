@@ -10,12 +10,12 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         // The closure type a task dialog store declares.
         let reload: @MainActor (_ then: () -> Void) async -> Void = fixture.sync.reloadAfterTaskWrite(then:)
         var tasksInThen: [TaskItem] = []
-        var timerInThen: String?
+        var timerInThen: Int?
 
         let finished = Task { @MainActor in
             await reload {
                 tasksInThen = fixture.features.taskCatalog.tasks
-                timerInThen = fixture.features.tracking.timerText
+                timerInThen = fixture.features.tracking.elapsedSeconds
             }
         }
         let refresh = try await fixture.client.next()
@@ -25,7 +25,7 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         try await fixture.taskValue(finished)
 
         XCTAssertEqual(tasksInThen, [firstTask, secondTask])
-        XCTAssertEqual(timerInThen, "00:00:34", "The reloaded task list must show before `then` runs.")
+        XCTAssertEqual(timerInThen, 34, "The reloaded task list must show before `then` runs.")
         XCTAssertFalse(fixture.client.hasPendingRequests, "A task write must not reload an unchanged history.")
     }
 
@@ -46,7 +46,7 @@ final class TrackerSyncSelectionAndReloadTests: XCTestCase {
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         try await fixture.taskValue(finished)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34", "The reloaded task list must show.")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 34, "The reloaded task list must show.")
         history.succeed(emptyPage)
         try await fixture.settled()
     }

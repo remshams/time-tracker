@@ -40,6 +40,7 @@ MENU_BAR_STORE = "Features/MenuBar/MenuBarStore.swift"
 MENU_SOURCES = "Features/MenuBar/TrackerMenuSources.swift"
 MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
 MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
+MENU_DURATION = "Features/MenuBar/MenuDurationText.swift"
 CONNECTION = "Features/Connection/ConnectionStore.swift"
 CONNECTION_TESTING = "Features/Connection/ConnectionTesting.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationStore.swift"
@@ -93,6 +94,7 @@ TEST_PRODUCTION = {
     "Features/DailyTotals/DailyTotalShareTests.swift": [TOTAL_SHARE, TOTALS, TIME_FORMATTING],
     "Features/DailyTotals/DailyTotalsBarLayoutTests.swift": [BAR_LAYOUT],
     "Features/DailyTotals/TaskHeaderSubtitleTests.swift": [HEADER_SUBTITLE, LAST_TRACKED, TOTALS, TIME_FORMATTING],
+    "Features/MenuBar/MenuDurationTextTests.swift": [MENU_DURATION, TIME_FORMATTING],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
@@ -190,13 +192,15 @@ TEST_PRODUCTION = {
 # suite mapped to TRACKING runs them. The observable stores assign through the
 # shared change-guarded helper. The dialog stores and the tracking error claim the
 # presentation gate. The tracking, daily totals and menu bar stores drive the display
-# clock. The daily totals store builds the shares and the last tracked text. A direct
-# change to a key file still selects only that file.
+# clock. The daily totals store builds the shares and the last tracked text. The
+# menu sources build every menu duration text. A direct change to a key file still
+# selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD, PRESENTATION_GATE, DISPLAY_CLOCK),
     **{store: (CHANGE_GUARD,) for store in (CATALOG, HISTORY, CONNECTION, AUTOMATION)},
     TOTALS: (CHANGE_GUARD, DISPLAY_CLOCK, TOTAL_SHARE, LAST_TRACKED),
     MENU_BAR_STORE: (CHANGE_GUARD, DISPLAY_CLOCK),
+    MENU_SOURCES: (MENU_DURATION,),
     # The dialog flows and the tracking failures explain uncertain writes the same way. The sync's suites cover
     # the tracking failures, which TrackingStore records for the requests and the auto-pause.
     SYNC: (WRITE_FAILURE,),

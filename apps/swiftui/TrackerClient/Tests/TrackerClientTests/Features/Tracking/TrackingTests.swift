@@ -249,7 +249,7 @@ final class TrackingTests: XCTestCase {
         defer { fixture.cleanup() }
         fixture.sync.setWindowVisible(true)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:30")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 30)
         let probes = TrackingProbes(fixture.features.tracking)
 
         fixture.clock.uptime += 0.4
@@ -257,8 +257,8 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(probes.changed(), [])
         fixture.clock.uptime += 0.6
         fixture.scheduler.display?.fire()
-        XCTAssertEqual(probes.changed(), ["timerText"])
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:31")
+        XCTAssertEqual(probes.changed(), ["elapsedSeconds"])
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 31)
     }
 
     @MainActor
@@ -266,7 +266,7 @@ final class TrackingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        XCTAssertEqual(fixture.features.tracking.timerText, "Idle")
+        XCTAssertNil(fixture.features.tracking.elapsedSeconds)
         let probes = TrackingProbes(fixture.features.tracking)
 
         fixture.features.tracking.startTracking(taskID: firstTask.id)
@@ -277,10 +277,10 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(probes.changed(), ["active", "isSubmitting", "timerText"])
+        XCTAssertEqual(probes.changed(), ["active", "isSubmitting", "elapsedSeconds"])
         XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
         XCTAssertFalse(fixture.features.tracking.isSubmitting)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:30")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 30)
     }
 
     @MainActor
@@ -339,11 +339,11 @@ final class TrackingTests: XCTestCase {
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
 
-        for expected in ["00:00:31", "00:00:32", "00:00:33"] {
+        for expected in [31, 32, 33] {
             fixture.advanceClock(by: 1)
             display.fire()
             XCTAssertTrue(timer.consume())
-            XCTAssertEqual(fixture.features.tracking.timerText, expected)
+            XCTAssertEqual(fixture.features.tracking.elapsedSeconds, expected)
         }
         XCTAssertFalse(content.consume())
         XCTAssertFalse(controls.consume())
@@ -405,7 +405,7 @@ private final class TrackingProbes {
             ("active", ObservationProbe { _ = store.active }),
             ("error", ObservationProbe { _ = store.error }),
             ("isSubmitting", ObservationProbe { _ = store.isSubmitting }),
-            ("timerText", ObservationProbe { _ = store.timerText }),
+            ("elapsedSeconds", ObservationProbe { _ = store.elapsedSeconds }),
         ]
     }
 

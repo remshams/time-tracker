@@ -13,7 +13,7 @@ final class StoreRefreshTests: XCTestCase {
         fixture.sync.start()
         try await fixture.client.next().succeed(running)
         let history = try await fixture.client.next()
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:30")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 30)
         history.succeed(emptyPage)
         try await fixture.settled()
     }
@@ -88,7 +88,7 @@ final class StoreRefreshTests: XCTestCase {
         fixture.sync.sleep()
         fixture.advanceClock(by: 4)
         fixture.sync.wake()
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:34")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 34)
         XCTAssertEqual(fixture.features.dailyTotals.dayTotal, 4)
         try await fixture.client.next().succeed(TaskListTotalsRefresh(taskList: running, rows: rows))
         try await fixture.settled()
@@ -105,7 +105,7 @@ final class StoreRefreshTests: XCTestCase {
         fixture.advanceClock(by: 4)
         rollover.fire()
         XCTAssertEqual(fixture.features.dailyTotals.dayTotal, 4)
-        XCTAssertEqual(fixture.features.tracking.timerText, "00:00:30", "Only a display tick moves the timer.")
+        XCTAssertEqual(fixture.features.tracking.elapsedSeconds, 30, "Only a display tick moves the timer.")
         try await fixture.client.next().succeed(TaskListTotalsRefresh(taskList: running, rows: rows))
         try await fixture.settled()
     }

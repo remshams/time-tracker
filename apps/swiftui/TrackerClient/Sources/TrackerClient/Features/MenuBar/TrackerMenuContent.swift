@@ -2,7 +2,7 @@ import Foundation
 
 public struct TrackerMenuTask: Identifiable, Equatable {
     public let task: TaskItem
-    public let durationText: String
+    public let durationText: MenuDurationText
     public let isRunning: Bool
     public let canStart: Bool
     public var id: String { task.id }
@@ -16,10 +16,10 @@ public struct TrackerMenuContent: Equatable {
     public let autoPauseStatusText: String?
     public let trackingError: String?
     public let activeWorklogID: String?
-    public let elapsedText: String?
+    public let elapsedText: MenuDurationText?
     public let canStopTracking: Bool
     public let dailyTotalsStatus: DailyTotalsStatus
-    public let totalText: String
+    public let totalText: MenuDurationText
     public let totalsExplanation: String
     public let todayTasks: [TrackerMenuTask]
     public let otherTasks: [TrackerMenuTask]
@@ -32,7 +32,7 @@ public struct TrackerMenuContent: Equatable {
         autoPauseStatusText = inputs.autoPauseStatusText
         trackingError = inputs.trackingError
         activeWorklogID = inputs.active?.id
-        elapsedText = inputs.active == nil ? nil : inputs.timerText
+        elapsedText = inputs.active == nil ? nil : inputs.elapsedText
         canStopTracking = inputs.canStopTracking
         dailyTotalsStatus = inputs.dailyTotalsStatus
         totalText = inputs.dayTotalText
@@ -61,6 +61,8 @@ public struct TrackerMenuLabelContent: Equatable {
     public let indicator: TaskIndicator
     public let status: String
     public let totalText: String?
+    /// What VoiceOver reads for `totalText`, such as "1 hour, 4 minutes".
+    public let spokenTotal: String?
     public let help: String
 
     init(_ inputs: TrackerMenuInputs, showDailyTotal: Bool) {
@@ -86,16 +88,21 @@ public struct TrackerMenuLabelContent: Equatable {
         if showDailyTotal {
             let total: String
             if let duration = inputs.dayTotal {
-                let minutes = Int(max(0, duration)) / 60
-                let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
+                // The status item shows hours and minutes only, so it changes once a minute.
+                let minutes = wholeSeconds(duration) / 60
+                let text = String(format: "%d:%02d", minutes / 60, minutes % 60)
                 total = Self.totalLabel(text, status: inputs.dailyTotalsStatus)
+                let spoken = minutes == 0 ? "0 minutes" : spokenDuration(minutes * 60)
+                spokenTotal = inputs.dailyTotalsStatus == .cached ? "about \(spoken)" : spoken
             } else {
                 total = "-"
+                spokenTotal = "-"
             }
             totalText = total
             help = "\(status)\nTotal today: \(total)\n\(inputs.totalsExplanation)"
         } else {
             totalText = nil
+            spokenTotal = nil
             help = status
         }
     }

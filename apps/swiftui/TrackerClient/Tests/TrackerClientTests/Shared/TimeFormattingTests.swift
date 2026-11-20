@@ -19,9 +19,9 @@ final class TimeFormattingTests: XCTestCase {
         XCTAssertEqual(parsed.timeIntervalSince1970, date.timeIntervalSince1970, accuracy: 0.001)
     }
 
-    func testFormatClockDurationClampsNegativeValuesAndKeepsHoursBeyondOneDay() async {
-        XCTAssertEqual(formatClockDuration(-1), "00:00:00")
-        XCTAssertEqual(formatClockDuration(90_061), "25:01:01")
+    func testDurationTextFromAnIntervalDropsFractionsAndClampsNegativeValues() async {
+        XCTAssertEqual(DurationText(duration: 3867.9), DurationText(seconds: 3867))
+        XCTAssertEqual(DurationText(duration: -1), DurationText(seconds: 0))
     }
 
     func testDurationTextDropsTheHourZeroAndSplitsOffTheSeconds() async {

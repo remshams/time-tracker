@@ -1,12 +1,12 @@
 import Foundation
 import Observation
 
-/// Holds the running worklog, the tracking error, the in-flight flag and the timer text for the whole app, and starts
+/// Holds the running worklog, the tracking error, the in-flight flag and the elapsed time for the whole app, and starts
 /// and stops tracking from the window and the menu bar.
 ///
 /// Views read the public properties, start and stop tracking and dismiss the error; `TrackerSync` hands in each loaded
 /// task list. `TrackingAvailability` decides which requests are possible right now. Each observed property is assigned
-/// only when its value changes, so a `DisplayClock` tick redraws the timer text only when the shown second changes.
+/// only when its value changes, so a `DisplayClock` tick redraws the elapsed time only when the shown second changes.
 @Observable
 public final class TrackingStore: ChangeGuardedStore {
     public private(set) var active: WorklogItem?
@@ -14,8 +14,6 @@ public final class TrackingStore: ChangeGuardedStore {
         didSet { gate.update(self, kind: .alert, isShown: error != nil) }
     }
     public private(set) var isSubmitting = false
-    /// The elapsed time of the running worklog, "Idle", or "Unavailable" before the tracker state is confirmed.
-    public private(set) var timerText = "Unavailable"
     /// The whole seconds of the running worklog, or `nil` while nothing runs or before the tracker state is confirmed.
     private(set) var elapsedSeconds: Int?
     // A failed tracking request, auto-pause or auto-resume records its error here. The flow that sent the request
@@ -46,7 +44,7 @@ public final class TrackingStore: ChangeGuardedStore {
         self.catalog = catalog
         self.gate = gate
         self.displayClock = displayClock
-        displayClock.onTick { [weak self] in self?.refreshTimerText() }
+        displayClock.onTick { [weak self] in self?.refreshElapsedSeconds() }
     }
 
     private var availability: TrackingAvailability {
@@ -99,8 +97,8 @@ public final class TrackingStore: ChangeGuardedStore {
         }
     }
 
-    /// Takes in the running worklog of a loaded task list, restarts the elapsed time when another worklog runs or
-    /// its start changed, and shows the timer text. The connection is confirmed by now, so `TrackerSync` calls this
+    /// Takes in the running worklog of a loaded task list, restarts the timer when another worklog runs or
+    /// its start changed, and shows the elapsed time. The connection is confirmed by now, so `TrackerSync` calls this
     /// after `ConnectionStore.acceptTaskList()`.
     func acceptTaskList(active worklog: WorklogItem?) {
         let previous = active
@@ -109,15 +107,15 @@ public final class TrackingStore: ChangeGuardedStore {
             resetElapsedAnchor()
         }
         displayClock.setWorklogRunning(active != nil)
-        refreshTimerText()
+        refreshElapsedSeconds()
     }
 
-    /// Measures the running worklog from the current time and shows the timer text. `TrackerSync` calls this on wake.
+    /// Measures the running worklog from the current time and shows the elapsed time. `TrackerSync` calls this on wake.
     func resetElapsedAnchor() {
         let now = clock.now
         timerBase = max(0, now.timeIntervalSince(parseTimestamp(active?.start) ?? now))
         timerAnchor = clock.uptime
-        refreshTimerText()
+        refreshElapsedSeconds()
     }
 
     func elapsed() -> TimeInterval? {
@@ -125,13 +123,7 @@ public final class TrackingStore: ChangeGuardedStore {
         return timerBase + max(0, clock.uptime - timerAnchor)
     }
 
-    func displayText() -> String {
-        guard connection.confirmed else { return "Unavailable" }
-        return elapsed().map(formatClockDuration) ?? "Idle"
-    }
-
-    private func refreshTimerText() {
-        set(\.timerText, displayText())
+    private func refreshElapsedSeconds() {
         set(\.elapsedSeconds, connection.confirmed ? elapsed().map { Int($0) } : nil)
     }
 
