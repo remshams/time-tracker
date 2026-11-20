@@ -8,7 +8,7 @@ struct IconButtonStyle: ButtonStyle {
     let diameter: CGFloat
 
     func makeBody(configuration: Configuration) -> some View {
-        IconButtonBody(label: configuration.label, isPressed: configuration.isPressed, diameter: diameter)
+        IconButtonBody(configuration: configuration, diameter: diameter)
     }
 }
 
@@ -18,9 +18,8 @@ extension EnvironmentValues {
 }
 
 /// The style's view. It owns the hover, because the style itself can't hold state.
-private struct IconButtonBody<Label: View>: View {
-    let label: Label
-    let isPressed: Bool
+private struct IconButtonBody: View {
+    let configuration: ButtonStyleConfiguration
     let diameter: CGFloat
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.iconButtonsShowHover) private var showsHover
@@ -28,8 +27,8 @@ private struct IconButtonBody<Label: View>: View {
 
     var body: some View {
         let hovered = isEnabled && (isHovered || showsHover)
-        let tint = isEnabled && isPressed ? Emphasis.pressedTint : hovered ? Emphasis.hoverTint : 0
-        label
+        let tint = isEnabled && configuration.isPressed ? Emphasis.pressedTint : hovered ? Emphasis.hoverTint : 0
+        configuration.label
             .foregroundStyle(hovered ? .primary : .secondary)
             .frame(width: diameter, height: diameter)
             .background { Circle().fill(.primary.opacity(tint)) }
