@@ -72,9 +72,9 @@ private struct WorklogActionsMenu: View {
         } label: {
             Label("Worklog actions", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)
-                .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(IconButtonStyle(diameter: IconSize.button))
         .menuIndicator(.hidden)
         .frame(width: HistoryColumns.actions)
         .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
