@@ -241,8 +241,9 @@ VStack(alignment: .leading, spacing: Spacing.medium) {
   `Motion` has `quick` and `standard` animations and the `pressScale` of a pressed marker.
 
 Icon-only buttons use `IconButtonStyle` from `Shared/IconButtons`. Hovering one shows a neutral circle behind the
-glyph and pressing darkens it; a disabled button dims and shows no circle. Pass `IconSize.largeButton` in the task
-header and `IconSize.button` in compact rows and sheets. A menu takes the style through `.menuStyle(.button)`.
+glyph and pressing darkens it; a disabled button dims and shows no circle. Use `.buttonStyle(.icon(.large))` in the
+task header and `.buttonStyle(.icon(.compact))` in compact rows and sheets. A menu takes the style through
+`.menuStyle(.button)`.
 
 To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
 `python3 scripts/swift-style.py` fails on a number literal in `.padding(`, `spacing:`, `horizontalSpacing:`, `verticalSpacing:`, `minLength:`, `cornerRadius:`, `.cornerRadius(`,
