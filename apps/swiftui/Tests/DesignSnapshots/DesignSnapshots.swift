@@ -202,15 +202,17 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     window.orderFrontRegardless()
     spinRunLoop(1.5)
 
-    let flat = isScreenLocked()
+    // The second lock check catches a screen that locked during the capture, which leaves the image blank.
+    let flat: Bool
     let bitmap: NSBitmapImageRep
-    if flat {
+    if !isScreenLocked(), let image = windowServerImage(of: window), !isScreenLocked() {
+        flat = false
+        bitmap = NSBitmapImageRep(cgImage: image)
+    } else if isScreenLocked() {
+        flat = true
         bitmap = try inProcessImage(of: window)
     } else {
-        guard let image = windowServerImage(of: window) else {
-            throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
-        }
-        bitmap = NSBitmapImageRep(cgImage: image)
+        throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
     }
     let suffix = appearance == .darkAqua ? "dark" : "light"
     // The file name uses the window's final size, because SwiftUI adds the toolbar to the content's minimum height.
@@ -220,9 +222,13 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
             "\(scenario.name)-\(suffix)\(flat ? "-flat" : "")-\(Int(captured.width))x\(Int(captured.height)).png")
     }
     let url = snapshotURL(flat: flat)
-    try bitmap.representation(using: .png, properties: [:])?.write(to: url)
+    guard let png = bitmap.representation(using: .png, properties: [:]) else {
+        throw BridgeFailure(message: "AppKit couldn't encode the snapshot as a PNG.")
+    }
+    try png.write(to: url)
     // A capture of the other kind from an earlier run would show older code next to this one.
-    try? FileManager.default.removeItem(at: snapshotURL(flat: !flat))
+    let other = snapshotURL(flat: !flat)
+    if FileManager.default.fileExists(atPath: other.path) { try FileManager.default.removeItem(at: other) }
     print(url.path)
     window.orderOut(nil)
     window.close()
@@ -302,6 +308,8 @@ struct DesignSnapshots {
         let directory = URL(fileURLWithPath: arguments.count > 1 ? arguments[1] : "design-snapshots")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var flatFiles: [URL] = []
+        // A later capture can fail, and the agent still needs to know which checks the earlier flat ones skip.
+        defer { if !flatFiles.isEmpty { reportFlatSnapshots(flatFiles) } }
         for scenario in scenarios {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 for size in windowSizes {
@@ -311,7 +319,6 @@ struct DesignSnapshots {
                 }
             }
         }
-        if !flatFiles.isEmpty { reportFlatSnapshots(flatFiles) }
     }
 }
 
