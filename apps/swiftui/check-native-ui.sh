@@ -45,7 +45,7 @@ if [[ "${1:-}" == --smoke ]]; then
 elif [[ "${1:-}" == --group && $# == 2 ]]; then
     execution_timeout=1800
     case "$2" in
-        core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests DailyTotalsUITests ServerDailyTotalsUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
+        core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskSelectionScrollUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests DailyTotalsUITests ServerDailyTotalsUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
         editing) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogDeletionUITests ServerWorklogDeletionUITests) ;;
         server) suites=(ConnectionUITests ServerRecoveryUITests SettingsUITests MenuSourceUITests AppearanceUITests OpenDialogUITests) ;;
         mac) suites=(MenuBarUITests ServerMenuBarUITests LifecycleUITests ServerLifecycleUITests) ;;
