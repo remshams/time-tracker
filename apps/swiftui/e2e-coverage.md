@@ -51,7 +51,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | Index | Workflow | Native evidence |
 | --- | --- | --- |
 | 1 | Launch, isolation, cleanup, diagnostics | [SmokeUITests](Tests/UITests/App/SmokeUITests.swift) and [shared support](Tests/UITests/Support/TrackerUITestCase.swift) |
-| 2 | Active/Archived, ordering, ID selection, the empty state without tasks and with only archived tasks | [TaskCatalogUITests](Tests/UITests/Features/TaskCatalog/TaskCatalogUITests.swift) |
+| 2 | Active/Archived, ordering, ID selection, the empty state without tasks and with only archived tasks, scrolling the sidebar to a task selected by creation, Show Task or a tab switch | [TaskCatalogUITests](Tests/UITests/Features/TaskCatalog/TaskCatalogUITests.swift); the scrolling cases run in `TaskSelectionScrollUITests` in the same file, without a server variant |
 | 3 | Creation entry points, validation, cancellation, timer preservation | [TaskCreationUITests](Tests/UITests/Features/TaskCreation/TaskCreationUITests.swift) |
 | 4 | Start and stop from the toolbar pill, switch from the sidebar context menu, exact running identity after relaunch | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
 | 5 | History order, 50-row pagination, empty/running states, day groups with totals, the midnight split, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/Features/WorklogHistory/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |

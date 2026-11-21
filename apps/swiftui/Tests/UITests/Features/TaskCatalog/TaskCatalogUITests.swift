@@ -80,3 +80,59 @@ class TaskCatalogUITests: TrackerUITestCase {
 final class ServerTaskCatalogUITests: TaskCatalogUITests {
     override var fixtureSource: TrackerFixture.Source { .server }
 }
+
+/// The sidebar scrolls to the selected task when something other than a click changes the selection. The behavior
+/// lives in the view, so these tests don't repeat for the server source.
+final class TaskSelectionScrollUITests: TrackerUITestCase {
+    private let backlogSize = 40
+
+    func testCreatedTaskAtTheBottomScrollsIntoView() throws {
+        let backlog = try createBacklog(count: backlogSize)
+        launch()
+        waitUntilVisibleInSidebar(backlog[0])
+        openCreation()
+        // Without worklogs and with the last name, the new task sorts to the bottom of the list.
+        app.textFields["task-name.input"].typeText("Zulu follow-up")
+        app.buttons["task-name.submit"].click()
+        waitUntil("Creation sheet closes") { !self.element("task-name.input").exists }
+        let created = try XCTUnwrap(fixture.tasks().first { $0.name == "Zulu follow-up" })
+        waitUntil("The created task is selected") { self.element("task-details.task.\(created.id)").exists }
+        waitUntilVisibleInSidebar(created)
+        XCTAssertFalse(isVisibleInSidebar(backlog[0]), "The list is taller than the sidebar.")
+    }
+
+    func testShowTaskOnThePillScrollsToTheRunningTask() throws {
+        let backlog = try createBacklog(count: backlogSize)
+        // The running task has the latest start, so "Most recently logged first" puts it at the top.
+        let running = backlog[backlogSize - 1]
+        _ = try fixture.start(running)
+        launch()
+        let bottom = backlog[backlogSize - 2]
+        scrollSidebarToBottom(showing: bottom)
+        select(bottom)
+        XCTAssertFalse(isVisibleInSidebar(running), "The running task starts out of view.")
+        let pill = app.buttons["Stop tracking"]
+        XCTAssertTrue(pill.waitForExistence(timeout: timeout))
+        pill.rightClick()
+        let showTask = app.menuItems["Show Task"]
+        XCTAssertTrue(showTask.waitForExistence(timeout: timeout))
+        showTask.click()
+        waitUntil("Show Task selects the running task") { self.element("task-details.task.\(running.id)").exists }
+        waitUntilVisibleInSidebar(running)
+    }
+
+    func testReturningToATabScrollsToItsRememberedTask() throws {
+        let backlog = try createBacklog(count: backlogSize)
+        let archived = try fixture.create("Archived release")
+        try fixture.archive(archived)
+        launch()
+        let bottom = backlog[backlogSize - 1]
+        scrollSidebarToBottom(showing: bottom)
+        select(bottom)
+        showTab("Archived")
+        waitUntilVisibleInSidebar(archived)
+        showTab("Active")
+        waitUntil("The Active tab restores its selection") { self.element("task-details.task.\(bottom.id)").exists }
+        waitUntilVisibleInSidebar(bottom)
+    }
+}
