@@ -11,7 +11,7 @@ struct WorklogRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: HistoryColumns.spacing) {
+        HStack {
             HStack(spacing: HistoryColumns.spacing) {
                 Text(row.range)
                     .monospacedDigit()
