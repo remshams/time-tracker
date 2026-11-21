@@ -61,7 +61,7 @@ struct TrackerSidebar: View {
                 // row stays put. A new task's row may not exist before the next layout pass, so the scroll waits for it.
                 .onChange(of: catalog.selectedTaskID) { _, taskID in
                     guard let taskID else { return }
-                    Task { @MainActor in proxy.scrollTo(taskID) }
+                    Task { proxy.scrollTo(taskID) }
                 }
             }
             Divider()
