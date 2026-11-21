@@ -10,7 +10,6 @@ final class OpenDialogUITests: TrackerUITestCase {
     private struct MenuEntry {
         let name: String
         let target: XCUICoordinate
-        let open: (XCUICoordinate) -> Void
         let item: String
     }
 
@@ -129,16 +128,16 @@ final class OpenDialogUITests: TrackerUITestCase {
         return [
             MenuEntry(
                 name: "The task context menu", target: taskRow(task).coordinate(withNormalizedOffset: center),
-                open: { $0.rightClick() }, item: "Edit name"),
+                item: "Edit name"),
             // The list's empty area below the rows has its own menu without a task.
             MenuEntry(
                 name: "The task list menu",
                 target: element("task-sidebar.list").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)),
-                open: { $0.rightClick() }, item: "New task"),
+                item: "New task"),
             MenuEntry(
                 name: "The worklog context menu",
                 target: row.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)),
-                open: { $0.rightClick() }, item: "Edit times..."),
+                item: "Edit times..."),
         ]
     }
 
@@ -146,7 +145,7 @@ final class OpenDialogUITests: TrackerUITestCase {
     private func assertMenusOpenWithoutDialog(_ entries: [MenuEntry]) {
         XCTAssertEqual(openDialogCount, 0)
         for entry in entries {
-            entry.open(entry.target)
+            entry.target.rightClick()
             let item = app.menuItems[entry.item]
             XCTAssertTrue(item.waitForExistence(timeout: timeout), "\(entry.name) did not open.")
             app.typeKey(.escape, modifierFlags: [])
@@ -159,7 +158,7 @@ final class OpenDialogUITests: TrackerUITestCase {
         XCTAssertFalse(
             openDialogElements.contains { $0.frame.contains(entry.target.screenPoint) },
             "\(entry.name) lies under the dialog, so this click cannot reach it.")
-        entry.open(entry.target)
+        entry.target.rightClick()
         let opened = app.menuItems[entry.item].waitForExistence(timeout: 2)
         XCTAssertFalse(opened, "\(entry.name) opened behind the dialog.")
         XCTAssertEqual(openDialogCount, 1, "\(entry.name) opened a second dialog.")
