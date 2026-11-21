@@ -1,8 +1,8 @@
 import SwiftUI
 import TrackerClient
 
-/// One worklog's part of a day on one line: the worklog's times, the part's bar on the hour axis, its duration and the
-/// worklog's actions. A double click opens the times for editing.
+/// One worklog's part of a day on one line: the worklog's times, the part's bar on the hour axis and its duration. A
+/// double click opens the times for editing, and the context menu holds the worklog's actions.
 struct WorklogRow: View {
     let row: WorklogDayRow
     let axis: WorklogHourAxis
@@ -37,7 +37,6 @@ struct WorklogRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.accessibilityLabel)
             .accessibilityIdentifier("worklog-history.summary.\(row.id)")
-            WorklogActionsMenu(worklog: row.worklog, rowID: row.id)
         }
         .frame(minHeight: HistoryColumns.rowHeight)
         .background {
@@ -56,30 +55,6 @@ struct WorklogRow: View {
         .contextMenu {
             WorklogContextMenu(worklog: row.worklog)
         }
-    }
-}
-
-private struct WorklogActionsMenu: View {
-    let worklog: WorklogItem
-    let rowID: String
-    @Environment(WorklogMoveStore.self) private var move
-    @Environment(WorklogDeletionStore.self) private var deletion
-    @Environment(WorklogCorrectionStore.self) private var correction
-
-    var body: some View {
-        Menu {
-            WorklogContextMenu(worklog: worklog)
-        } label: {
-            Label("Worklog actions", systemImage: "ellipsis")
-                .labelStyle(.iconOnly)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.icon(.compact))
-        .menuIndicator(.hidden)
-        .frame(width: HistoryColumns.actions)
-        .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
-        .help("Worklog actions")
-        .accessibilityIdentifier("worklog-history.actions.\(rowID)")
     }
 }
 

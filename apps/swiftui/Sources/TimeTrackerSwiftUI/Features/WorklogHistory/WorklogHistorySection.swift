@@ -93,7 +93,6 @@ private struct WorklogDayGroup: View {
                     }
                 }
                 .frame(width: HistoryColumns.duration, alignment: .trailing)
-                Color.clear.frame(width: HistoryColumns.actions, height: 1)
             }
             .padding(.top, Spacing.medium)
             .padding(.bottom, Spacing.xxSmall)

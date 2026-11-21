@@ -1,19 +1,15 @@
 import SwiftUI
 import TrackerClient
 
-/// The history's column grid. A row is the range, the bar on the hour axis, the duration and the actions menu. The bar
-/// takes the width that the fixed columns leave.
+/// The history's column grid. A row is the range, the bar on the hour axis and the duration. The bar takes the width
+/// that the fixed columns leave.
 enum HistoryColumns {
     static let maxWidth: CGFloat = 720
     static let gutter = Spacing.xLarge
     static let range: CGFloat = usesTwelveHourClock ? 150 : 112
     static let duration: CGFloat = 64
-    static let actions: CGFloat = 26
     static let spacing = Spacing.small
     static let rowHeight: CGFloat = 28
-    /// The duration and actions columns after a row's bar, with the spacing between them. The stack's own spacing
-    /// separates them from the bar.
-    static var trailing: CGFloat { duration + spacing + actions }
 
     private static var usesTwelveHourClock: Bool {
         (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a")
@@ -135,7 +131,7 @@ struct WorklogHourLabels: View {
                     }
                 }
             }
-            Color.clear.frame(width: HistoryColumns.trailing, height: 1)
+            Color.clear.frame(width: HistoryColumns.duration, height: 1)
         }
         .frame(height: 14)
         .accessibilityHidden(true)
