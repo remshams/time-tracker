@@ -242,7 +242,7 @@ VStack(alignment: .leading, spacing: Spacing.medium) {
 
 Icon-only buttons use `IconButtonStyle` from `Shared/IconButtons`. Hovering one shows a neutral circle behind the
 glyph and pressing darkens it; a disabled button dims and shows no circle. Use `.buttonStyle(.icon(.large))` in the
-task header and `.buttonStyle(.icon(.compact))` in compact rows and sheets. A menu takes the style through
+task header and `.buttonStyle(.icon(.compact))` in sheets. A menu takes the style through
 `.menuStyle(.button)`.
 
 To add a token, add it to `DesignTokens.swift` under a name that says what it's for, not its value.
