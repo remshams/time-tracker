@@ -109,7 +109,9 @@ final class TaskSelectionScrollUITests: TrackerUITestCase {
         launch()
         let bottom = backlog[backlogSize - 2]
         scrollSidebarToBottom(showing: bottom)
+        let bottomTop = taskRow(bottom).frame.minY
         select(bottom)
+        XCTAssertEqual(taskRow(bottom).frame.minY, bottomTop, "Clicking a fully visible row doesn't move the list.")
         XCTAssertFalse(isVisibleInSidebar(running), "The running task starts out of view.")
         let pill = app.buttons["Stop tracking"]
         XCTAssertTrue(pill.waitForExistence(timeout: timeout))
