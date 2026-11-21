@@ -2,7 +2,8 @@ import SwiftUI
 import TrackerClient
 
 /// One worklog's part of a day on one line: the worklog's times, the part's bar on the hour axis and its duration. A
-/// double click opens the times for editing, and the context menu holds the worklog's actions.
+/// double click opens the times for editing, and the context menu holds the worklog's actions. VoiceOver users reach
+/// the same actions through the row's accessibility actions.
 struct WorklogRow: View {
     let row: WorklogDayRow
     let axis: WorklogHourAxis
@@ -37,6 +38,7 @@ struct WorklogRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.accessibilityLabel)
             .accessibilityIdentifier("worklog-history.summary.\(row.id)")
+            .accessibilityActions { WorklogContextMenu(worklog: row.worklog) }
         }
         .frame(minHeight: HistoryColumns.rowHeight)
         .background {
