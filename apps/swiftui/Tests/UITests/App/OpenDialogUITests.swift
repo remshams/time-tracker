@@ -120,7 +120,8 @@ final class OpenDialogUITests: TrackerUITestCase {
         return (task, log)
     }
 
-    /// The worklog targets sit at the row's trailing end, because a sheet opens over the middle of the window.
+    /// The worklog target sits on the row's duration at its trailing end, because a sheet opens over the middle of the
+    /// window.
     private func menuEntries(task: FixtureTask, log: FixtureWorklog) -> [MenuEntry] {
         let center = CGVector(dx: 0.5, dy: 0.5)
         let row = element("worklog-history.row.\(log.id)")
@@ -136,13 +137,8 @@ final class OpenDialogUITests: TrackerUITestCase {
                 open: { $0.rightClick() }, item: "New task"),
             MenuEntry(
                 name: "The worklog context menu",
-                target: row.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
+                target: row.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)),
                 open: { $0.rightClick() }, item: "Edit times..."),
-            // Its button also turns off while a dialog shows, because no worklog dialog can open then.
-            MenuEntry(
-                name: "The worklog actions menu",
-                target: element("worklog-history.actions.\(log.id)").coordinate(withNormalizedOffset: center),
-                open: { $0.click() }, item: "Edit times..."),
         ]
     }
 

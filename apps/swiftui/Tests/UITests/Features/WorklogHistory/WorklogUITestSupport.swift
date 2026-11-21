@@ -2,11 +2,24 @@ import XCTest
 
 @MainActor
 extension TrackerUITestCase {
+    /// Opens the worklog's context menu once `available` shows as enabled in it. The menu reads the dialogs' state when
+    /// it opens, so a menu that opened too early closes and opens again.
+    func openWorklogMenu(_ log: FixtureWorklog, until available: String, file: StaticString = #filePath,
+                         line: UInt = #line) {
+        let row = element("worklog-history.row.\(log.id)")
+        XCTAssertTrue(row.waitForExistence(timeout: timeout), file: file, line: line)
+        let item = app.menuItems[available]
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            row.rightClick()
+            if item.waitForExistence(timeout: 2), item.isEnabled { return }
+            app.typeKey(.escape, modifierFlags: [])
+        } while Date() < deadline
+        XCTFail("\(available) did not become available in the worklog menu.", file: file, line: line)
+    }
+
     func openWorklogAction(_ log: FixtureWorklog, title: String, sheetID: String) {
-        let actions = element("worklog-history.actions.\(log.id)")
-        XCTAssertTrue(actions.waitForExistence(timeout: timeout))
-        waitUntil("Worklog actions become available") { actions.isEnabled }
-        actions.click()
+        openWorklogMenu(log, until: title)
         app.menuItems[title].click()
         XCTAssertTrue(element(sheetID).waitForExistence(timeout: timeout))
     }
