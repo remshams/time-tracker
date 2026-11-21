@@ -76,7 +76,7 @@ Remote mode requires `/v1` protocol 6 and the aggregate state routes. Upgrade th
 
 ## Edit worklog times
 
-Open the actions menu on a worklog row, right-click the row and choose Edit times, or double-click the row. The sheet shows local dates and times and the time zone used. Completed worklogs expose Start and End with a duration preview. Running worklogs expose Start only and keep tracking after saving. Archived-task history supports the same editor.
+Right-click a worklog row and choose Edit times, or double-click the row. The sheet shows local dates and times and the time zone used. Completed worklogs expose Start and End with a duration preview. Running worklogs expose Start only and keep tracking after saving. Archived-task history supports the same editor.
 
 Changed fields use minute precision. Unchanged fields preserve their stored seconds and fractions. Save rejects future timestamps, an end before the start, and overlapping worklogs for the same task. Errors stay in the sheet with the draft. Enter saves and Escape cancels.
 
@@ -84,7 +84,7 @@ The command sends the original timestamps alongside their replacements. The data
 
 ## Move worklogs
 
-Choose Move to task from a worklog's actions menu or context menu. Search destination tasks by typing part of a name; matching ignores case and accepts non-adjacent characters, like the TUI. Results contain active tasks other than the worklog's source task, ordered by recent activity. Arrow keys select a destination while searching, Return moves, and Escape cancels.
+Choose Move to task from a worklog's context menu. Search destination tasks by typing part of a name; matching ignores case and accepts non-adjacent characters, like the TUI. Results contain active tasks other than the worklog's source task, ordered by recent activity. Arrow keys select a destination while searching, Return moves, and Escape cancels.
 
 Moving preserves the worklog's identity and exact timestamps. A running worklog keeps running on its destination task. The command checks the original task and timestamps before writing, and rejects overlaps or an unavailable destination. Errors stay in the dialog with the search and selection. If the server times out on both attempts, the dialog says that the move could not be confirmed; check the reloaded history before moving again.
 
@@ -92,7 +92,7 @@ Destination search uses the client's confirmed Rust task catalog, without databa
 
 ## Delete worklogs
 
-Choose Delete from a completed worklog's actions menu or context menu. The confirmation shows the task, the entry's day and times, and the duration that will be removed. Delete removes the entry permanently; Escape cancels. Running worklogs cannot be deleted, so stop the timer first.
+Choose Delete from a completed worklog's context menu. The confirmation shows the task, the entry's day and times, and the duration that will be removed. Delete removes the entry permanently; Escape cancels. Running worklogs cannot be deleted, so stop the timer first.
 
 The command sends the original task and timestamps without reading first, and the database rejects the deletion if another client changed, moved, or deleted the entry. Errors stay in the dialog. If the server times out on both attempts, the dialog says that the deletion could not be confirmed; check the reloaded history before deleting again. After success or failure, the app refreshes history, task state, and daily totals.
 
