@@ -58,7 +58,7 @@ struct TrackerSidebar: View {
                     }
                 }
                 // Without an anchor, the list moves only as far as it must to show the whole row, so a fully visible
-                // row stays put. A new task's row may not exist before the next layout pass, so the scroll waits for it.
+                // row stays put. The list may not show a new row yet, so the scroll runs after the current update.
                 .onChange(of: catalog.selectedTaskID) { _, taskID in
                     guard let taskID else { return }
                     Task { proxy.scrollTo(taskID) }
