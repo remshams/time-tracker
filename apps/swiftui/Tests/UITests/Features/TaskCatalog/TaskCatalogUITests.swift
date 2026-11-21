@@ -101,25 +101,27 @@ final class TaskSelectionScrollUITests: TrackerUITestCase {
         XCTAssertFalse(isVisibleInSidebar(backlog[0]), "The list is taller than the sidebar.")
     }
 
-    func testShowTaskOnThePillScrollsToTheRunningTask() throws {
+    // The tracking pill's "Show Task" calls the same catalog method, but a right click on the toolbar opens the
+    // toolbar's own menu in UI tests, so this test uses today's summary.
+    func testShowingATaskFromTodaysSummaryScrollsToIt() throws {
         let backlog = try createBacklog(count: backlogSize)
         // The running task has the latest start, so "Most recently logged first" puts it at the top.
         let running = backlog[backlogSize - 1]
         _ = try fixture.start(running)
         launch()
-        let bottom = backlog[backlogSize - 2]
-        scrollSidebarToBottom(showing: bottom)
-        let bottomTop = taskRow(bottom).frame.minY
-        select(bottom)
-        XCTAssertEqual(taskRow(bottom).frame.minY, bottomTop, "Clicking a fully visible row doesn't move the list.")
+        scrollSidebarToBottom(showing: backlog[backlogSize - 2])
+        // A row from the middle of the visible part, so no edge cuts it off.
+        let visible = backlog[backlogSize - 6]
+        let visibleTop = taskRow(visible).frame.minY
+        select(visible)
+        // The native list shifts by a point on a click, with or without the scroll to the selection.
+        XCTAssertEqual(taskRow(visible).frame.minY, visibleTop, accuracy: 1,
+                       "Clicking a fully visible row doesn't move the list.")
         XCTAssertFalse(isVisibleInSidebar(running), "The running task starts out of view.")
-        let pill = app.buttons["Stop tracking"]
-        XCTAssertTrue(pill.waitForExistence(timeout: timeout))
-        pill.rightClick()
-        let showTask = app.menuItems["Show Task"]
-        XCTAssertTrue(showTask.waitForExistence(timeout: timeout))
-        showTask.click()
-        waitUntil("Show Task selects the running task") { self.element("task-details.task.\(running.id)").exists }
+        let share = element("today-summary.share.\(running.id)")
+        XCTAssertTrue(share.waitForExistence(timeout: timeout))
+        share.click()
+        waitUntil("The share selects the running task") { self.element("task-details.task.\(running.id)").exists }
         waitUntilVisibleInSidebar(running)
     }
 
