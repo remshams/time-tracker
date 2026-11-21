@@ -1,7 +1,8 @@
 import SwiftUI
 import TrackerClient
 
-/// Today's summary, the Active and Archived switch, and one two-line row for each task in the tab.
+/// Today's summary, the Active and Archived switch, and one two-line row for each task in the tab. When the selected task
+/// changes, the list scrolls it into view.
 struct TrackerSidebar: View {
     let availability: TrackingAvailability
     @Environment(TaskCatalogStore.self) private var catalog
@@ -34,24 +35,33 @@ struct TrackerSidebar: View {
             .padding(.horizontal, Spacing.medium)
             .padding(.bottom, Spacing.xSmall)
 
-            List(selection: selectionBinding) {
-                ForEach(catalog.visibleTasks) { task in
-                    TrackerSidebarRow(task: task, availability: availability)
-                }
-            }
-            .listStyle(.sidebar)
-            .accessibilityIdentifier("task-sidebar.list")
-            .contextMenu {
-                TaskContextMenu(taskID: nil)
-            }
-            .overlay {
-                if catalog.visibleTasks.isEmpty {
-                    VStack(spacing: Spacing.small) {
-                        Image(systemName: "tray")
-                        Text("No \(catalog.tab.rawValue.lowercased()) tasks")
-                            .accessibilityIdentifier("task-sidebar.empty")
+            ScrollViewReader { proxy in
+                List(selection: selectionBinding) {
+                    ForEach(catalog.visibleTasks) { task in
+                        TrackerSidebarRow(task: task, availability: availability)
+                            .id(task.id)
                     }
-                    .foregroundStyle(.secondary)
+                }
+                .listStyle(.sidebar)
+                .accessibilityIdentifier("task-sidebar.list")
+                .contextMenu {
+                    TaskContextMenu(taskID: nil)
+                }
+                .overlay {
+                    if catalog.visibleTasks.isEmpty {
+                        VStack(spacing: Spacing.small) {
+                            Image(systemName: "tray")
+                            Text("No \(catalog.tab.rawValue.lowercased()) tasks")
+                                .accessibilityIdentifier("task-sidebar.empty")
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                // Without an anchor, the list moves only as far as it must to show the whole row, so a fully visible
+                // row stays put. A new task's row may not exist before the next layout pass, so the scroll waits for it.
+                .onChange(of: catalog.selectedTaskID) { _, taskID in
+                    guard let taskID else { return }
+                    Task { @MainActor in proxy.scrollTo(taskID) }
                 }
             }
             Divider()
