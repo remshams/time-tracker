@@ -40,11 +40,7 @@ class WorklogDeletionUITests: TrackerUITestCase {
         let log = try fixture.start(task, at: Date().addingTimeInterval(-120))
         launch()
         select(task)
-        let actions = element("worklog-history.actions.\(log.id)")
-        XCTAssertTrue(actions.waitForExistence(timeout: timeout))
-        waitUntil("Worklog actions become available") { actions.isEnabled }
-        actions.click()
-        XCTAssertTrue(app.menuItems["Delete..."].waitForExistence(timeout: timeout))
+        openWorklogMenu(log, until: "Edit times...")
         XCTAssertFalse(app.menuItems["Delete..."].isEnabled)
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertEqual(try fixture.activeWorklog(), log)
