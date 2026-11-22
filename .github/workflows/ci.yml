@@ -241,7 +241,10 @@ jobs:
       - name: Install the Qt, LLVM, and Rust toolchains
         run: |
           pacman -Syu --noconfirm --needed base-devel git qt6-base qt6-declarative qt6-wayland rustup clang \
-            python python-pip python-gobject sway wtype at-spi2-core dbus
+            python python-pip python-gobject sway wtype at-spi2-core dbus libcap
+          # The package grants sway cap_sys_nice, which the container may not hand out, so
+          # executing it fails with EPERM. The headless E2E session doesn't need it.
+          setcap -r /usr/bin/sway
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
