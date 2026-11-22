@@ -16,6 +16,18 @@ extension TrackerUITestCase {
     func waitForQuickTrackToClose(_ description: String = "The Quick Track dialog closes") {
         waitUntil(description) { !self.quickTrackSearch.exists }
     }
+
+    /// Waits until the dialog's header shows `task` running, which means the app finished its tracking request.
+    func waitForQuickTrackHeader(tracking task: FixtureTask) {
+        let header = element("quick-track.header")
+        waitUntil("The header shows \(task.name) running") { header.label == "Tracking \(task.name)" }
+    }
+
+    /// Waits until `task`'s row can start, which means no tracking request is running.
+    func waitForStartableQuickTrackRow(_ task: FixtureTask) {
+        let row = quickTrackRow(task)
+        waitUntil("\(task.name) can start") { row.exists && !row.label.hasSuffix(", unavailable") }
+    }
 }
 
 @MainActor
@@ -52,6 +64,7 @@ class QuickTrackUITests: TrackerUITestCase {
         waitForQuickTrackToClose()
 
         openQuickTrack()
+        waitForQuickTrackHeader(tracking: other)
         app.typeKey(.upArrow, modifierFlags: [])
         app.typeKey(.return, modifierFlags: [])
         assertStopped()
@@ -72,7 +85,7 @@ class QuickTrackUITests: TrackerUITestCase {
 
         openQuickTrack()
         let row = quickTrackRow(other)
-        XCTAssertTrue(row.waitForExistence(timeout: timeout))
+        waitForStartableQuickTrackRow(other)
         row.click()
         assertRunning(other)
         waitForQuickTrackToClose()
