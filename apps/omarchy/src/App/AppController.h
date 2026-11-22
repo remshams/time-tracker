@@ -10,6 +10,7 @@ class DisplayClock;
 class Format;
 class QQmlContext;
 class TaskCatalogStore;
+class TaskCreationStore;
 class Theme;
 class TrackerGateway;
 class TrackerSync;
@@ -39,4 +40,5 @@ private:
     DailyTotalsStore *totals_;
     WorklogHistoryStore *history_;
     TrackerSync *sync_;
+    TaskCreationStore *taskCreation_;
 };

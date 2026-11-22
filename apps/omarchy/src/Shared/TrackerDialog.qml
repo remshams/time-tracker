@@ -32,7 +32,8 @@ Popup {
     modal: true
     focus: true
     padding: 0
-    closePolicy: Popup.CloseOnEscape
+    // A running write keeps the dialog open, so its answer always has somewhere to show.
+    closePolicy: root.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
     onClosed: root.cancelled()
 
     Material.roundedScale: theme.radius
@@ -105,6 +106,7 @@ Popup {
             Button {
                 text: qsTr("Cancel")
                 flat: true
+                enabled: !root.busy
                 font.family: theme.fontFamily
                 Material.foreground: theme.textDim
                 onClicked: root.close()
