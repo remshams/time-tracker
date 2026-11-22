@@ -36,10 +36,10 @@ ApplicationWindow {
             dialog.openFor(detail.selectedWorklogId)
     }
 
-    width: 1100
-    height: 760
-    minimumWidth: 640
-    minimumHeight: 420
+    width: Tokens.size.windowWidth
+    height: Tokens.size.windowHeight
+    minimumWidth: Tokens.size.minimumWindowWidth
+    minimumHeight: Tokens.size.minimumWindowHeight
     visible: true
     title: tracking.running ? qsTr("%1 %2 - Time Tracker").arg(format.duration(tracking.elapsedSeconds)).arg((catalog.names[tracking.runningTaskId] ?? "")) : qsTr("Time Tracker")
     color: theme.background

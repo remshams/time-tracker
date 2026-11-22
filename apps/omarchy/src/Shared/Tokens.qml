@@ -5,7 +5,8 @@ import QtQuick
 // fixed sizes and motion from here; colors come from Theme, which follows the Omarchy theme.
 // bin/lint rejects number literals for font sizes, spacing, margins, padding, radii and
 // opacities in any other QML file, so add a token here instead of typing a value in a view.
-// Sizes and motion are not checked; their tokens hold by convention.
+// Sizes and motion are not checked; their tokens hold by convention. A new QML file in
+// Shared/ must also be listed in Shared/qmldir, or other folders can't see it.
 QtObject {
     // The spacing scale for margins, padding and layout spacing, in pixels.
     readonly property QtObject spacing: QtObject {
@@ -72,6 +73,11 @@ QtObject {
 
     // Fixed sizes of recurring elements, in pixels.
     readonly property QtObject size: QtObject {
+        // The window's first size and the smallest one the layout fits.
+        readonly property int windowWidth: 1100
+        readonly property int windowHeight: 760
+        readonly property int minimumWindowWidth: 640
+        readonly property int minimumWindowHeight: 420
         readonly property int stripHeight: 64
         readonly property int statusLineHeight: 30
         readonly property int shareBarHeight: 3
@@ -82,6 +88,10 @@ QtObject {
         readonly property int timelineLabelWidth: 132
         readonly property int timelineDurationWidth: 92
         readonly property int barHeight: 6
+        // The shortest timeline bar, so a worklog of a few seconds stays visible.
+        readonly property int minimumBarWidth: 3
+        // The row under the timeline that loads older worklogs.
+        readonly property int footerHeight: 44
         readonly property int cursorWidth: 7
         readonly property int cursorHeight: 16
         readonly property int dot: 9

@@ -40,8 +40,8 @@ TrackerDialog {
     GridLayout {
         Layout.fillWidth: true
         columns: 2
-        columnSpacing: 16
-        rowSpacing: 6
+        columnSpacing: Tokens.spacing.large
+        rowSpacing: Tokens.spacing.small
 
         Txt {
             text: qsTr("Task")

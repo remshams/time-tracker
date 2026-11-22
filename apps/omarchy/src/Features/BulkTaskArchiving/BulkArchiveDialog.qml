@@ -30,7 +30,7 @@ TrackerDialog {
     Txt {
         Layout.fillWidth: true
         // A wrapping text reports its unwrapped width, which would widen the dialog.
-        Layout.preferredWidth: root.dialogWidth - 40
+        Layout.preferredWidth: root.dialogWidth - 2 * Tokens.spacing.xLarge
         text: qsTr("Archives tasks with no recent work or changes. Running tasks are never included. Worklog history stays available.")
         level: 1
         wrapMode: Text.Wrap
@@ -127,7 +127,7 @@ TrackerDialog {
                     dotColor: theme.taskColor(parent.modelData.colorName)
                 }
                 Txt {
-                    width: parent.width - 19
+                    width: parent.width - Tokens.size.dot - Tokens.spacing.medium
                     height: parent.height
                     text: parent.modelData.name
                 }

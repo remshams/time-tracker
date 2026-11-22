@@ -41,7 +41,7 @@ TrackerDialog {
     Txt {
         Layout.fillWidth: true
         // A wrapping text reports its unwrapped width, which would widen the dialog.
-        Layout.preferredWidth: root.dialogWidth - 40
+        Layout.preferredWidth: root.dialogWidth - 2 * Tokens.spacing.xLarge
         text: taskArchiving.unarchive ? qsTr("The task returns to Active. Its worklog history stays available.") : qsTr("The task moves to Archived. Its worklog history stays available.")
         level: 1
         wrapMode: Text.Wrap

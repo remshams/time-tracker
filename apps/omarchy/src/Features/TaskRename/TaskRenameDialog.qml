@@ -41,7 +41,7 @@ TrackerDialog {
     TextField {
         id: field
         Layout.fillWidth: true
-        Layout.preferredWidth: root.dialogWidth - 40
+        Layout.preferredWidth: root.dialogWidth - 2 * Tokens.spacing.xLarge
         placeholderText: qsTr("Task name")
         font.family: theme.fontFamily
         text: taskRename.draft
