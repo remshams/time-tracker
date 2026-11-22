@@ -152,6 +152,10 @@ impl RemoteApplication {
         self.tasks.move_candidates(source_task_id, query)
     }
 
+    pub fn search_active_tasks(&self, query: &str) -> Vec<TaskId> {
+        self.tasks.search_active_tasks(query)
+    }
+
     pub fn task_item(&self, id: TaskId) -> Option<&TaskListItem> {
         self.tasks.task_item(id)
     }
