@@ -24,13 +24,16 @@ final class QuickTrackCreationTests: XCTestCase {
         return fixture
     }
 
-    /// Answers requests until the next one isn't a history page, and returns that one.
+    /// Answers history pages and the search that follows a create, and returns the next other request.
     @MainActor
     private func skippingHistory(_ fixture: Fixture) async throws -> FakeClient.Request {
         while true {
             let request = try await fixture.client.next()
-            guard case .history = request.operation else { return request }
-            request.succeed(emptyPage)
+            switch request.operation {
+            case .history: request.succeed(emptyPage)
+            case .search: request.found([created.id])
+            default: return request
+            }
         }
     }
 
@@ -84,6 +87,7 @@ final class QuickTrackCreationTests: XCTestCase {
         }
         XCTAssertTrue(store.isPresented)
         XCTAssertEqual(store.content.statusLines.last, "Created New task, but tracking couldn't start.")
+        XCTAssertEqual(store.content.highlight, .task(created.id), "The new task is listed, so Return can try again.")
     }
 
     @MainActor

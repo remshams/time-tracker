@@ -255,4 +255,42 @@ final class QuickTrackStoreTests: XCTestCase {
         }
         XCTAssertEqual(task, firstTask.id, "The click acts on its row, not on the next search's first match.")
     }
+
+    @MainActor
+    func testPendingReturnDoesNotRunAfterAFailedSearch() async throws {
+        let fixture = try await started(TaskListResources(tasks: [firstTask], active: nil))
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        var rejections = 0
+        store.onReject = { rejections += 1 }
+        try await open(fixture, results: [firstTask.id])
+        store.setQuery("Brand new")
+        let search = try await fixture.client.next()
+        store.activate()
+        try await fixture.update("the failed search") {
+            search.fail(BridgeFailure(message: "offline"))
+        } until: {
+            !store.isSearching
+        }
+        XCTAssertTrue(store.isPresented)
+        XCTAssertEqual(rejections, 0)
+        XCTAssertFalse(fixture.client.operations.contains { if case .create = $0 { true } else { false } })
+    }
+
+    @MainActor
+    func testClickOnARowANewerSearchRemovedIsRejected() async throws {
+        let fixture = try await started(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        var rejections = 0
+        store.onReject = { rejections += 1 }
+        try await open(fixture, results: [firstTask.id, secondTask.id])
+        store.setQuery("sec")
+        try await answer(fixture, query: "sec", with: [secondTask.id])
+        store.activate(.task(firstTask.id))
+        XCTAssertEqual(rejections, 1)
+        XCTAssertTrue(store.isPresented)
+        XCTAssertEqual(store.content.highlight, .task(secondTask.id))
+        XCTAssertFalse(fixture.client.operations.contains { if case .start = $0 { true } else { false } })
+    }
 }
