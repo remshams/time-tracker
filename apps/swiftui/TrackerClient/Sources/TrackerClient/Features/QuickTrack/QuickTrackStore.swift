@@ -96,6 +96,22 @@ public final class QuickTrackStore: ChangeGuardedStore {
         if performHighlightedAction() { close() } else { onReject() }
     }
 
+    /// The value a copy action copies for `taskID`, or for the highlighted row when `taskID` is `nil`. The header
+    /// copies the running task. Returns `nil` when there's nothing to copy, such as a duration of a task without time
+    /// today.
+    public func copyValue(_ action: MenuShortcutAction, taskID: String? = nil) -> String? {
+        guard isPresented, let id = taskID ?? highlightedTaskID else { return nil }
+        return sources.menuBar.menuCopyValue(action, taskID: id, connection: sources.connection.settings)
+    }
+
+    private var highlightedTaskID: String? {
+        switch content.highlight {
+        case .task(let id): return id
+        case .header: return tracking.active?.taskId
+        case nil: return nil
+        }
+    }
+
     private func performHighlightedAction() -> Bool {
         let content = content
         switch content.highlight {
