@@ -40,16 +40,13 @@ final class MenuBarPreferencesStore {
     }
 
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
-        // Only the global shortcuts can be edited, and the others stay at their defaults, so a global
-        // change starts from the defaults and keeps the current global bindings for the duplicate check.
-        var candidate = menuShortcuts
-        if action.isGlobal {
-            candidate = MenuKeyboardShortcuts(
-                openMenu: menuShortcuts.openMenu, openQuickTrack: menuShortcuts.openQuickTrack)
-        }
+        // Only the global shortcuts can be edited, and the others stay at their defaults, so a change starts from the
+        // defaults and keeps the current global bindings for the duplicate check.
+        var candidate = MenuKeyboardShortcuts(
+            openMenu: menuShortcuts.openMenu, openQuickTrack: menuShortcuts.openQuickTrack)
         candidate[action] = shortcut
         // Recording a global shortcut again retries a failed global registration.
-        setMenuShortcuts(candidate, retryGlobal: action.isGlobal && menuGlobalShortcutError != nil)
+        setMenuShortcuts(candidate, retryGlobal: menuGlobalShortcutError != nil)
     }
 
     func resetMenuShortcuts() { setMenuShortcuts(.defaults, retryGlobal: true) }
@@ -72,10 +69,9 @@ final class MenuBarPreferencesStore {
             }
             registered.append(action)
         }
-        let changesGlobal = !globals.isEmpty
         menuShortcuts = candidate
         reportMenuShortcutError(nil)
-        if changesGlobal { reportMenuGlobalShortcutError(nil) }
+        if !globals.isEmpty { reportMenuGlobalShortcutError(nil) }
         keyboardPreferences.save(candidate)
     }
 

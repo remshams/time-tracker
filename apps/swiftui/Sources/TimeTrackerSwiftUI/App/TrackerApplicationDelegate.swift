@@ -82,8 +82,9 @@ final class TrackerAppRuntime {
         guard !isRunning else { return }
         isRunning = true
         presentation.start()
-        statusItem.openQuickTrack = { [weak self] in self?.quickTrack.toggle() }
-        statusItem.start { [weak self] in self?.showTracker() }
+        statusItem.start(
+            openWindow: { [weak self] in self?.showTracker() },
+            openQuickTrack: { [weak self] in self?.quickTrack.toggle() })
     }
 
     /// SwiftUI hands `openWindow` only to scene content and commands. They pass it here, so the Dock and
