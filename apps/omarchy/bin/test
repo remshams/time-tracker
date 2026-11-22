@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Builds and runs the Qt Test binary offscreen.
+set -euo pipefail
+app_dir=$(cd "$(dirname "$0")/.." && pwd)
+cargo build --manifest-path "$app_dir/../../Cargo.toml" --locked -p tracker-bridge
+mkdir -p "$app_dir/tests/build"
+cd "$app_dir/tests/build"
+qmake6 "$app_dir/tests/tt-desktop-tests.pro" CONFIG+=debug
+make -j"$(nproc)"
+QT_QPA_PLATFORM=offscreen ./tt-desktop-tests "$@"
