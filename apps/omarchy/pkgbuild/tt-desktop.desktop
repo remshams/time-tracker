@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Time Tracker
+Comment=Track time on tasks and review worklogs
+Exec=tt-desktop
+Icon=tt-desktop
+Terminal=false
+Categories=Utility;
+StartupWMClass=tt-desktop

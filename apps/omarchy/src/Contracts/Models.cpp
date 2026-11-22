@@ -67,7 +67,7 @@ std::optional<DailyReport> DailyReport::fromJson(const QJsonValue &value) {
     DailyReport report;
     report.cutoff = *cutoff;
     const QJsonArray rows = object.value(QStringLiteral("rows")).toArray();
-    for (const QJsonValue &row : rows) {
+    for (const auto &row : rows) {
         const QJsonObject item = row.toObject();
         report.microseconds.insert(item.value(QStringLiteral("taskId")).toString(),
                                    static_cast<qint64>(item.value(QStringLiteral("durationMicroseconds")).toDouble()));
@@ -81,7 +81,7 @@ Overview Overview::fromJson(const QJsonValue &value) {
     const QJsonValue tasks = object.value(QStringLiteral("tasks"));
     if (tasks.isObject()) {
         QList<TaskItem> items;
-        for (const QJsonValue &task : tasks.toObject().value(QStringLiteral("value")).toArray()) {
+        for (const auto &task : tasks.toObject().value(QStringLiteral("value")).toArray()) {
             if (std::optional<TaskItem> item = TaskItem::fromJson(task)) {
                 items.append(*item);
             }
@@ -106,7 +106,7 @@ std::optional<HistoryPage> HistoryPage::fromJson(const QJsonValue &value) {
     }
     const QJsonObject object = value.toObject();
     HistoryPage page;
-    for (const QJsonValue &item : object.value(QStringLiteral("worklogs")).toArray()) {
+    for (const auto &item : object.value(QStringLiteral("worklogs")).toArray()) {
         if (std::optional<WorklogItem> worklog = WorklogItem::fromJson(item)) {
             page.worklogs.append(*worklog);
         }

@@ -1,0 +1,24 @@
+# Qt code trips several checks by design. moc generates the signal, slot and property glue, and Qt's
+# value types and containers are not the standard ones, so the noisy checks stay off.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-narrowing-conversions,
+  -bugprone-throwing-static-initialization,
+  performance-*,
+  -performance-enum-size,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-default-member-init,
+  modernize-use-emplace,
+  modernize-use-equals-default,
+  modernize-loop-convert,
+  readability-container-size-empty,
+  readability-redundant-member-init,
+  readability-redundant-string-init,
+  readability-simplify-boolean-expr,
+  readability-braces-around-statements
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/apps/omarchy/(src|tests)/.*'

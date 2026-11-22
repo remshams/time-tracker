@@ -1,0 +1,44 @@
+# Builds tt-desktop from the local checkout, the way makepkg -fsi works for the other Omarchy apps.
+# scripts/install-omarchy-app.py copies this directory to a temporary one and sets TT_SOURCE_DIR
+# to the repository root. Running makepkg here directly finds the root three levels up.
+pkgname=tt-desktop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Time Tracker desktop client for Omarchy'
+arch=('x86_64' 'aarch64')
+url='https://github.com/remshams/time-tracker'
+license=('custom')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland')
+# cargo is provided by both the rust and the rustup package.
+makedepends=('gcc' 'make' 'cargo')
+# Link-time optimization flags from makepkg.conf would reach the C code that cargo compiles.
+# The debug package would only add a second file for the install script to handle.
+options=('!lto' '!debug')
+source=()
+sha256sums=()
+
+_root() {
+  if [[ -n "${TT_SOURCE_DIR:-}" ]]; then
+    echo "$TT_SOURCE_DIR"
+  else
+    echo "$startdir/../../.."
+  fi
+}
+
+build() {
+  local root
+  root=$(_root)
+  # A caller can point CARGO_TARGET_DIR at a persistent directory to keep the Rust build cache.
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$srcdir/target}"
+  cargo build --manifest-path "$root/Cargo.toml" --release --locked -p tracker-bridge
+  mkdir -p "$srcdir/build"
+  cd "$srcdir/build"
+  qmake6 "$root/apps/omarchy/tt-desktop.pro" CONFIG+=release CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
+  make -j"$(nproc)"
+}
+
+package() {
+  install -Dm755 "$srcdir/build/tt-desktop" "$pkgdir/usr/bin/tt-desktop"
+  install -Dm644 "$startdir/tt-desktop.desktop" "$pkgdir/usr/share/applications/tt-desktop.desktop"
+  install -Dm644 "$startdir/tt-desktop.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/tt-desktop.svg"
+}

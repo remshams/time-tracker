@@ -1,2 +1,6 @@
 /build/
 /tests/build/
+/pkgbuild/pkg/
+/pkgbuild/src/
+*.pkg.tar.*
+/tests/build-coverage/
