@@ -61,8 +61,10 @@ final class MenuBarPreferencesStore {
         var registered: [MenuShortcutAction] = []
         for action in changed {
             if let error = registerMenuShortcut?(action, candidate[action]) {
-                // Keep the bindings that were registered before this one failed.
-                for done in registered { _ = registerMenuShortcut?(done, menuShortcuts[done]) }
+                // Put back the bindings that were registered before this one failed. If one can't come back, its new
+                // binding stays active, so Settings says so.
+                let rollbackErrors = registered.compactMap { registerMenuShortcut?($0, menuShortcuts[$0]) }
+                if !rollbackErrors.isEmpty { reportMenuGlobalShortcutError(rollbackErrors.joined(separator: " ")) }
                 reportMenuShortcutError(error)
                 return
             }
