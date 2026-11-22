@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Runs the black-box E2E tests against a release-like build of tt-desktop in a headless
+# sway session with its own D-Bus and accessibility bus, away from the user's desktop.
+# Needs sway, wtype, at-spi2-core and python-gobject.
+# Usage: bin/e2e [unittest arguments, for example -k test_space]
+set -euo pipefail
+app_dir=$(cd "$(dirname "$0")/.." && pwd)
+repo_dir=$(cd "$app_dir/../.." && pwd)
+
+if [ -z "${TT_E2E_INSIDE:-}" ]; then
+    "$app_dir/bin/build"
+    cargo build --manifest-path "$repo_dir/Cargo.toml" --locked -p tracker-cli
+    runtime=$(mktemp -d)
+    chmod 700 "$runtime"
+    trap 'rm -rf "$runtime"' EXIT
+    # Nothing from the user's session may leak in: no display, no session bus, no desktop.
+    env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u SWAYSOCK \
+        -u DBUS_SESSION_BUS_ADDRESS -u XDG_CURRENT_DESKTOP -u XDG_SESSION_DESKTOP \
+        XDG_RUNTIME_DIR="$runtime" TT_E2E_INSIDE=1 \
+        dbus-run-session -- "$0" "$@"
+    exit $?
+fi
+
+cd "$app_dir/e2e"
+exec python3 -m unittest -v "$@"
