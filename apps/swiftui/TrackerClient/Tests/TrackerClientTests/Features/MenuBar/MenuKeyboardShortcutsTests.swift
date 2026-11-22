@@ -112,9 +112,6 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(MenuShortcutAction.openQuickTrack.title, "Open Quick Track")
         XCTAssertTrue(shortcuts.validationErrors().isEmpty)
         XCTAssertEqual(shortcuts[.openQuickTrack], shortcuts.openQuickTrack)
-        XCTAssertEqual(
-            shortcuts.action(forKey: " ", modifiers: [.control, .option], includingGlobal: true), .openQuickTrack)
-        XCTAssertNil(shortcuts.action(forKey: " ", modifiers: [.control, .option]))
         XCTAssertEqual(MenuShortcutAction.allCases.filter(\.isGlobal), [.openMenu, .openQuickTrack])
     }
 
@@ -155,7 +152,6 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
                     $0
                         == "\(action.title) needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved."
                 }, "\(action)")
-            XCTAssertNil(shortcuts.action(forKey: " ", modifiers: [.command], includingGlobal: true))
         }
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.openQuickTrack = MenuShortcut(key: "é", modifiers: [.command])

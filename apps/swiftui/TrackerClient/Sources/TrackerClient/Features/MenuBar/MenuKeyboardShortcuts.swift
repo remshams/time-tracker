@@ -173,12 +173,9 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         includingGlobal: Bool = false
     ) -> MenuShortcutAction? {
         let shortcut = MenuShortcut(key: key, modifiers: modifiers)
-        guard shortcut.hasSupportedKey || shortcut.isSpace, modifiers.subtracting(.allowed).isEmpty else {
-            return nil
-        }
+        guard shortcut.hasSupportedKey, modifiers.subtracting(.allowed).isEmpty else { return nil }
         return MenuShortcutAction.allCases.first {
-            (includingGlobal || !$0.isGlobal) && (!shortcut.isSpace || $0.allowsSpace)
-                && self[$0].normalized == shortcut
+            (includingGlobal || !$0.isGlobal) && self[$0].normalized == shortcut
         }
     }
 
