@@ -70,7 +70,6 @@ TrackerDialog {
         radius: theme.radius
 
         ListView {
-            id: list
             anchors.fill: parent
             anchors.margins: 1
             clip: true

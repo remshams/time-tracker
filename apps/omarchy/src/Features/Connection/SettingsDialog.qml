@@ -66,7 +66,6 @@ TrackerDialog {
     }
 
     RadioButton {
-        id: server
         Layout.fillWidth: true
         text: qsTr("Server")
         checked: connection.draftRemote
@@ -78,7 +77,6 @@ TrackerDialog {
     }
 
     TextField {
-        id: urlField
         Layout.fillWidth: true
         visible: connection.draftRemote
         placeholderText: qsTr("http://host:port")

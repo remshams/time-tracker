@@ -15,7 +15,6 @@ class TrackerGateway;
 // a reload of the same task keeps the shown rows until the new page arrives.
 class WorklogHistoryStore : public QObject {
     Q_OBJECT
-    Q_PROPERTY(QString taskId READ taskId NOTIFY rowsChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool loaded READ loaded NOTIFY rowsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
@@ -42,7 +41,7 @@ public:
     std::optional<WorklogItem> worklog(const QString &worklogId) const;
 
     // Loads the first page for the selected task again.
-    Q_INVOKABLE void reload();
+    void reload();
     Q_INVOKABLE void loadMore();
     void clear();
 
