@@ -62,6 +62,10 @@ unchanged while the architecture-docs standard is piloted; don't update it.
 
 - When the user asks to install the current version on this machine, run `python3 scripts/install-macos-app.py` and report its output. It builds Release, quits the running app, replaces `~/Applications/TimeTracker.app` and relaunches it. Don't look for another procedure or make a backup.
 
+## Install the Omarchy app locally
+
+- When the user asks to install the current version on this machine, run `python3 scripts/install-omarchy-app.py` and report its output. It builds the `tt-desktop` package with makepkg, quits the running app, installs the package with `sudo pacman -U` and relaunches it. Don't look for another procedure.
+
 ## End-to-end tests
 
 - Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
@@ -72,6 +76,7 @@ unchanged while the architecture-docs standard is piloted; don't update it.
 ## Validation
 
 - After completing a task or feature, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`, `cargo llvm-cov --lcov --output-path lcov.info` (it runs the full test suite, so a separate `cargo test` only rebuilds and reruns the same tests), and `cargo crap --workspace --lcov lcov.info` before handoff. Run mutation checks according to the scope rules below.
+- For changes under `apps/omarchy` or `crates/tracker-bridge`, also run `apps/omarchy/bin/lint` (clang-format and clang-tidy) and `apps/omarchy/bin/test --coverage` (the Qt tests plus a gcovr summary; install gcovr with `pip install gcovr`). Run `apps/omarchy/bin/build release` when the build files change.
 - For Swift production or portable unit-test changes, also run `python3 scripts/swift-style.py`. Install its pinned tools with `python3 scripts/install-swift-style-tools.py` if needed. Native UI E2E and layout tests remain outside the initial style scope.
 - Use cargo-mutants 27.1.0. Install it with `cargo install --locked cargo-mutants --version 27.1.0` if it is unavailable.
 - Use cargo-llvm-cov 0.9.0 and cargo-crap 0.4.3. Install them with `rustup component add llvm-tools-preview`, `cargo +stable install --locked --version 0.9.0 cargo-llvm-cov`, and `cargo +stable install --locked --version 0.4.3 cargo-crap` if they are unavailable.
