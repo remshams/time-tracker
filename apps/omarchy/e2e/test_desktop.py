@@ -76,6 +76,7 @@ class TaskTests(DesktopTestCase):
         app.wait_for("heading", name="New task")
         app.wait_focused("Task name")
         app.type("Plan the sprint")
+        app.wait_enabled("Create")
         app.key("Return")
 
         app.wait_gone("heading", name="New task")
@@ -92,6 +93,7 @@ class TaskTests(DesktopTestCase):
         app.wait_focused("Task name")
         # The current name is selected, so typing replaces it.
         app.type("New name")
+        app.wait_enabled("Rename")
         app.key("Return")
 
         app.wait_for("heading", name="New name")
@@ -174,6 +176,7 @@ class WorklogTests(DesktopTestCase):
         # Keys reach the app in order, so the Tab lands before the typed time.
         app.key("Tab")
         app.type("09:30")
+        app.wait_enabled("Save")
         app.key("Return")
 
         app.wait_for("list item", contains="09:30 to 11:00")
@@ -192,6 +195,7 @@ class WorklogTests(DesktopTestCase):
         app.wait_focused("Search tasks")
         app.type("supp")
         app.wait_for("list item", name="Support inbox")
+        app.wait_enabled("Move")
         app.key("Return")
 
         app.wait_gone("heading", name="Move to task")
