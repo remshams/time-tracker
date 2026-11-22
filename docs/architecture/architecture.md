@@ -243,11 +243,17 @@ such as `Features/WorklogCorrection` in both targets.
   bar observer reads these stores, the last tracked task from `MenuBarStore` and
   the start and stop checks from `TrackingAvailability` through one
   `Observations` loop, and `TrackerMenuSources` computes the running task's name
-  from the connection, tracking and catalog stores. `TrackerSync` loads,
+  from the connection, tracking and catalog stores. `QuickTrackStore` builds
+  the Quick Track dialog from the same inputs and the task IDs that the
+  client's `searchTasks` returns, and starts and stops tracking through
+  `TrackingStore`; it reports whether the dialog shows to `TrackerSync` through
+  a closure that `TrackerFeatures` sets
+  ([ADR 0042](adr/0042-show-quick-track-in-a-non-activating-panel.md)).
+  `TrackerSync` loads,
   refreshes and polls the stores, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
   Each store keeps its own observed values current. `Shared/DisplayClock` ticks
-  every second while a window or the menu shows a running worklog, and every
+  every second while a window, the menu or the Quick Track dialog shows a running worklog, and every
   minute while the menu bar shows today's total; `TrackingStore` refreshes the
   timer text and `DailyTotalsStore` today's totals on each tick
   ([ADR 0039](adr/0039-let-the-stores-keep-their-own-values-current.md)).
@@ -311,7 +317,10 @@ such as `Features/WorklogCorrection` in both targets.
   only through a closure that `TrackerFeatures` passes
   ([ADR 0035](adr/0035-put-user-actions-on-feature-stores.md)).
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
-  one tracker window, Settings, the menu bar item and lifecycle handling. The
+  one tracker window, Settings, the menu bar item, the Quick Track panel and
+  lifecycle handling. The Quick Track panel is a non-activating `NSPanel`, so
+  it takes keyboard input without bringing the app or its window forward
+  ([ADR 0042](adr/0042-show-quick-track-in-a-non-activating-panel.md)). The
   serial
   [`TrackerWorker`](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift)
   keeps bridge calls and decoding off the UI thread and runs them in order.
