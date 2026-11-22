@@ -15,6 +15,8 @@ final class TrackerStatusItemController: NSObject {
     private var openWindow: (() -> Void)?
     private var shownMenu: TrackerStatusMenu?
     private var shortcut: GlobalMenuShortcutHandler?
+    /// Called when the Open Quick Track shortcut is pressed. It stays nil until the panel exists.
+    var openQuickTrack: (() -> Void)?
 
     init(
         sync: TrackerSync, tracking: TrackingStore, menuBar: MenuBarStore, connection: ConnectionStore,
@@ -49,7 +51,10 @@ final class TrackerStatusItemController: NSObject {
             guard let self else { return }
             updateMenuValues(menu.values)
         }
-        shortcut = GlobalMenuShortcutHandler(preferences: preferences) { [weak self] in self?.toggleMenu() }
+        shortcut = GlobalMenuShortcutHandler(
+            preferences: preferences,
+            toggleMenu: { [weak self] in self?.toggleMenu() },
+            openQuickTrack: { [weak self] in self?.openQuickTrack?() })
         updateLabel()
     }
 

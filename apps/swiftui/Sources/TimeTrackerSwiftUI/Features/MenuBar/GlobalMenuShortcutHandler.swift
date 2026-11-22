@@ -3,27 +3,29 @@ import Carbon
 import Combine
 import TrackerClient
 
-/// Keeps the open menu shortcut registered with macOS. It registers the saved shortcut, registers it again when
-/// the keyboard layout changes, lets the preferences store register a new shortcut, and reports errors there.
-/// Creating it registers the shortcut and replaces the store's `registerMenuShortcut`, so the app creates one.
+/// Keeps the two global shortcuts, Open menu and Open Quick Track, registered with macOS. It registers the saved
+/// shortcuts, registers them again when the keyboard layout changes, lets the preferences store register a new
+/// shortcut, and reports errors there. Creating it registers the shortcuts and replaces the store's
+/// `registerMenuShortcut`, so the app creates one.
 final class GlobalMenuShortcutHandler {
     private let preferences: MenuBarPreferencesStore
     private let registration: GlobalMenuShortcutRegistration
     private var layoutChanges: AnyCancellable?
 
-    init(preferences: MenuBarPreferencesStore, toggleMenu: @escaping @MainActor () -> Void) {
+    init(
+        preferences: MenuBarPreferencesStore, toggleMenu: @escaping @MainActor () -> Void,
+        openQuickTrack: @escaping @MainActor () -> Void
+    ) {
         self.preferences = preferences
-        let registration = GlobalMenuShortcutRegistration(action: toggleMenu)
+        let registration = GlobalMenuShortcutRegistration(toggleMenu: toggleMenu, openQuickTrack: openQuickTrack)
         self.registration = registration
-        preferences.registerMenuShortcut = { [weak registration] shortcut in
+        preferences.registerMenuShortcut = { [weak registration] action, shortcut in
             do {
-                try registration?.register(shortcut)
+                try registration?.register(action, shortcut)
                 return nil
             } catch { return error.localizedDescription }
         }
-        do { try registration.register(preferences.menuShortcuts.openMenu) } catch {
-            preferences.reportMenuGlobalShortcutError(error.localizedDescription)
-        }
+        preferences.reportMenuGlobalShortcutError(registerSavedShortcuts())
         layoutChanges = DistributedNotificationCenter.default()
             .publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))
             .receive(on: RunLoop.main)
@@ -44,9 +46,17 @@ final class GlobalMenuShortcutHandler {
     }
 
     private func registerAfterLayoutChange() {
-        do {
-            try registration.register(preferences.menuShortcuts.openMenu)
-            preferences.reportMenuGlobalShortcutError(nil)
-        } catch { preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
+        preferences.reportMenuGlobalShortcutError(registerSavedShortcuts())
+    }
+
+    /// Registers both global shortcuts, even when the first fails, and returns the errors, if any.
+    private func registerSavedShortcuts() -> String? {
+        let errors = [MenuShortcutAction.openMenu, .openQuickTrack].compactMap { action -> String? in
+            do {
+                try registration.register(action, preferences.menuShortcuts[action])
+                return nil
+            } catch { return error.localizedDescription }
+        }
+        return errors.isEmpty ? nil : errors.joined(separator: " ")
     }
 }

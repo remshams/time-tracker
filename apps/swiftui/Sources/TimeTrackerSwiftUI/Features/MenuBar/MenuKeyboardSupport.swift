@@ -6,12 +6,18 @@ import TrackerClient
 extension MenuShortcut {
     init?(event: NSEvent) {
         guard event.type == .keyDown,
-            let key = event.characters(byApplyingModifiers: event.modifierFlags.intersection(.shift)),
+            let key = Self.recordableKey(for: event),
             key.unicodeScalars.count == 1,
             let scalar = key.unicodeScalars.first,
-            (33...126).contains(scalar.value)
+            (33...126).contains(scalar.value) || scalar == " "
         else { return nil }
         self.init(key: key, modifiers: Modifiers(event.modifierFlags))
+    }
+
+    /// Space is read from its key code: with Control held, AppKit reports it as a control character.
+    private static func recordableKey(for event: NSEvent) -> String? {
+        if event.keyCode == UInt16(kVK_Space) { return " " }
+        return event.characters(byApplyingModifiers: event.modifierFlags.intersection(.shift))
     }
 }
 
@@ -49,20 +55,29 @@ enum GlobalMenuShortcutError: LocalizedError {
 
 final class GlobalMenuShortcutRegistration {
     private static let signature: OSType = 0x54544D53
-    private let action: @MainActor () -> Void
+    /// One Carbon hotkey. Each registration gets a new identifier, so late events from a replaced hotkey are ignored.
+    private struct Slot {
+        var shortcut: MenuShortcut?
+        var keyCode: UInt32?
+        var hotKey: EventHotKeyRef?
+        var identifier: UInt32 = 0
+    }
+
+    private let actions: [MenuShortcutAction: @MainActor () -> Void]
+    private var slots: [MenuShortcutAction: Slot] = [.openMenu: Slot(), .openQuickTrack: Slot()]
+    private var lastIdentifier: UInt32 = 0
     private var handler: EventHandlerRef?
-    private var hotKey: EventHotKeyRef?
-    private var shortcut: MenuShortcut?
-    private var registeredKeyCode: UInt32?
-    private var identifier: UInt32 = 0
     private var menuEventMonitor: Any?
     private var menuRunLoopObserver: CFRunLoopObserver?
     private var dismissTrackedMenu: (@MainActor () -> Void)?
     private var isConsumingTrackedShortcut = false
 
-    init(action: @escaping @MainActor () -> Void) {
-        self.action = action
+    /// `toggleMenu` and `openQuickTrack` are the actions of the two global shortcuts.
+    init(toggleMenu: @escaping @MainActor () -> Void, openQuickTrack: @escaping @MainActor () -> Void) {
+        actions = [.openMenu: toggleMenu, .openQuickTrack: openQuickTrack]
     }
+
+    private var menuSlot: Slot { slots[.openMenu] ?? Slot() }
 
     isolated deinit {
         if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
@@ -71,20 +86,24 @@ final class GlobalMenuShortcutRegistration {
                 CFRunLoopGetMain(), menuRunLoopObserver,
                 CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
-        if let hotKey { UnregisterEventHotKey(hotKey) }
+        for slot in slots.values { if let hotKey = slot.hotKey { UnregisterEventHotKey(hotKey) } }
         if let handler { RemoveEventHandler(handler) }
     }
 
-    func register(_ shortcut: MenuShortcut) throws {
+    /// Registers one global shortcut. The other global shortcut stays registered.
+    func register(_ action: MenuShortcutAction, _ shortcut: MenuShortcut) throws {
+        precondition(action.isGlobal, "\(action) is not a global shortcut")
+        let slot = slots[action] ?? Slot()
         guard !shortcut.modifiers.intersection([.command, .control, .option]).isEmpty else {
             throw GlobalMenuShortcutError.missingModifier
         }
-        guard let keyCode = KeyboardLayoutKeyCode.find(for: shortcut) else {
+        guard let keyCode = shortcut.isSpace ? UInt32(kVK_Space) : KeyboardLayoutKeyCode.find(for: shortcut)
+        else {
             throw GlobalMenuShortcutError.unsupportedKey(shortcut.key)
         }
-        if self.shortcut == shortcut, registeredKeyCode == keyCode, hotKey != nil { return }
+        if slot.shortcut == shortcut, slot.keyCode == keyCode, slot.hotKey != nil { return }
         try installHandler()
-        let nextIdentifier = identifier &+ 1
+        let nextIdentifier = lastIdentifier &+ 1
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: nextIdentifier)
         var replacement: EventHotKeyRef?
         #if DEBUG
@@ -106,23 +125,23 @@ final class GlobalMenuShortcutRegistration {
             throw GlobalMenuShortcutError.registration(shortcut.displayText, status)
         }
         // Keep the previous shortcut registered if macOS rejects its replacement.
-        let previous = hotKey
-        hotKey = replacement
-        self.shortcut = shortcut
-        registeredKeyCode = keyCode
-        identifier = nextIdentifier
+        let previous = slot.hotKey
+        lastIdentifier = nextIdentifier
+        slots[action] = Slot(
+            shortcut: shortcut, keyCode: keyCode, hotKey: replacement, identifier: nextIdentifier)
         if let previous { UnregisterEventHotKey(previous) }
-        if dismissTrackedMenu != nil {
+        if action == .openMenu, dismissTrackedMenu != nil {
             UnregisterEventHotKey(replacement)
-            hotKey = nil
+            slots[action]?.hotKey = nil
         }
     }
 
     func beginMenuTracking(dismiss: @escaping @MainActor () -> Void) {
-        guard dismissTrackedMenu == nil, shortcut != nil, registeredKeyCode != nil else { return }
+        guard dismissTrackedMenu == nil, menuSlot.shortcut != nil, menuSlot.keyCode != nil else { return }
         // Menu tracking consumes keys before AppKit dispatch and suspends Carbon hotkey delivery.
-        if let hotKey { UnregisterEventHotKey(hotKey) }
-        hotKey = nil
+        // Only the Open menu shortcut matters while the menu is open. Quick Track does nothing then.
+        if let hotKey = menuSlot.hotKey { UnregisterEventHotKey(hotKey) }
+        slots[.openMenu]?.hotKey = nil
         dismissTrackedMenu = dismiss
         menuEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let consumed = MainActor.assumeIsolated {
@@ -148,8 +167,8 @@ final class GlobalMenuShortcutRegistration {
     func endMenuTracking() throws -> Bool {
         let wasTracking = dismissTrackedMenu != nil
         stopMenuTracking()
-        guard wasTracking, let shortcut else { return false }
-        try register(shortcut)
+        guard wasTracking, let shortcut = menuSlot.shortcut else { return false }
+        try register(.openMenu, shortcut)
         return true
     }
 
@@ -166,7 +185,7 @@ final class GlobalMenuShortcutRegistration {
     }
 
     private func matchesTrackedShortcut(_ event: NSEvent) -> Bool {
-        guard dismissTrackedMenu != nil, let shortcut, let registeredKeyCode,
+        guard dismissTrackedMenu != nil, let shortcut = menuSlot.shortcut, let registeredKeyCode = menuSlot.keyCode,
             event.type == .keyDown, !event.isARepeat,
             UInt32(event.keyCode) == registeredKeyCode
         else { return false }
@@ -210,10 +229,9 @@ final class GlobalMenuShortcutRegistration {
                     let registration = Unmanaged<GlobalMenuShortcutRegistration>
                         .fromOpaque(context).takeUnretainedValue()
                     guard hotKeyID.signature == GlobalMenuShortcutRegistration.signature,
-                        hotKeyID.id == registration.identifier,
-                        registration.hotKey != nil
+                        let action = registration.registeredAction(identifier: hotKeyID.id)
                     else { return OSStatus(eventNotHandledErr) }
-                    if let shortcut = registration.shortcut,
+                    if let shortcut = registration.slots[action]?.shortcut,
                         let recorder = NSApplication.shared.keyWindow?.firstResponder as? ShortcutRecorderButton,
                         recorder.captureRegisteredShortcut(shortcut)
                     {
@@ -223,16 +241,22 @@ final class GlobalMenuShortcutRegistration {
                     // Menu tracking starts a nested run loop. Return from Carbon before opening it.
                     RunLoop.main.perform(inModes: [.common]) { [weak registration] in
                         MainActor.assumeIsolated {
-                            guard let registration, registration.hotKey != nil,
-                                registration.identifier == triggeredID
+                            guard let registration,
+                                registration.registeredAction(identifier: triggeredID) == action,
+                                // Quick Track does nothing while the status menu is open.
+                                action == .openMenu || registration.dismissTrackedMenu == nil
                             else { return }
-                            registration.action()
+                            registration.actions[action]?()
                         }
                     }
                     return noErr
                 }
             }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
         guard status == noErr else { throw GlobalMenuShortcutError.handlerInstallation(status) }
+    }
+
+    private func registeredAction(identifier: UInt32) -> MenuShortcutAction? {
+        slots.first { $0.value.identifier == identifier && $0.value.hotKey != nil }?.key
     }
 
     private func carbonModifiers(_ modifiers: MenuShortcut.Modifiers) -> UInt32 {
