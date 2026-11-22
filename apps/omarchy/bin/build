@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Builds the Rust bridge and tt-desktop into build/tt-desktop.
+# Usage: bin/build [debug|release]
+set -euo pipefail
+app_dir=$(cd "$(dirname "$0")/.." && pwd)
+profile=${1:-debug}
+cargo_flags=(--locked -p tracker-bridge)
+if [ "$profile" = release ]; then
+    cargo_flags+=(--release)
+fi
+cargo build --manifest-path "$app_dir/../../Cargo.toml" "${cargo_flags[@]}"
+mkdir -p "$app_dir/build"
+cd "$app_dir/build"
+qmake6 "$app_dir/tt-desktop.pro" "CONFIG+=$profile"
+make -j"$(nproc)"
