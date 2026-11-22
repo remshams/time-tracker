@@ -26,7 +26,7 @@ Item {
     signal renameRequested(string id)
     signal archiveRequested(string id)
 
-    implicitHeight: 54
+    implicitHeight: Tokens.size.taskRowHeight
 
     Accessible.role: Accessible.ListItem
     Accessible.name: {
@@ -42,16 +42,16 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        anchors.leftMargin: 6
-        anchors.rightMargin: 6
-        radius: Math.min(4, theme.radius)
-        color: row.selected ? theme.selection : mouse.containsMouse ? Qt.alpha(theme.selection, 0.45) : "transparent"
-        opacity: row.selected && !row.focusedList ? 0.6 : 1
+        anchors.leftMargin: Tokens.spacing.small
+        anchors.rightMargin: Tokens.spacing.small
+        radius: Math.min(Tokens.radius.small, theme.radius)
+        color: row.selected ? theme.selection : mouse.containsMouse ? Qt.alpha(theme.selection, Tokens.emphasis.hover) : "transparent"
+        opacity: row.selected && !row.focusedList ? Tokens.emphasis.unfocusedSelection : 1
     }
     Rectangle {
         visible: row.selected
-        x: 6
-        width: 2
+        x: Tokens.spacing.small
+        width: Tokens.border.focus
         height: parent.height
         color: row.taskColor
     }
@@ -71,19 +71,19 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 18
-        anchors.rightMargin: 16
-        spacing: 12
+        anchors.leftMargin: Tokens.spacing.large
+        anchors.rightMargin: Tokens.spacing.large
+        spacing: Tokens.spacing.medium
 
         TaskDot {
             dotColor: row.taskColor
             filled: row.hasTime || row.running
-            size: row.running ? 11 : 9
+            size: row.running ? Tokens.size.runningDot : Tokens.size.dot
         }
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2
+            spacing: Tokens.spacing.xxSmall
             Txt {
                 Layout.fillWidth: true
                 text: row.name
@@ -93,7 +93,7 @@ Item {
             Txt {
                 Layout.fillWidth: true
                 text: row.running ? qsTr("Running since %1").arg(format.clockTime(tracking.runningSince)) : row.lastWorked
-                font.pixelSize: 11
+                font.pixelSize: Tokens.text.caption
                 color: row.running ? row.taskColor : theme.textFaint
             }
         }
@@ -107,7 +107,7 @@ Item {
             Accessible.name: qsTr("Start %1").arg(row.name)
             MouseArea {
                 anchors.fill: parent
-                anchors.margins: -6
+                anchors.margins: -Tokens.spacing.small
                 cursorShape: Qt.PointingHandCursor
                 onClicked: tracking.start(row.taskId)
             }

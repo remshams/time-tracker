@@ -25,21 +25,21 @@ Popup {
     anchors.centerIn: parent
     modal: true
     focus: true
-    padding: 24
+    padding: Tokens.spacing.xLarge
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     Overlay.modal: Rectangle {
-        color: Qt.alpha(theme.background, 0.7)
+        color: Qt.alpha(theme.background, Tokens.emphasis.scrim)
     }
     background: Rectangle {
         color: theme.background
         border.color: theme.accent
-        border.width: 2
+        border.width: Tokens.border.focus
         radius: theme.radius
     }
 
     contentItem: ColumnLayout {
-        spacing: 16
+        spacing: Tokens.spacing.large
         focus: true
         Keys.onPressed: event => {
             if (event.text === "?") {
@@ -49,7 +49,7 @@ Popup {
         }
         Txt {
             text: qsTr("Keys")
-            font.pixelSize: 16
+            font.pixelSize: Tokens.text.title
             font.bold: true
         }
         GridLayout {
@@ -61,7 +61,7 @@ Popup {
                 ColumnLayout {
                     required property var modelData
                     Layout.alignment: Qt.AlignTop
-                    spacing: 6
+                    spacing: Tokens.spacing.small
                     Txt {
                         text: parent.modelData.title
                         font.bold: true
@@ -71,9 +71,9 @@ Popup {
                         model: parent.modelData.keys
                         RowLayout {
                             required property var modelData
-                            spacing: 12
+                            spacing: Tokens.spacing.medium
                             Txt {
-                                Layout.preferredWidth: 110
+                                Layout.preferredWidth: Tokens.size.keyColumnWidth
                                 text: parent.modelData[0]
                                 color: theme.accent
                                 font.bold: true

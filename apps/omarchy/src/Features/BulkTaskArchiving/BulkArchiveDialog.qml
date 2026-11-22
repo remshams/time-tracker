@@ -16,7 +16,7 @@ TrackerDialog {
     }
 
     title: qsTr("Archive inactive tasks")
-    dialogWidth: 520
+    dialogWidth: Tokens.size.wideDialogWidth
     primaryText: root.done ? qsTr("Close") : qsTr("Archive")
     primaryEnabled: root.done || bulkArchiving.canSubmit
     destructive: !root.done
@@ -39,14 +39,14 @@ TrackerDialog {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 8
+        spacing: Tokens.spacing.small
 
         Txt {
             text: qsTr("Inactive for more than")
         }
         TextField {
             id: days
-            Layout.preferredWidth: 72
+            Layout.preferredWidth: Tokens.size.daysFieldWidth
             font.family: theme.fontFamily
             text: bulkArchiving.daysText
             readOnly: bulkArchiving.pending || root.done
@@ -96,7 +96,7 @@ TrackerDialog {
 
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: 200
+        Layout.preferredHeight: Tokens.size.previewListHeight
         visible: !root.done
         color: theme.panel
         radius: theme.radius
@@ -104,7 +104,7 @@ TrackerDialog {
         ListView {
             id: list
             anchors.fill: parent
-            anchors.margins: 8
+            anchors.margins: Tokens.spacing.small
             clip: true
             model: bulkArchiving.tasks
             boundsBehavior: Flickable.StopAtBounds
@@ -116,8 +116,8 @@ TrackerDialog {
             delegate: Row {
                 required property var modelData
                 width: ListView.view.width
-                height: 28
-                spacing: 10
+                height: Tokens.size.previewRowHeight
+                spacing: Tokens.spacing.medium
 
                 Accessible.role: Accessible.ListItem
                 Accessible.name: modelData.name

@@ -14,7 +14,7 @@ Item {
 
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
-    opacity: active ? 1 : 0.4
+    opacity: active ? 1 : Tokens.emphasis.disabled
 
     Accessible.role: clickable ? Accessible.Button : Accessible.StaticText
     Accessible.name: action
@@ -22,24 +22,24 @@ Item {
 
     Row {
         id: row
-        spacing: 6
+        spacing: Tokens.spacing.small
 
         Txt {
             text: root.keys
-            font.pixelSize: 11
+            font.pixelSize: Tokens.text.caption
             font.bold: true
             color: theme.accent
         }
         Txt {
             text: root.action
-            font.pixelSize: 11
+            font.pixelSize: Tokens.text.caption
             level: 1
         }
     }
 
     MouseArea {
         anchors.fill: parent
-        anchors.margins: -4
+        anchors.margins: -Tokens.spacing.xSmall
         enabled: root.clickable
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()

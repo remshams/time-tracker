@@ -54,7 +54,7 @@ Rectangle {
     Column {
         anchors.centerIn: parent
         visible: catalog.loaded && Object.keys(catalog.names).length === 0
-        spacing: 14
+        spacing: Tokens.spacing.medium
         Txt {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Create a task to start tracking your time.")
@@ -86,24 +86,24 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 32
-            Layout.rightMargin: 24
-            Layout.topMargin: 24
-            spacing: 16
+            Layout.leftMargin: Tokens.spacing.xxLarge
+            Layout.rightMargin: Tokens.spacing.xLarge
+            Layout.topMargin: Tokens.spacing.xLarge
+            spacing: Tokens.spacing.large
 
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: Tokens.spacing.small
                 Txt {
                     Layout.fillWidth: true
                     text: catalog.selectedName
-                    font.pixelSize: 24
+                    font.pixelSize: Tokens.text.heading
                     font.bold: true
                     Accessible.role: Accessible.Heading
                     Accessible.name: text
                 }
                 RowLayout {
-                    spacing: 10
+                    spacing: Tokens.spacing.medium
                     TaskDot {
                         dotColor: theme.taskColor(catalog.selectedColorName)
                         filled: root.todaySeconds > 0 || root.running
@@ -145,8 +145,8 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.topMargin: 20
-            Layout.preferredHeight: 1
+            Layout.topMargin: Tokens.spacing.xLarge
+            Layout.preferredHeight: Tokens.border.hairline
             color: theme.line
         }
 

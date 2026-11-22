@@ -33,7 +33,7 @@ TrackerDialog {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 8
+        spacing: Tokens.spacing.small
         TaskDot {
             dotColor: theme.taskColor(catalog.colorNameOf(worklogMove.sourceTaskId))
         }
@@ -50,7 +50,7 @@ TrackerDialog {
         text: worklogMove.query
         placeholderText: qsTr("Search tasks")
         font.family: theme.fontFamily
-        font.pixelSize: 13
+        font.pixelSize: Tokens.text.body
         selectByMouse: true
         Material.accent: theme.accent
         Material.foreground: theme.text
@@ -64,21 +64,21 @@ TrackerDialog {
 
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: 6 * 32
+        Layout.preferredHeight: 6 * Tokens.size.listRowHeight
         color: theme.panel
         border.color: theme.line
         radius: theme.radius
 
         ListView {
             anchors.fill: parent
-            anchors.margins: 1
+            anchors.margins: Tokens.border.hairline
             clip: true
             model: worklogMove.candidates
             currentIndex: worklogMove.currentIndex
             highlightFollowsCurrentItem: false
             boundsBehavior: Flickable.StopAtBounds
             // The older results stay up while a new search runs, dimmed so they read as pending.
-            opacity: worklogMove.fresh ? 1 : 0.55
+            opacity: worklogMove.fresh ? 1 : Tokens.emphasis.staleResults
             ScrollBar.vertical: ScrollBar {}
 
             Accessible.role: Accessible.List
@@ -93,7 +93,7 @@ TrackerDialog {
                 readonly property bool selected: index === worklogMove.currentIndex
 
                 width: ListView.view.width
-                height: 32
+                height: Tokens.size.listRowHeight
                 color: selected ? theme.selection : "transparent"
 
                 Accessible.role: Accessible.ListItem
@@ -102,9 +102,9 @@ TrackerDialog {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
-                    spacing: 8
+                    anchors.leftMargin: Tokens.spacing.medium
+                    anchors.rightMargin: Tokens.spacing.medium
+                    spacing: Tokens.spacing.small
                     TaskDot {
                         dotColor: theme.taskColor(catalog.colorNameOf(row.modelData.id))
                     }

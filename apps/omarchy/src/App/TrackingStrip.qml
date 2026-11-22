@@ -14,7 +14,7 @@ Rectangle {
 
     signal showTask(string taskId)
 
-    implicitHeight: 64
+    implicitHeight: Tokens.size.stripHeight
     color: theme.panel
 
     Accessible.role: Accessible.Button
@@ -31,10 +31,10 @@ Rectangle {
 
     // The running task's color runs down the left edge, like a focused window border.
     Rectangle {
-        width: 4
+        width: Tokens.border.stripe
         height: parent.height
         color: root.taskColor
-        opacity: tracking.running ? 1 : 0.35
+        opacity: tracking.running ? 1 : Tokens.emphasis.idleStripe
     }
 
     MouseArea {
@@ -69,22 +69,22 @@ Rectangle {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        spacing: 14
+        anchors.leftMargin: Tokens.spacing.xLarge
+        anchors.rightMargin: Tokens.spacing.xLarge
+        spacing: Tokens.spacing.medium
 
         Txt {
-            Layout.preferredWidth: 22
+            Layout.preferredWidth: Tokens.size.glyphSlot
             horizontalAlignment: Text.AlignHCenter
             text: !tracking.known ? "" : tracking.stale ? "!" : tracking.running && mouse.containsMouse ? "\u25A0" : "\u25B6"
-            font.pixelSize: 18
+            font.pixelSize: Tokens.text.glyph
             color: tracking.running ? root.taskColor : theme.textDim
-            opacity: root.canAct || tracking.stale ? 1 : 0.4
+            opacity: root.canAct || tracking.stale ? 1 : Tokens.emphasis.disabled
         }
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2
+            spacing: Tokens.spacing.xxSmall
 
             Txt {
                 Layout.fillWidth: true
@@ -97,12 +97,12 @@ Rectangle {
                         return (catalog.names[root.shownTaskId] ?? "")
                     return catalog.activeCount === 0 ? qsTr("No tasks yet") : qsTr("Nothing running")
                 }
-                font.pixelSize: 16
+                font.pixelSize: Tokens.text.title
                 font.bold: tracking.running
             }
             Txt {
                 Layout.fillWidth: true
-                font.pixelSize: 11
+                font.pixelSize: Tokens.text.caption
                 color: tracking.stale ? theme.danger : theme.textDim
                 text: {
                     if (tracking.stale)
@@ -128,46 +128,46 @@ Rectangle {
         Duration {
             visible: tracking.running
             seconds: tracking.elapsedSeconds
-            pixelSize: 34
+            pixelSize: Tokens.text.display
             bold: true
         }
         Txt {
             visible: !tracking.running && root.shownTaskId.length > 0 && tracking.known
             text: qsTr("Start")
-            font.pixelSize: 16
+            font.pixelSize: Tokens.text.title
             font.bold: true
             color: root.canAct ? theme.accent : theme.textFaint
         }
 
         Rectangle {
-            Layout.preferredWidth: 1
+            Layout.preferredWidth: Tokens.border.hairline
             Layout.fillHeight: true
-            Layout.topMargin: 14
-            Layout.bottomMargin: 14
+            Layout.topMargin: Tokens.spacing.medium
+            Layout.bottomMargin: Tokens.spacing.medium
             color: theme.line
         }
 
         ColumnLayout {
-            spacing: 2
+            spacing: Tokens.spacing.xxSmall
             Txt {
                 Layout.alignment: Qt.AlignRight
                 // Cached totals come from an earlier report because the latest one failed.
                 text: totals.cached ? qsTr("Today, cached") : qsTr("Today")
-                font.pixelSize: 11
+                font.pixelSize: Tokens.text.caption
                 level: 1
             }
             Duration {
                 Layout.alignment: Qt.AlignRight
                 visible: totals.known
                 seconds: totals.totalSeconds
-                pixelSize: 16
+                pixelSize: Tokens.text.title
                 color: totals.cached ? theme.textDim : theme.text
             }
             Txt {
                 Layout.alignment: Qt.AlignRight
                 visible: !totals.known
                 text: qsTr("Unavailable")
-                font.pixelSize: 16
+                font.pixelSize: Tokens.text.title
                 level: 2
             }
         }

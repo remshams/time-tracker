@@ -182,7 +182,7 @@ ApplicationWindow {
 
                 TaskSidebar {
                     id: sidebar
-                    Layout.preferredWidth: Math.max(240, Math.min(340, window.width * 0.3))
+                    Layout.preferredWidth: Math.max(Tokens.size.sidebarMinimumWidth, Math.min(Tokens.size.sidebarMaximumWidth, window.width * 0.3))
                     Layout.fillHeight: true
                     focused: !window.historyFocused
                     onRenameRequested: taskId => window.rename(taskId)
@@ -196,7 +196,7 @@ ApplicationWindow {
                     }
                 }
                 Rectangle {
-                    Layout.preferredWidth: 1
+                    Layout.preferredWidth: Tokens.border.hairline
                     Layout.fillHeight: true
                     color: theme.line
                 }

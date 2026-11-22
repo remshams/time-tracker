@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks formatting with clang-format and runs clang-tidy over src and tests.
+# Checks formatting with clang-format, the QML design tokens, and runs clang-tidy over src and tests.
 # The compiler flags come from the Makefiles that qmake6 writes, so clang-tidy sees the same
 # defines and include paths as the build.
 # Usage: bin/lint
@@ -10,6 +10,8 @@ lint_dir=$app_dir/build/lint
 mapfile -t sources < <(find "$app_dir/src" "$app_dir/tests" -path "$app_dir/tests/build*" -prune -o \
     \( -name '*.cpp' -o -name '*.h' \) -print | sort)
 clang-format --dry-run --Werror "${sources[@]}"
+# Font sizes, spacing, radii and opacities in QML come from src/Shared/Tokens.qml.
+python3 "$app_dir/../../scripts/omarchy-qml-style.py"
 
 cargo build --manifest-path "$app_dir/../../Cargo.toml" --locked -p tracker-bridge
 

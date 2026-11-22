@@ -15,7 +15,7 @@ Popup {
     property bool destructive: false
     property bool busy: false
     property string error
-    property int dialogWidth: 460
+    property int dialogWidth: Tokens.size.dialogWidth
     default property alias content: body.data
 
     signal accepted
@@ -40,13 +40,13 @@ Popup {
 
     Material.roundedScale: theme.radius
     Overlay.modal: Rectangle {
-        color: Qt.alpha(theme.background, 0.7)
+        color: Qt.alpha(theme.background, Tokens.emphasis.scrim)
     }
 
     background: Rectangle {
         color: theme.background
         border.color: root.destructive ? theme.danger : theme.accent
-        border.width: 2
+        border.width: Tokens.border.focus
         radius: theme.radius
     }
 
@@ -60,10 +60,10 @@ Popup {
 
         Txt {
             Layout.fillWidth: true
-            Layout.margins: 20
-            Layout.bottomMargin: 12
+            Layout.margins: Tokens.spacing.xLarge
+            Layout.bottomMargin: Tokens.spacing.medium
             text: root.title
-            font.pixelSize: 16
+            font.pixelSize: Tokens.text.title
             font.bold: true
             Accessible.role: Accessible.Heading
             Accessible.name: root.title
@@ -72,16 +72,16 @@ Popup {
         ColumnLayout {
             id: body
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            spacing: 10
+            Layout.leftMargin: Tokens.spacing.xLarge
+            Layout.rightMargin: Tokens.spacing.xLarge
+            spacing: Tokens.spacing.medium
         }
 
         Txt {
             Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            Layout.topMargin: 10
+            Layout.leftMargin: Tokens.spacing.xLarge
+            Layout.rightMargin: Tokens.spacing.xLarge
+            Layout.topMargin: Tokens.spacing.medium
             visible: root.error.length > 0
             text: root.error
             color: theme.danger
@@ -93,13 +93,13 @@ Popup {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.margins: 20
-            Layout.topMargin: 16
-            spacing: 8
+            Layout.margins: Tokens.spacing.xLarge
+            Layout.topMargin: Tokens.spacing.large
+            spacing: Tokens.spacing.small
 
             BusyIndicator {
-                Layout.preferredWidth: 22
-                Layout.preferredHeight: 22
+                Layout.preferredWidth: Tokens.size.glyphSlot
+                Layout.preferredHeight: Tokens.size.glyphSlot
                 running: root.busy
                 visible: root.busy
                 Material.accent: theme.accent

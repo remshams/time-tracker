@@ -49,7 +49,7 @@ TrackerDialog {
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: Tokens.spacing.small
             TaskDot {
                 dotColor: theme.taskColor(catalog.colorNameOf(worklogDeletion.taskId))
             }
