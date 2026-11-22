@@ -32,7 +32,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testEmptyQueryListsTodaysTasksFirstAndLeavesOutTheRunningArchivedAndUnknownTasks() {
+    func testEmptyQueryListsTodaysTasksFirstAndLeavesOutTheRunningArchivedAndUnknownTasks() async {
         let content = content(inputs(active: activeWorklog, durations: ["task-three": 600, "task-one": 60]))
         XCTAssertEqual(content.tasks.map(\.id), ["task-three", "task-two"])
         XCTAssertEqual(content.tasks[0].durationText, MenuDurationText(seconds: 600))
@@ -42,7 +42,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testQueryKeepsTheSearchOrderAndHighlightsTheFirstMatch() {
+    func testQueryKeepsTheSearchOrderAndHighlightsTheFirstMatch() async {
         let content = content(inputs(durations: ["task-three": 600]), query: "task")
         XCTAssertEqual(content.tasks.map(\.id), ["task-two", "task-one", "task-three"])
         XCTAssertEqual(content.tasks.map(\.durationText), [nil, nil, MenuDurationText(seconds: 600)])
@@ -50,14 +50,14 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testBlankQueryCountsAsEmpty() {
+    func testBlankQueryCountsAsEmpty() async {
         let content = content(inputs(durations: ["task-three": 600]), query: "  ")
         XCTAssertEqual(content.tasks.map(\.id), ["task-three", "task-two", "task-one"])
         XCTAssertNil(content.highlight)
     }
 
     @MainActor
-    func testHeaderShowsTheRunningTaskOrNotTracking() {
+    func testHeaderShowsTheRunningTaskOrNotTracking() async {
         let running = content(inputs(active: activeWorklog, durations: ["task-one": 65])).header
         XCTAssertEqual(running.taskID, firstTask.id)
         XCTAssertEqual(running.title, firstTask.name)
@@ -76,7 +76,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testStaleStateDisablesStartAndStopAndExplainsWhy() {
+    func testStaleStateDisablesStartAndStopAndExplainsWhy() async {
         let content = content(inputs(active: activeWorklog, stale: true))
         XCTAssertEqual(content.statusLines, ["Unavailable", "Showing last confirmed state"])
         XCTAssertFalse(content.header.canStop)
@@ -84,7 +84,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testStatusLinesListAutoPauseTrackingAndSearchMessages() {
+    func testStatusLinesListAutoPauseTrackingAndSearchMessages() async {
         let content = content(
             inputs(autoPause: "Paused while the screen is locked", trackingError: "Tracking failed"),
             messages: ["Search failed: offline"])
@@ -95,13 +95,13 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testATaskThatCannotStartIsMarked() {
+    func testATaskThatCannotStartIsMarked() async {
         let content = content(inputs(startable: ["task-two"]))
         XCTAssertEqual(content.tasks.map(\.canStart), [true, false, false])
     }
 
     @MainActor
-    func testHighlightIsKeptWhileItsRowExists() {
+    func testHighlightIsKeptWhileItsRowExists() async {
         let running = inputs(active: activeWorklog)
         XCTAssertEqual(content(running, highlight: .header).highlight, .header)
         XCTAssertEqual(content(running, highlight: .task("task-three")).highlight, .task("task-three"))
@@ -114,7 +114,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testArrowsMoveThroughTheHeaderAndTheTasks() {
+    func testArrowsMoveThroughTheHeaderAndTheTasks() async {
         let running = inputs(active: activeWorklog)
         func moved(_ highlight: QuickTrackHighlight?, down: Bool) -> QuickTrackHighlight? {
             content(running, highlight: highlight).movingHighlight(down: down)
@@ -130,7 +130,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testArrowsSkipTheHeaderWhileIdle() {
+    func testArrowsSkipTheHeaderWhileIdle() async {
         func moved(_ highlight: QuickTrackHighlight?, down: Bool) -> QuickTrackHighlight? {
             content(inputs(), highlight: highlight).movingHighlight(down: down)
         }
@@ -141,7 +141,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testCreateRowShowsForANewNameOnly() {
+    func testCreateRowShowsForANewNameOnly() async {
         XCTAssertNil(content(inputs()).createName, "A blank query offers no create row.")
         XCTAssertNil(content(inputs(), query: "   ").createName)
         XCTAssertEqual(content(inputs(), query: "  New task  ").createName, "New task")
@@ -155,7 +155,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testCreateRowIsHighlightedOnlyWhenItIsTheOnlyRow() {
+    func testCreateRowIsHighlightedOnlyWhenItIsTheOnlyRow() async {
         XCTAssertEqual(content(inputs(), query: "task", results: ["task-two"]).highlight, .task("task-two"))
         XCTAssertEqual(content(inputs(), query: "New", results: []).highlight, .create)
         XCTAssertEqual(content(inputs(), query: "New", results: ["task-two"], highlight: .create).highlight, .create)
@@ -165,7 +165,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testArrowsReachTheCreateRowAfterTheTasks() {
+    func testArrowsReachTheCreateRowAfterTheTasks() async {
         let typed = content(inputs(), query: "New", results: ["task-two"], highlight: .task("task-two"))
         XCTAssertEqual(typed.movingHighlight(down: true), .create)
         let onCreate = content(inputs(), query: "New", results: ["task-two"], highlight: .create)
@@ -174,7 +174,7 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
-    func testCreateIsUnavailableWhileStaleOrCreating() {
+    func testCreateIsUnavailableWhileStaleOrCreating() async {
         XCTAssertTrue(content(inputs(), query: "New").canCreate)
         XCTAssertFalse(content(inputs(stale: true), query: "New").canCreate)
         XCTAssertFalse(content(inputs(), query: "New", isCreating: true).canCreate)
