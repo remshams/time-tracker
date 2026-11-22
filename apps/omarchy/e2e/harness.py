@@ -194,9 +194,6 @@ class TrackerApp:
     def wait_gone(self, role: str | None = None, name: str | None = None, contains: str | None = None) -> None:
         wait_for(lambda: self.find(role, name, contains) is None, f"{role} {name or contains!r} to go away")
 
-    def names(self, role: str) -> list[str]:
-        return [node.name for node in self.nodes() if node.role == role]
-
     def type(self, text: str) -> None:
         subprocess.run(["wtype", "-s", KEY_DELAY_MS, text], check=True)
 
@@ -226,6 +223,3 @@ class Workspace:
     def remove(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
-
-def today_at(hour: int, minute: int = 0) -> datetime:
-    return datetime.now().astimezone().replace(hour=hour, minute=minute, second=0, microsecond=0)
