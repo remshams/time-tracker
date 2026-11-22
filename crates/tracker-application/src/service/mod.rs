@@ -5,7 +5,7 @@ mod tasks;
 mod tracking;
 mod worklogs;
 
-pub use worklogs::move_candidates_for_tasks;
+pub use worklogs::{move_candidates_for_tasks, search_active_tasks_in};
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{

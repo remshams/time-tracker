@@ -1030,6 +1030,56 @@ fn move_candidates_match_unicode_lowercase_expansion_and_never_read_storage() {
 }
 
 #[test]
+fn active_task_search_skips_archived_tasks_and_orders_by_rank() {
+    let mut archived = task(3, "Build release");
+    archived.archive(at(200));
+    let items = [
+        (9, "Most recent update", 100, 500, Some(200)),
+        (8, "Most recent work", 100, 200, Some(600)),
+        (7, "Newer creation", 200, 400, None),
+        (6, "Later identity", 100, 400, None),
+        (5, "Earlier identity", 100, 400, Some(400)),
+    ]
+    .into_iter()
+    .map(|(id, name, created, updated, worked)| TaskListItem {
+        task: stamped_task(id, name, created, updated),
+        latest_work_start: worked.map(at),
+    })
+    .chain([TaskListItem {
+        task: archived,
+        latest_work_start: None,
+    }])
+    .collect::<Vec<_>>();
+    let before = items.clone();
+    let ids = |numbers: &[u128]| {
+        numbers
+            .iter()
+            .map(|number| TaskId::from_uuid(uuid::Uuid::from_u128(*number)))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(search_active_tasks_in(&items, ""), ids(&[8, 9, 7, 5, 6]));
+    assert_eq!(search_active_tasks_in(&items, "Recent"), ids(&[8, 9]));
+    assert!(search_active_tasks_in(&items, "zz").is_empty());
+    assert!(search_active_tasks_in(&[], "").is_empty());
+    assert_eq!(items, before);
+}
+
+#[test]
+fn active_task_search_matches_unicode_lowercase_expansion_and_never_reads_storage() {
+    let destination = task(2, "İssue");
+    let mut archived = task(3, "İssue");
+    archived.archive(at(200));
+    let repository = MemoryRepository::with_tasks(vec![destination.clone(), archived]);
+    let application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.0.borrow_mut().fail_reads = true;
+    let expected = vec![destination.id()];
+    assert_eq!(application.search_active_tasks("i\u{307}s"), expected);
+    assert_eq!(application.search_active_tasks("İs"), expected);
+    assert!(application.search_active_tasks("İz").is_empty());
+    assert_eq!(application.search_active_tasks(""), expected);
+}
+
+#[test]
 fn correction_rejects_zero_duration_after_microsecond_canonicalization_without_writes() {
     let alpha = task(1, "alpha");
     let original = completed_worklog(10, alpha.id(), 100, 200);
