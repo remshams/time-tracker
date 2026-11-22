@@ -41,7 +41,12 @@ struct QuickTrackView: View {
         .glassEffect(.regular, in: .rect(cornerRadius: CornerRadius.large))
         .onAppear { searchFocused = true }
         .onChange(of: store.isPresented) { _, isPresented in
-            if isPresented { searchFocused = true }
+            // The panel becomes key after the store opens, so the focus moves on the next turn of the run loop.
+            if isPresented {
+                DispatchQueue.main.async { searchFocused = true }
+            } else {
+                searchFocused = false
+            }
         }
         .onChange(of: announcement(content)) { _, text in
             if let text { AccessibilityNotification.Announcement(text).post() }
@@ -127,11 +132,8 @@ struct QuickTrackView: View {
         return QuickTrackContent.isBlank(store.query) ? "No tasks" : "No matching tasks"
     }
 
-    /// Highlights the clicked row, then runs it like Return.
-    private func act(on row: QuickTrackHighlight) {
-        store.highlight(row)
-        store.activate()
-    }
+    /// Runs a clicked row right away, like Return on that row.
+    private func act(on row: QuickTrackHighlight) { store.activate(row) }
 
     /// The result count VoiceOver reads once a search for a typed query finishes.
     private func announcement(_ content: QuickTrackContent) -> String? {
@@ -195,6 +197,7 @@ private struct QuickTrackHeaderRow: View {
         .padding(.horizontal, Spacing.small)
         .padding(.vertical, Spacing.xSmall)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(header.isRunning ? "Tracking \(header.title)" : "Not tracking")
         .accessibilityIdentifier("quick-track.header")
         .accessibilityValue(isHighlighted ? "Highlighted" : "")
     }
