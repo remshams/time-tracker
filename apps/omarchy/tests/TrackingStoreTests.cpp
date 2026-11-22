@@ -226,18 +226,6 @@ private slots:
         QCOMPARE(error.count(), 1);
     }
 
-    void clearErrorRemovesTheMessage() {
-        Fixture f;
-        f.store.start("t1");
-        f.gateway.respond("startTracking", BridgeReply::failure("Task is archived"));
-        QSignalSpy error(&f.store, &TrackingStore::errorChanged);
-        f.store.clearError();
-        QVERIFY(f.store.error().isEmpty());
-        QCOMPARE(error.count(), 1);
-        f.store.clearError();
-        QCOMPARE(error.count(), 1);
-    }
-
     void aLateAnswerAfterTheStoreIsGoneIsIgnored() {
         FakeTrackerGateway gateway;
         TestClock test;

@@ -35,15 +35,18 @@ AppController::AppController(TrackerGateway *gateway, Theme *theme, QObject *par
       correction_(new WorklogCorrectionStore(gateway_, history_, clock_, this)),
       move_(new WorklogMoveStore(gateway_, history_, this)),
       deletion_(new WorklogDeletionStore(gateway_, history_, clock_, this)) {
-    // Every write is followed by a read, whether it worked or not.
-    connect(taskCreation_, &TaskCreationStore::refreshRequested, this, [this] { sync_->refresh(true); });
-    connect(taskRename_, &TaskRenameStore::refreshRequested, this, [this] { sync_->refresh(true); });
-    connect(taskArchiving_, &TaskArchivingStore::refreshRequested, this, [this] { sync_->refresh(true); });
-    connect(bulkArchiving_, &BulkTaskArchivingStore::refreshRequested, this, [this] { sync_->refresh(true); });
-    // Every worklog write ends with a read, so the history and the totals show what the core kept.
-    connect(correction_, &WorklogCorrectionStore::refreshRequested, this, [this] { sync_->refresh(true); });
-    connect(move_, &WorklogMoveStore::refreshRequested, this, [this] { sync_->refresh(true); });
-    connect(deletion_, &WorklogDeletionStore::refreshRequested, this, [this] { sync_->refresh(true); });
+    // Every write is followed by a read, whether it worked or not, so the window shows what the core kept.
+    const auto refreshAfterWrites = [this](auto *store) {
+        connect(store, &std::remove_pointer_t<decltype(store)>::refreshRequested, this,
+                [this] { sync_->refresh(true); });
+    };
+    refreshAfterWrites(taskCreation_);
+    refreshAfterWrites(taskRename_);
+    refreshAfterWrites(taskArchiving_);
+    refreshAfterWrites(bulkArchiving_);
+    refreshAfterWrites(correction_);
+    refreshAfterWrites(move_);
+    refreshAfterWrites(deletion_);
 }
 
 AppController::~AppController() = default;

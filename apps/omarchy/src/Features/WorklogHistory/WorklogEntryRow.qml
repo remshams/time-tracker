@@ -8,8 +8,8 @@ Item {
     id: row
 
     required property var modelData
-    property int labelWidth: 132
-    property int durationWidth: 92
+    required property int labelWidth
+    required property int durationWidth
     property color barColor: theme.accent
     property bool selected: false
     property bool focusedList: false

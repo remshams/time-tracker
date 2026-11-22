@@ -102,10 +102,6 @@ void TrackingStore::toggle(const QString &taskId) {
     }
 }
 
-void TrackingStore::clearError() {
-    setError(QString());
-}
-
 void TrackingStore::setPending(bool pending) {
     if (pending_ == pending) {
         return;

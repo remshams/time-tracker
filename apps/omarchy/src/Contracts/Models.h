@@ -58,11 +58,6 @@ struct HistoryPage {
     static std::optional<HistoryPage> fromJson(const QJsonValue &value);
 };
 
-struct MoveCandidate {
-    QString id;
-    QString name;
-};
-
 namespace Timestamps {
 // RFC 3339 in UTC with milliseconds, which the bridge accepts for every timestamp argument.
 QString format(const QDateTime &value);

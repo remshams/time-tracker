@@ -66,12 +66,15 @@ Rectangle {
             Layout.fillWidth: true
         }
         Txt {
+            // A long failure reason elides instead of pushing the key hints away.
+            Layout.maximumWidth: root.width * 0.5
             font.pixelSize: 11
             color: connection.status === "unavailable" ? theme.danger : theme.textFaint
             text: {
                 const source = connection.remote ? connection.serverUrl : qsTr("Local database")
+                // The reason tells the user what to fix, for example a wrong port or a stopped server.
                 if (connection.status === "unavailable")
-                    return qsTr("%1 unavailable").arg(source)
+                    return connection.statusMessage.length > 0 ? qsTr("%1 unavailable: %2").arg(source).arg(connection.statusMessage) : qsTr("%1 unavailable").arg(source)
                 if (connection.status === "connecting")
                     return qsTr("Connecting to %1").arg(source)
                 return source

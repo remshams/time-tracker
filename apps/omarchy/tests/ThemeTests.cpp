@@ -136,7 +136,6 @@ private slots:
         const QHash<QString, QColor> colors =
             ThemeColors::complete({{"background", background}, {"foreground", foreground}}, true);
         QCOMPARE(colors.value("dark_background"), background.darker(115));
-        QCOMPARE(colors.value("lighter_background"), mix(background, foreground, 0.06));
         QCOMPARE(colors.value("muted"), mix(background, foreground, 0.22));
         QCOMPARE(colors.value("selection"), mix(background, foreground, 0.14));
         QCOMPARE(colors.value("light_foreground"), mix(background, foreground, 0.72));
@@ -184,7 +183,6 @@ private slots:
         QCOMPARE(theme.accent(), QColor("#ff0000"));
         QCOMPARE(theme.danger(), QColor("#aa0000"));
         QCOMPARE(theme.panel(), QColor("#000000"));
-        QCOMPARE(theme.raised(), QColor("#202020"));
         QCOMPARE(theme.line(), QColor("#303030"));
         QCOMPARE(theme.selection(), QColor("#404040"));
         QCOMPARE(theme.textDim(), QColor("#e0e0e0"));

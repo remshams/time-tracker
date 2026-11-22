@@ -2,6 +2,7 @@
 
 #include <QVariantMap>
 #include <algorithm>
+#include <numeric>
 
 #include "Features/TaskCatalog/TaskCatalogStore.h"
 #include "Features/Tracking/TrackingStore.h"
@@ -54,12 +55,18 @@ QHash<QString, qint64> DailyTotalsStore::seconds() const {
     return result;
 }
 
+namespace {
+
+qint64 sum(const QList<QPair<QString, qint64>> &rows) {
+    return std::accumulate(rows.cbegin(), rows.cend(), qint64{0},
+                           [](qint64 total, const auto &row) { return total + row.second; });
+}
+
+} // namespace
+
 qint64 DailyTotalsStore::totalSeconds() const {
-    qint64 total = 0;
-    for (const qint64 value : seconds()) {
-        total += value;
-    }
-    return total;
+    const QHash<QString, qint64> values = seconds();
+    return std::accumulate(values.cbegin(), values.cend(), qint64{0});
 }
 
 QList<QPair<QString, qint64>> DailyTotalsStore::ranked() const {
@@ -78,10 +85,7 @@ QList<QPair<QString, qint64>> DailyTotalsStore::ranked() const {
 
 QVariantList DailyTotalsStore::shares() const {
     const QList<QPair<QString, qint64>> rows = ranked();
-    qint64 total = 0;
-    for (const auto &row : rows) {
-        total += row.second;
-    }
+    const qint64 total = sum(rows);
     QVariantList result;
     for (const auto &row : rows) {
         result.append(QVariantMap{{QStringLiteral("taskId"), row.first},
@@ -99,10 +103,7 @@ QString DailyTotalsStore::leaderTaskId() const {
 
 int DailyTotalsStore::leaderPercent() const {
     const QList<QPair<QString, qint64>> rows = ranked();
-    qint64 total = 0;
-    for (const auto &row : rows) {
-        total += row.second;
-    }
+    const qint64 total = sum(rows);
     return total == 0 ? 0 : static_cast<int>((rows.first().second * 100 + total / 2) / total);
 }
 

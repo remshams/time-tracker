@@ -28,7 +28,6 @@ class WorklogCorrectionStore : public QObject {
     // when the end is before the start; the core rejects that on save.
     Q_PROPERTY(qint64 durationSeconds READ durationSeconds NOTIFY previewChanged)
     Q_PROPERTY(QString validationMessage READ validationMessage NOTIFY fieldsChanged)
-    Q_PROPERTY(bool changed READ changed NOTIFY fieldsChanged)
     Q_PROPERTY(bool canSave READ canSave NOTIFY canSaveChanged)
     Q_PROPERTY(bool pending READ pending NOTIFY pendingChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)

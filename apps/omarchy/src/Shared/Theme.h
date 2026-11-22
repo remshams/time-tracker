@@ -14,7 +14,6 @@ class Theme : public QObject {
     Q_PROPERTY(bool dark READ dark NOTIFY changed)
     Q_PROPERTY(QColor background READ background NOTIFY changed)
     Q_PROPERTY(QColor panel READ panel NOTIFY changed)
-    Q_PROPERTY(QColor raised READ raised NOTIFY changed)
     Q_PROPERTY(QColor line READ line NOTIFY changed)
     Q_PROPERTY(QColor selection READ selection NOTIFY changed)
     Q_PROPERTY(QColor text READ text NOTIFY changed)
@@ -36,7 +35,6 @@ public:
     bool dark() const { return dark_; }
     QColor background() const { return color("background"); }
     QColor panel() const { return color("dark_background"); }
-    QColor raised() const { return color("lighter_background"); }
     QColor line() const { return color("muted"); }
     QColor selection() const { return color("selection"); }
     QColor text() const { return color("foreground"); }

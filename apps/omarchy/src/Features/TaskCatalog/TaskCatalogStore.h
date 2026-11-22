@@ -46,7 +46,7 @@ public:
 
     const QList<TaskItem> &tasks() const { return tasks_; }
     std::optional<TaskItem> task(const QString &taskId) const;
-    Q_INVOKABLE QString nameOf(const QString &taskId) const;
+    QString nameOf(const QString &taskId) const;
     Q_INVOKABLE QString colorNameOf(const QString &taskId) const;
 
     // Selects a task in its tab, switching tabs when needed.

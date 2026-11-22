@@ -26,7 +26,6 @@ class WorklogMoveStore : public QObject {
     // [{id, name}] in the order the core ranks them.
     Q_PROPERTY(QVariantList candidates READ candidates NOTIFY candidatesChanged)
     Q_PROPERTY(int currentIndex READ currentIndex NOTIFY selectionChanged)
-    Q_PROPERTY(QString selectedTaskId READ selectedTaskId NOTIFY selectionChanged)
     Q_PROPERTY(bool searching READ searching NOTIFY searchStateChanged)
     // Whether the shown candidates answer the current query.
     Q_PROPERTY(bool fresh READ fresh NOTIFY searchStateChanged)
