@@ -238,4 +238,21 @@ final class QuickTrackStoreTests: XCTestCase {
         try await answer(fixture, query: "f", with: [firstTask.id])
         XCTAssertEqual(store.content.statusLines, [])
     }
+
+    @MainActor
+    func testClickingARowDuringASearchStartsThatRow() async throws {
+        let fixture = try await started(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        try await open(fixture, results: [firstTask.id, secondTask.id])
+        store.setQuery("sec")
+        _ = try await fixture.client.next()
+        store.activate(.task(firstTask.id))
+        XCTAssertFalse(store.isPresented)
+        let start = try await fixture.client.next()
+        guard case .start(let task, _, _) = start.operation else {
+            return XCTFail("Expected a start request, got \(start.operation)")
+        }
+        XCTAssertEqual(task, firstTask.id, "The click acts on its row, not on the next search's first match.")
+    }
 }

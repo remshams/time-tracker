@@ -55,8 +55,72 @@ final class QuickTrackCreationTests: XCTestCase {
             return XCTFail("Expected a start request, got \(start.operation)")
         }
         XCTAssertEqual(taskID, created.id)
+        XCTAssertTrue(store.isPresented, "The dialog waits until the new task runs.")
+        let running = WorklogItem(id: "worklog-new", taskId: created.id, start: activeWorklog.start, end: nil)
+        try await fixture.update("the started task") {
+            start.succeed(TaskListResources(tasks: [firstTask, created], active: running))
+        } until: {
+            !store.isCreating
+        }
         XCTAssertFalse(store.isPresented)
-        XCTAssertFalse(store.isCreating)
+    }
+
+    @MainActor
+    func testFailedStartAfterCreatingKeepsTheDialogOpenWithTheError() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        (try await fixture.client.next()).created(task: created)
+        let reload = try await fixture.client.next()
+        reload.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
+        let start = try await skippingHistory(fixture)
+        start.fail(BridgeFailure(message: "The tracker changed."))
+        let reloadAfterStart = try await skippingHistory(fixture)
+        try await fixture.update("the reload after the failed start") {
+            reloadAfterStart.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
+        } until: {
+            !store.isCreating
+        }
+        XCTAssertTrue(store.isPresented)
+        XCTAssertEqual(store.content.statusLines.last, "Created New task, but tracking couldn't start.")
+    }
+
+    @MainActor
+    func testCreateErrorAfterReopeningIsDropped() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        let creation = try await fixture.client.next()
+        store.close()
+        store.open()
+        let search = try await fixture.client.next()
+        XCTAssertEqual(search.operation, .search(query: ""))
+        search.found([firstTask.id])
+        creation.fail(BridgeFailure(message: "Rejected"))
+        let reload = try await fixture.client.next()
+        try await fixture.update("the reload") {
+            reload.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        } until: {
+            !store.isCreating
+        }
+        XCTAssertTrue(store.isPresented)
+        XCTAssertEqual(store.content.statusLines, [], "The error belongs to the earlier opening.")
+    }
+
+    @MainActor
+    func testReturnOnATaskWhileCreatingIsRejected() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        var rejections = 0
+        store.onReject = { rejections += 1 }
+        store.activate()
+        _ = try await fixture.client.next()
+        store.activate(.task(firstTask.id))
+        XCTAssertEqual(rejections, 1)
+        XCTAssertFalse(fixture.client.operations.contains { if case .start = $0 { true } else { false } })
     }
 
     @MainActor
