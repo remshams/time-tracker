@@ -1,0 +1,4 @@
+# Tests check an optional with QVERIFY before they read it, which the analyzer cannot see.
+InheritParentConfig: true
+Checks: >
+  -bugprone-unchecked-optional-access

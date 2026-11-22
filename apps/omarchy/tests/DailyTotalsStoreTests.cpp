@@ -42,7 +42,7 @@ struct Fixture {
         tracking.accept(std::nullopt);
     }
     void run(const QString &id, const QString &taskId, const QString &start) {
-        tracking.accept(*WorklogItem::fromJson(worklogJson(id, taskId, start)));
+        tracking.accept(WorklogItem::fromJson(worklogJson(id, taskId, start)));
     }
 };
 

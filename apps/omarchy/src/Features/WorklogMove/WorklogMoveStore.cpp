@@ -77,15 +77,16 @@ void WorklogMoveStore::select(int index) {
 }
 
 void WorklogMoveStore::move() {
-    if (!canMove()) {
+    if (!canMove() || !original_) {
         return;
     }
+    const WorklogItem original = *original_;
     const QString destination = selectedId_;
     setError(QString());
     setPending(true);
     const int session = session_;
     QPointer<WorklogMoveStore> self(this);
-    gateway_->moveWorklog(original_->id, original_->taskId, original_->startText, original_->endText, destination,
+    gateway_->moveWorklog(original.id, original.taskId, original.startText, original.endText, destination,
                           [self, session, destination](const BridgeReply &reply) {
         if (!self) {
             return;
@@ -101,11 +102,15 @@ void WorklogMoveStore::move() {
 }
 
 void WorklogMoveStore::search() {
+    if (!original_) {
+        return;
+    }
+    const QString sourceTaskId = original_->taskId;
     const int generation = ++searchGeneration_;
     setSearchState(true, false);
     refreshCanMove();
     QPointer<WorklogMoveStore> self(this);
-    gateway_->moveCandidates(original_->taskId, query_, [self, generation](const BridgeReply &reply) {
+    gateway_->moveCandidates(sourceTaskId, query_, [self, generation](const BridgeReply &reply) {
         if (self && generation == self->searchGeneration_) {
             self->acceptCandidates(reply);
         }
@@ -121,7 +126,7 @@ void WorklogMoveStore::acceptCandidates(const BridgeReply &reply) {
         return;
     }
     QVariantList next;
-    for (const QJsonValue &entry : reply.data.toArray()) {
+    for (const auto &entry : reply.data.toArray()) {
         const QJsonObject object = entry.toObject();
         const QString id = object.value(QStringLiteral("id")).toString();
         if (!id.isEmpty()) {
