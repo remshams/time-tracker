@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # Paths that no native build, test, or macOS Rust check reads. Every other path runs the native jobs.
-NON_NATIVE_DIRECTORIES = ("docs/", ".githooks/", "scripts/tests/")
+NON_NATIVE_DIRECTORIES = ("docs/", ".githooks/", "scripts/tests/", "apps/omarchy/")
 NON_NATIVE_FILES = {
     ".cargo-crap.toml",
     ".cargo/mutants.toml",
@@ -24,6 +24,7 @@ NON_NATIVE_FILES = {
     "scripts/audit-omarchy-themes.py",
     "scripts/benchmark-native-ui.py",
     "scripts/deploy-server.py",
+    "scripts/install-omarchy-app.py",
     "scripts/install-swift-muter.py",
     "scripts/install-swift-style-tools.py",
     "scripts/swift-coverage.py",
