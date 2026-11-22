@@ -49,12 +49,16 @@ final class GlobalMenuShortcutHandler {
             if try registration.endMenuTracking() {
                 preferences.reportMenuGlobalShortcutError(registerSavedShortcuts())
             }
-        } catch { preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
+        } catch {
+            // Open menu failed again; keep Open Quick Track's error next to it.
+            let errors = [error.localizedDescription, registerSavedShortcuts([.openQuickTrack])].compactMap { $0 }
+            preferences.reportMenuGlobalShortcutError(errors.joined(separator: " "))
+        }
     }
 
-    /// Registers both global shortcuts, even when the first fails, and returns the errors, if any.
-    private func registerSavedShortcuts() -> String? {
-        let errors = [MenuShortcutAction.openMenu, .openQuickTrack].compactMap { action -> String? in
+    /// Registers the saved global shortcuts, even when one fails, and returns the errors, if any.
+    private func registerSavedShortcuts(_ actions: [MenuShortcutAction] = [.openMenu, .openQuickTrack]) -> String? {
+        let errors = actions.compactMap { action -> String? in
             do {
                 try registration.register(action, preferences.menuShortcuts[action])
                 return nil
