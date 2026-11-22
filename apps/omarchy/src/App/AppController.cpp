@@ -3,6 +3,7 @@
 #include <QQmlContext>
 
 #include "App/TrackerSync.h"
+#include "Features/BulkTaskArchiving/BulkTaskArchivingStore.h"
 #include "Features/Connection/ConnectionStore.h"
 #include "Features/DailyTotals/DailyTotalsStore.h"
 #include "Features/TaskCatalog/TaskCatalogStore.h"
@@ -26,11 +27,13 @@ AppController::AppController(TrackerGateway *gateway, Theme *theme, QObject *par
       sync_(new TrackerSync(gateway_, clock_, {connection_, catalog_, tracking_, totals_, history_}, 30000, this)),
       taskCreation_(new TaskCreationStore(gateway_, catalog_, clock_, this)),
       taskRename_(new TaskRenameStore(gateway_, catalog_, clock_, this)),
-      taskArchiving_(new TaskArchivingStore(gateway_, catalog_, clock_, this)) {
+      taskArchiving_(new TaskArchivingStore(gateway_, catalog_, clock_, this)),
+      bulkArchiving_(new BulkTaskArchivingStore(gateway_, clock_, this)) {
     // Every write is followed by a read, whether it worked or not.
     connect(taskCreation_, &TaskCreationStore::refreshRequested, this, [this] { sync_->refresh(true); });
     connect(taskRename_, &TaskRenameStore::refreshRequested, this, [this] { sync_->refresh(true); });
     connect(taskArchiving_, &TaskArchivingStore::refreshRequested, this, [this] { sync_->refresh(true); });
+    connect(bulkArchiving_, &BulkTaskArchivingStore::refreshRequested, this, [this] { sync_->refresh(true); });
 }
 
 AppController::~AppController() = default;
@@ -48,6 +51,7 @@ void AppController::expose(QQmlContext *context) {
     context->setContextProperty(QStringLiteral("taskCreation"), taskCreation_);
     context->setContextProperty(QStringLiteral("taskRename"), taskRename_);
     context->setContextProperty(QStringLiteral("taskArchiving"), taskArchiving_);
+    context->setContextProperty(QStringLiteral("bulkArchiving"), bulkArchiving_);
 }
 
 void AppController::start() {

@@ -4,6 +4,7 @@
 #include <QSettings>
 #include <memory>
 
+class BulkTaskArchivingStore;
 class ConnectionStore;
 class DailyTotalsStore;
 class DisplayClock;
@@ -45,4 +46,5 @@ private:
     TaskCreationStore *taskCreation_;
     TaskRenameStore *taskRename_;
     TaskArchivingStore *taskArchiving_;
+    BulkTaskArchivingStore *bulkArchiving_;
 };
