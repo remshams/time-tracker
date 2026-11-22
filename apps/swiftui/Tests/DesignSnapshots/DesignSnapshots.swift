@@ -104,6 +104,9 @@ private struct FixtureClient: TrackerClient, ReportClient {
         async throws -> WorklogCorrectionResult
     { throw unsupported() }
     func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate] { [] }
+    func searchTasks(query: String) async throws -> [String] {
+        tasks.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.map(\.id)
+    }
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {
         throw unsupported()
     }
@@ -244,6 +247,72 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     return (url, flat)
 }
 
+/// A Quick Track dialog state to render: the running worklog, the typed query and the arrow presses after it.
+private struct QuickTrackScenario {
+    let name: String
+    let active: WorklogItem?
+    var query = ""
+    var moves: [Bool] = []
+}
+
+private let quickTrackScenarios: [QuickTrackScenario] = [
+    QuickTrackScenario(name: "quick-track-tracking", active: fixtureActive),
+    QuickTrackScenario(name: "quick-track-header", active: fixtureActive, moves: [false]),
+    QuickTrackScenario(name: "quick-track-search", active: fixtureActive, query: "re"),
+    QuickTrackScenario(name: "quick-track-idle", active: nil, moves: [true, true]),
+    QuickTrackScenario(name: "quick-track-create", active: nil, query: "Quarterly planning"),
+]
+
+/// Renders the Quick Track dialog in a borderless offscreen window over a plain backdrop, which stands in for the
+/// app below it.
+private func renderQuickTrack(_ scenario: QuickTrackScenario, appearance: NSAppearance.Name, to directory: URL)
+    throws -> URL
+{
+    let client = FixtureClient(tasks: fixtureTasks, active: scenario.active)
+    let features = TrackerFeatures(
+        client: client, clock: FixedClock(), scheduler: RunLoopTrackerScheduler(), settings: MemorySettings(),
+        trackingPreferences: MemoryPreferences(), reports: client, calendar: Calendar(identifier: .gregorian))
+    features.sync.start()
+    spinRunLoop(0.5)
+    features.quickTrack.open()
+    spinRunLoop(0.3)
+    if !scenario.query.isEmpty { features.quickTrack.setQuery(scenario.query) }
+    spinRunLoop(0.3)
+    for down in scenario.moves { features.quickTrack.moveHighlight(down: down) }
+    let root = QuickTrackView(store: features.quickTrack)
+        .padding(Spacing.xxLarge)
+        .background(Color(nsColor: .windowBackgroundColor))
+    let hosting = NSHostingView(rootView: root)
+    let size = hosting.fittingSize
+    let window = OffscreenWindow(
+        contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size), styleMask: [.borderless],
+        backing: .buffered, defer: false)
+    NSApplication.shared.appearance = NSAppearance(named: appearance)
+    window.appearance = NSAppearance(named: appearance)
+    window.contentView = hosting
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFrontRegardless()
+    spinRunLoop(1)
+    let flat = isScreenLocked()
+    let bitmap: NSBitmapImageRep
+    if !flat, let image = windowServerImage(of: window) {
+        bitmap = NSBitmapImageRep(cgImage: image)
+    } else {
+        bitmap = try inProcessImage(of: window)
+    }
+    let suffix = appearance == .darkAqua ? "dark" : "light"
+    let url = directory.appendingPathComponent("\(scenario.name)-\(suffix)\(flat ? "-flat" : "").png")
+    guard let png = bitmap.representation(using: .png, properties: [:]) else {
+        throw BridgeFailure(message: "AppKit couldn't encode the snapshot as a PNG.")
+    }
+    try png.write(to: url)
+    print(url.path)
+    window.orderOut(nil)
+    window.close()
+    features.quickTrack.close()
+    return url
+}
+
 /// AppKit moves a titled window back onto a screen when it's shown or resized, which put the snapshot windows on the
 /// user's desktop. Keeping the requested frame leaves the window offscreen, and the window server still renders it.
 private final class OffscreenWindow: NSWindow {
@@ -318,6 +387,13 @@ struct DesignSnapshots {
         var flatFiles: [URL] = []
         // A later capture can fail, and the agent still needs to know which checks the earlier flat ones skip.
         defer { if !flatFiles.isEmpty { reportFlatSnapshots(flatFiles) } }
+        let onlyQuickTrack = arguments.count > 2 && arguments[2] == "--quick-track"
+        for scenario in quickTrackScenarios {
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                _ = try renderQuickTrack(scenario, appearance: appearance, to: directory)
+            }
+        }
+        if onlyQuickTrack { return }
         for scenario in scenarios {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 for size in windowSizes {
