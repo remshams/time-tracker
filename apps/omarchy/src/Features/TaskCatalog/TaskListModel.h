@@ -16,7 +16,6 @@ struct TaskRow {
 // The rows of one sidebar tab, in display order.
 class TaskListModel : public QAbstractListModel {
     Q_OBJECT
-    Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
 public:
     enum Role { IdRole = Qt::UserRole + 1, NameRole, ColorNameRole, LastWorkedRole, ArchivedRole };
 
@@ -30,9 +29,6 @@ public:
     void setRows(const QList<TaskRow> &rows);
     const QList<TaskRow> &rows() const { return rows_; }
     Q_INVOKABLE int indexOf(const QString &taskId) const;
-
-signals:
-    void countChanged();
 
 private:
     QList<TaskRow> rows_;

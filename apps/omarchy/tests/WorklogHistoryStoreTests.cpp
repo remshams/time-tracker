@@ -433,36 +433,14 @@ private slots:
 
     // Single worklogs
 
-    void worklogLooksUpByIdAndWorklogDataDescribesIt() {
+    void worklogLooksUpById() {
         Fixture f;
         f.load({log("w1", "2026-11-10T11:00:00.000000Z"),
                 log("w2", "2026-11-10T08:00:00.000000Z", "2026-11-10T09:30:00.000000Z")});
-        QVERIFY(f.history.worklog("w2"));
+        const std::optional<WorklogItem> closed = f.history.worklog("w2");
+        QVERIFY(closed);
+        QCOMPARE(closed->endText, QStringLiteral("2026-11-10T09:30:00.000000Z"));
         QVERIFY(!f.history.worklog("missing"));
-        const QVariantMap closed = f.history.worklogData("w2");
-        QCOMPARE(closed.value("id").toString(), QStringLiteral("w2"));
-        QCOMPARE(closed.value("taskId").toString(), QStringLiteral("a"));
-        QCOMPARE(closed.value("startText").toString(), QStringLiteral("2026-11-10T08:00:00.000000Z"));
-        QCOMPARE(closed.value("endText").toString(), QStringLiteral("2026-11-10T09:30:00.000000Z"));
-        QCOMPARE(closed.value("start").toDateTime(), utc("2026-11-10T08:00:00.000Z"));
-        QCOMPARE(closed.value("end").toDateTime(), utc("2026-11-10T09:30:00.000Z"));
-        QVERIFY(!closed.value("running").toBool());
-    }
-
-    void worklogDataOfARunningWorklogHasNoEnd() {
-        Fixture f;
-        f.load({log("w1", "2026-11-10T11:00:00.000Z")});
-        const QVariantMap running = f.history.worklogData("w1");
-        QVERIFY(running.value("running").toBool());
-        QVERIFY(running.value("endText").toString().isEmpty());
-        QVERIFY(running.contains("end"));
-        QVERIFY(!running.value("end").isValid());
-    }
-
-    void worklogDataOfAnUnknownWorklogIsEmpty() {
-        Fixture f;
-        f.load({});
-        QVERIFY(f.history.worklogData("missing").isEmpty());
     }
 };
 

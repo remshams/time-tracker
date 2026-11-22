@@ -488,11 +488,9 @@ private slots:
         store.accept(tasks);
         QSignalSpy reset(store.model(), &QAbstractItemModel::modelReset);
         QSignalSpy data(store.model(), &QAbstractItemModel::dataChanged);
-        QSignalSpy count(store.model(), &TaskListModel::countChanged);
         store.accept(tasks);
         QCOMPARE(reset.count(), 0);
         QCOMPARE(data.count(), 0);
-        QCOMPARE(count.count(), 0);
     }
 
     void aRenameUpdatesTheRowsInPlace() {
@@ -512,14 +510,11 @@ private slots:
         TaskCatalogStore store(test.clock());
         store.accept({item("a", "Alpha"), item("b", "Beta")});
         QSignalSpy reset(store.model(), &QAbstractItemModel::modelReset);
-        QSignalSpy count(store.model(), &TaskListModel::countChanged);
         store.accept({item("a", "Alpha"), item("b", "Beta"), item("c", "Gamma")});
         QCOMPARE(reset.count(), 1);
-        QCOMPARE(count.count(), 1);
         // The same number of rows with other tasks is a reset without a count change.
         store.accept({item("a", "Alpha"), item("b", "Beta"), item("d", "Delta")});
         QCOMPARE(reset.count(), 2);
-        QCOMPARE(count.count(), 1);
     }
 
     void aDifferentOrderResetsTheModel() {
@@ -540,7 +535,6 @@ private slots:
         store.setArchivedTab(true);
         TaskListModel *model = store.model();
         QCOMPARE(model->rowCount(), 1);
-        QCOMPARE(model->property("count").toInt(), 1);
         const QModelIndex index = model->index(0);
         QCOMPARE(model->data(index, TaskListModel::IdRole).toString(), QStringLiteral("o"));
         QCOMPARE(model->data(index, TaskListModel::NameRole).toString(), QStringLiteral("Old"));

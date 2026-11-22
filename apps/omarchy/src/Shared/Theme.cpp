@@ -55,7 +55,6 @@ QHash<QString, QColor> complete(QHash<QString, QColor> colors, bool dark) {
     };
     colors.insert(QStringLiteral("dark_background"),
                   colors.value(QStringLiteral("dark_background"), dark ? background.darker(115) : mix(0.05)));
-    colors.insert(QStringLiteral("lighter_background"), colors.value(QStringLiteral("lighter_background"), mix(0.06)));
     colors.insert(QStringLiteral("muted"), colors.value(QStringLiteral("muted"), mix(0.22)));
     colors.insert(QStringLiteral("selection"), colors.value(QStringLiteral("selection"), mix(0.14)));
     colors.insert(QStringLiteral("light_foreground"), colors.value(QStringLiteral("light_foreground"), mix(0.72)));

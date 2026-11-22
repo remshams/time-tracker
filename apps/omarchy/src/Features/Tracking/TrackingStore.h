@@ -49,7 +49,6 @@ public:
     Q_INVOKABLE void stop();
     // Stops the running worklog, or starts `taskId` while idle.
     Q_INVOKABLE void toggle(const QString &taskId);
-    Q_INVOKABLE void clearError();
 
 signals:
     void stateChanged();

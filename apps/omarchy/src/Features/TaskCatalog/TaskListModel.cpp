@@ -46,13 +46,9 @@ void TaskListModel::setRows(const QList<TaskRow> &rows) {
         emit dataChanged(index(0), index(static_cast<int>(rows_.size()) - 1));
         return;
     }
-    const bool countChanges = rows.size() != rows_.size();
     beginResetModel();
     rows_ = rows;
     endResetModel();
-    if (countChanges) {
-        emit countChanged();
-    }
 }
 
 int TaskListModel::indexOf(const QString &taskId) const {

@@ -120,20 +120,6 @@ std::optional<WorklogItem> WorklogHistoryStore::worklog(const QString &worklogId
     return std::nullopt;
 }
 
-QVariantMap WorklogHistoryStore::worklogData(const QString &worklogId) const {
-    const std::optional<WorklogItem> item = worklog(worklogId);
-    if (!item) {
-        return {};
-    }
-    return {{QStringLiteral("id"), item->id},
-            {QStringLiteral("taskId"), item->taskId},
-            {QStringLiteral("startText"), item->startText},
-            {QStringLiteral("endText"), item->endText},
-            {QStringLiteral("start"), item->start},
-            {QStringLiteral("end"), item->end ? QVariant(*item->end) : QVariant()},
-            {QStringLiteral("running"), item->isRunning()}};
-}
-
 void WorklogHistoryStore::reload() {
     if (!taskId_.isEmpty()) {
         request(QString());

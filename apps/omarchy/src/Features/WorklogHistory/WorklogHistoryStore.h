@@ -40,8 +40,6 @@ public:
 
     const QList<WorklogItem> &worklogs() const { return worklogs_; }
     std::optional<WorklogItem> worklog(const QString &worklogId) const;
-    // {id, taskId, startText, endText, start, end, running} for the dialogs.
-    Q_INVOKABLE QVariantMap worklogData(const QString &worklogId) const;
 
     // Loads the first page for the selected task again.
     Q_INVOKABLE void reload();
