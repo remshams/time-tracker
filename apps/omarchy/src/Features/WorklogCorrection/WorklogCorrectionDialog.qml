@@ -30,7 +30,6 @@ TrackerDialog {
     }
 
     title: qsTr("Edit times")
-    primaryText: qsTr("Save")
     primaryEnabled: worklogCorrection.canSave
     busy: worklogCorrection.pending
     error: worklogCorrection.error

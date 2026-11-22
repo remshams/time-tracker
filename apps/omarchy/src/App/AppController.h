@@ -2,7 +2,6 @@
 
 #include <QObject>
 #include <QSettings>
-#include <memory>
 
 class BulkTaskArchivingStore;
 class ConnectionStore;
@@ -29,7 +28,6 @@ class AppController : public QObject {
     Q_OBJECT
 public:
     AppController(TrackerGateway *gateway, Theme *theme, QObject *parent = nullptr);
-    ~AppController() override;
 
     void expose(QQmlContext *context);
     void start();

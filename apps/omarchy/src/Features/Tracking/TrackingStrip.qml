@@ -103,7 +103,6 @@ Rectangle {
             Txt {
                 Layout.fillWidth: true
                 font.pixelSize: 11
-                level: tracking.stale ? 0 : 1
                 color: tracking.stale ? theme.danger : theme.textDim
                 text: {
                     if (tracking.stale)
@@ -124,7 +123,6 @@ Rectangle {
             seconds: tracking.elapsedSeconds
             pixelSize: 34
             bold: true
-            color: theme.text
         }
         Txt {
             visible: !tracking.running && root.shownTaskId.length > 0 && tracking.known

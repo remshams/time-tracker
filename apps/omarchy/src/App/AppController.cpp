@@ -49,8 +49,6 @@ AppController::AppController(TrackerGateway *gateway, Theme *theme, QObject *par
     refreshAfterWrites(deletion_);
 }
 
-AppController::~AppController() = default;
-
 void AppController::expose(QQmlContext *context) {
     context->setContextProperty(QStringLiteral("theme"), theme_);
     context->setContextProperty(QStringLiteral("format"), format_);

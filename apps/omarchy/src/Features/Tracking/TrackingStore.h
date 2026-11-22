@@ -19,7 +19,6 @@ class TrackingStore : public QObject {
     Q_PROPERTY(QString runningTaskId READ runningTaskId NOTIFY stateChanged)
     Q_PROPERTY(QDateTime runningSince READ runningSince NOTIFY stateChanged)
     Q_PROPERTY(qint64 elapsedSeconds READ elapsedSeconds NOTIFY elapsedChanged)
-    Q_PROPERTY(bool pending READ pending NOTIFY pendingChanged)
     Q_PROPERTY(bool stale READ stale NOTIFY staleChanged)
     Q_PROPERTY(bool available READ available NOTIFY availabilityChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
