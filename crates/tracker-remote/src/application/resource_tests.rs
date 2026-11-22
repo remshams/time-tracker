@@ -254,3 +254,30 @@ fn move_candidates_use_only_the_confirmed_task_cache() {
     assert_eq!(candidates[0].id, destination);
     assert!(client.move_candidates(source, "zz").is_empty());
 }
+
+#[test]
+fn active_task_search_uses_only_the_confirmed_task_cache() {
+    let first = TaskId::generate();
+    let second = TaskId::generate();
+    let archived = TaskId::generate();
+    let mut client = TasksClient::default();
+    client.adopt_catalog(
+        vec![
+            task(first),
+            task(second),
+            TaskDto {
+                archived: true,
+                ..task(archived)
+            },
+        ]
+        .into_iter()
+        .map(|dto| decode_task_item(dto).unwrap())
+        .collect(),
+    );
+    let mut found = client.search_active_tasks("pW");
+    found.sort();
+    let mut expected = vec![first, second];
+    expected.sort();
+    assert_eq!(found, expected);
+    assert!(client.search_active_tasks("zz").is_empty());
+}

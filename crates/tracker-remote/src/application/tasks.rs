@@ -47,6 +47,10 @@ impl TasksClient {
         tracker_application::move_candidates_for_tasks(self.task_items(), source_task_id, query)
     }
 
+    pub(super) fn search_active_tasks(&self, query: &str) -> Vec<TaskId> {
+        tracker_application::search_active_tasks_in(self.task_items(), query)
+    }
+
     pub(super) fn task_item(&self, id: TaskId) -> Option<&TaskListItem> {
         self.task_cache
             .get(&id)
