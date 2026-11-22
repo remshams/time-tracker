@@ -56,11 +56,10 @@ final class MenuBarPreferencesStore {
             reportMenuShortcutError(error)
             return
         }
-        let globals = MenuShortcutAction.allCases.filter {
-            $0.isGlobal && (retryGlobal || candidate[$0] != menuShortcuts[$0])
-        }
+        let globals = MenuShortcutAction.allCases.filter(\.isGlobal)
+        let changed = globals.filter { candidate[$0] != menuShortcuts[$0] }
         var registered: [MenuShortcutAction] = []
-        for action in globals {
+        for action in changed {
             if let error = registerMenuShortcut?(action, candidate[action]) {
                 // Keep the bindings that were registered before this one failed.
                 for done in registered { _ = registerMenuShortcut?(done, menuShortcuts[done]) }
@@ -69,9 +68,15 @@ final class MenuBarPreferencesStore {
             }
             registered.append(action)
         }
+        // A retry of an unchanged binding that still fails doesn't block saving the changed one; Settings keeps
+        // showing its error.
+        let retried = retryGlobal ? globals.filter { !changed.contains($0) } : []
+        let retryErrors = retried.compactMap { registerMenuShortcut?($0, candidate[$0]) }
         menuShortcuts = candidate
         reportMenuShortcutError(nil)
-        if !globals.isEmpty { reportMenuGlobalShortcutError(nil) }
+        if !changed.isEmpty || !retried.isEmpty {
+            reportMenuGlobalShortcutError(retryErrors.isEmpty ? nil : retryErrors.joined(separator: " "))
+        }
         keyboardPreferences.save(candidate)
     }
 
