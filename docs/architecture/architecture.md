@@ -1,11 +1,12 @@
 # Time Tracker architecture
 
-Time Tracker shares one Rust core across a terminal UI, an automation CLI and a
-native macOS app. Each client either opens a local SQLite database or sends the
+Time Tracker shares one Rust core across a terminal UI, an automation CLI, a
+native macOS app and an Omarchy desktop app. Each client either opens a local SQLite database or sends the
 same actions to `tt-server`, which owns its own SQLite database. Domain rules and
 persistence live in Rust; clients own presentation, input and scheduling
 ([ADR 0021](adr/0021-share-concrete-client-backend.md),
-[ADR 0028](adr/0028-ship-a-standalone-server-binary.md)). Method-level diagrams
+[ADR 0028](adr/0028-ship-a-standalone-server-binary.md),
+[ADR 0042](adr/0042-build-the-omarchy-client-with-qt-quick-on-the-shared-c-bridge.md)). Method-level diagrams
 of the clients and the Swift-to-Rust bridge are in [diagrams.html](diagrams.html).
 
 ## Domain language
@@ -58,10 +59,12 @@ flowchart TD
     automation(["Automation<br>Scripts and coding agents"]):::person
     tracker["Time Tracker<br>Tasks, tracking, worklogs and reports"]:::system
     macos["macOS<br>Menu bar, sleep, wake and screen lock"]:::external
+    omarchy["Omarchy<br>Hyprland desktop, theme files"]:::external
     tailscale["Tailscale<br>Private network to the server host"]:::external
-    user -->|uses the TUI and the macOS app| tracker
+    user -->|uses the TUI and the desktop apps| tracker
     automation -->|runs tt-cli commands, reads JSON| tracker
     tracker -->|shows a menu bar item, observes lifecycle events| macos
+    tracker -->|reads the theme colors and window rounding| omarchy
     tracker -->|reaches tt-server over HTTP| tailscale
 ```
 
@@ -81,27 +84,32 @@ flowchart TD
     tui["tt<br>Rust binary, terminal UI"]:::process
     cli["tt-cli<br>Rust binary<br>Commands with JSON output"]:::process
     mac["Time Tracker app<br>SwiftUI app with the Rust bridge linked in"]:::process
+    desktop["tt-desktop<br>Qt Quick app with the Rust bridge linked in"]:::process
     server["tt-server<br>Rust binary under systemd<br>HTTP API on loopback or Tailscale"]:::process
     localdb[("Local database<br>SQLite tt.db")]:::store
     serverdb[("Server database<br>SQLite tt-server.db")]:::store
     user -->|keyboard| tui
     user -->|windows and menu bar| mac
+    user -->|keyboard and window| desktop
     automation -->|arguments| cli
     tui -->|local mode: reads and writes| localdb
     cli -->|local mode: reads and writes| localdb
     mac -->|local mode: reads and writes| localdb
+    desktop -->|local mode: reads and writes| localdb
     tui -->|remote mode: HTTP JSON, protocol 6| server
     cli -->|remote mode: HTTP JSON, protocol 6| server
     mac -->|remote mode: HTTP JSON, protocol 6| server
+    desktop -->|remote mode: HTTP JSON, protocol 6| server
     server -->|reads and writes| serverdb
 ```
 
 Each client selects its mode at startup: `tt` and `tt-cli` take `--server URL`,
-`tt-cli` also takes `--db PATH`, and the macOS app reads its Settings. Remote
+`tt-cli` also takes `--db PATH`, and the macOS app and `tt-desktop` read their
+Settings. Remote
 failures never fall back to local storage. Local clients can open the same
 `tt.db` at the same time; SQLite transactions and triggers keep them consistent.
-The macOS app links `tracker-swift-bridge` as a static library and calls it
-through a C ABI on one serial worker, so it is one process.
+The macOS app and `tt-desktop` link `tracker-bridge` as a static library and
+call it through a C ABI on one serial worker, so each is one process.
 [Deploy a server](../deployment.md) describes how `tt-server` is built and
 rolled out.
 
@@ -138,12 +146,14 @@ title: Applications
 flowchart TD
     mac["TimeTrackerSwiftUI<br>apps/swiftui/Sources/TimeTrackerSwiftUI<br>Scenes, views, AppKit integration, TrackerWorker"]:::module
     package["TrackerClient<br>apps/swiftui/TrackerClient<br>Portable feature state, TrackerFeatures and TrackerSync"]:::module
-    bridge["tracker-swift-bridge<br>apps/swiftui/bridge<br>C ABI, JSON results, Tokio runtime"]:::module
+    bridge["tracker-bridge<br>crates/tracker-bridge<br>C ABI, JSON results, Tokio runtime"]:::module
+    desktop["tt-desktop<br>apps/omarchy<br>Qt Quick views, C++ feature stores, gateway"]:::module
     tui["tracker-tui<br>apps/tui<br>The tt event loop, screens, rendering"]:::module
     cli["tracker-cli<br>apps/cli<br>The tt-cli commands, JSON, exit codes"]:::module
     serverapp["tracker-server-app<br>apps/server<br>The tt-server startup and arguments"]:::module
     core["Rust core<br>The seven crates above"]:::group
     mac --> package & bridge
+    desktop --> bridge
     bridge & tui & cli & serverapp --> core
 ```
 
@@ -153,7 +163,7 @@ Which core crates each application may use:
 | --- | --- |
 | `tracker-tui` | client, application, domain, remote, storage |
 | `tracker-cli` | client, application, domain, protocol, remote, storage |
-| `tracker-swift-bridge` | client, application, domain, protocol, remote, storage |
+| `tracker-bridge` | client, application, domain, protocol, remote, storage |
 | `tracker-server-app` | server, storage |
 
 Inside a crate or app, code is split by feature. Features may depend on other
@@ -209,9 +219,9 @@ such as `Features/WorklogCorrection` in both targets.
   fails before a backend opens; see the [command reference](../cli.md).
 - [tracker-server-app](../../apps/server/src/main.rs): `tt-server` requires an
   explicit loopback or Tailscale bind address and defaults to `tt-server.db`.
-- [tracker-swift-bridge](../../apps/swiftui/bridge/src/backend.rs): the
-  [C interface](../../apps/swiftui/Sources/CTrackerBridge/include/TrackerBridge.h)
-  of the Rust static library. Rename, archive, tracking and worklog writes
+- [tracker-bridge](../../crates/tracker-bridge/src/backend.rs): the
+  [C interface](../../crates/tracker-bridge/include/TrackerBridge.h)
+  of the Rust static library that both desktop apps link. Rename, archive, tracking and worklog writes
   carry the reviewed values. Create (`tt_bridge_create_task_at`), restore
   (`tt_bridge_unarchive_task_at`) and bulk archive
   (`tt_bridge_archive_inactive_tasks_at`) carry none.
@@ -312,6 +322,22 @@ such as `Features/WorklogCorrection` in both targets.
   ([ADR 0040](adr/0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md),
   [ADR 0041](adr/0041-add-icon-border-and-motion-tokens-for-the-tracking-pill.md)).
 
+- [tt-desktop](../../apps/omarchy/src/App/AppController.cpp): the Omarchy
+  client, C++ and Qt Quick built with qmake6. `RustTrackerGateway` runs every
+  bridge call on one worker thread and answers on the GUI thread through the
+  `TrackerGateway` interface, which tests replace with a scripted fake. Feature
+  stores under `src/Features` hold the task list and selection
+  (`TaskCatalogStore`), the running worklog (`TrackingStore`), today's totals
+  (`DailyTotalsStore`), the selected task's history (`WorklogHistoryStore`),
+  the connection (`ConnectionStore`) and each dialog's draft. `App/TrackerSync`
+  reads tasks, tracking and today's report in one worker job after connecting,
+  after every write, at midnight and on a 30-second poll. `Shared/Theme`
+  follows the Omarchy theme's `colors.toml` and Hyprland's rounding. The app
+  shows the main window only; the Omarchy bar widget, which lives outside this
+  repository, is the status indicator and pauses tracking on screen lock
+  ([ADR 0042](adr/0042-build-the-omarchy-client-with-qt-quick-on-the-shared-c-bridge.md)).
+  The same no-cycles rule as the Swift targets applies to its folders.
+
 ## Runtime flow
 
 ```mermaid
@@ -351,7 +377,7 @@ sequenceDiagram
 ```
 
 The worker lane covers `TrackerWorker`, the `tt_bridge_start_tracking_if_active_at`
-export of `tracker-swift-bridge` and `TrackerBackend` in `tracker-client`. Replies
+export of `tracker-bridge` and `TrackerBackend` in `tracker-client`. Replies
 run back through it; the diagram skips those hops. The reload reads
 `/v1/state/task-list` first only while the connection is unconfirmed or stale.
 The transport resends a failed write once with the same request ID. If that
@@ -438,13 +464,16 @@ Unit tests sit next to the code. Black-box E2E tests drive the clients and the
 HTTP API through their public interfaces. Before handoff, run
 `cargo fmt --all --check`, Clippy with warnings as errors, the Python script
 tests, `cargo llvm-cov` for the full test suite with coverage and `cargo crap`.
-Swift changes also run `scripts/swift-style.py`. Mutation checks with
+Swift changes also run `scripts/swift-style.py`. Changes to `tt-desktop` or
+`tracker-bridge` also run `apps/omarchy/bin/lint` (clang-format and clang-tidy)
+and `apps/omarchy/bin/test --coverage` (Qt Test). Mutation checks with
 cargo-mutants and `scripts/swift-mutations.py` cover the files a task changed
 ([ADR 0014](adr/0014-scope-mutation-checks-to-task-changes.md)).
 
 CI runs formatting, lint and Python tests, Rust tests with coverage and CRAP,
 Swift style, tests and coverage on Linux, a focused Swift mutation check on pull
-requests, and native macOS UI tests
+requests, native macOS UI tests, and the `tt-desktop` lint, tests and release
+build in an Arch Linux container
 ([ADR 0015](adr/0015-use-github-hosted-runners-for-ci.md),
 [ADR 0025](adr/0025-fit-native-ci-within-the-macos-runner-limit.md)). Full Rust
 and Swift mutation runs are manual.
