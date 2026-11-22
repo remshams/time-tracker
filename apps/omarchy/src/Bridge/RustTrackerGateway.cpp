@@ -109,7 +109,7 @@ void RustTrackerGateway::testConnection(const ConnectionTarget &target, Callback
 void RustTrackerGateway::refreshOverview(const QDateTime &dayStart, const QDateTime &dayEnd, const QDateTime &now,
                                          Callback done) {
     run([start = stamp(dayStart), end = stamp(dayEnd), cutoff = stamp(now)](Bridge *&bridge) {
-        const BridgeReply refreshed = take(tt_bridge_refresh_resources(bridge));
+        BridgeReply refreshed = take(tt_bridge_refresh_resources(bridge));
         if (!refreshed.ok) {
             return refreshed;
         }

@@ -77,11 +77,13 @@ void TrackingStore::stop() {
     if (!available() || !running_) {
         return;
     }
+    // Read before the setters below, because their signals could change running_.
+    const QString taskId = running_->taskId;
+    const auto worklogId = running_->id;
     setError(QString());
     setPending(true);
-    const QString taskId = running_->taskId;
     QPointer<TrackingStore> self(this);
-    gateway_->stopTracking(running_->id, clock_->now(), [self, taskId](const BridgeReply &reply) {
+    gateway_->stopTracking(worklogId, clock_->now(), [self, taskId](const BridgeReply &reply) {
         if (!self) {
             return;
         }

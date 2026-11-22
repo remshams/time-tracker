@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Checks formatting with clang-format and runs clang-tidy over src and tests.
+# The compiler flags come from the Makefiles that qmake6 writes, so clang-tidy sees the same
+# defines and include paths as the build.
+# Usage: bin/lint
+set -euo pipefail
+app_dir=$(cd "$(dirname "$0")/.." && pwd)
+lint_dir=$app_dir/build/lint
+
+mapfile -t sources < <(find "$app_dir/src" "$app_dir/tests" -path "$app_dir/tests/build*" -prune -o \
+    \( -name '*.cpp' -o -name '*.h' \) -print | sort)
+clang-format --dry-run --Werror "${sources[@]}"
+
+cargo build --manifest-path "$app_dir/../../Cargo.toml" --locked -p tracker-bridge
+
+# Prints the DEFINES and INCPATH of a qmake project as clang arguments, relative to its build directory.
+qmake_flags() {
+    local project=$1 directory=$2
+    mkdir -p "$directory"
+    (cd "$directory" && qmake6 "$project" CONFIG+=debug >/dev/null &&
+        make -pn 2>/dev/null | sed -n -e 's/^DEFINES = //p' -e 's/^INCPATH = //p')
+}
+
+tidy() {
+    local directory=$1 flags=$2
+    shift 2
+    # make prints the flags with the shell quoting the compiler command needs, so eval splits them the same way.
+    local -a compiler_flags
+    eval "compiler_flags=($flags)"
+    (cd "$directory" && clang-tidy --quiet "$@" -- -std=c++20 -fPIC "${compiler_flags[@]}")
+}
+
+# Everything under src except main.cpp is part of the test project, and tests/ sits beside it.
+test_flags=$(qmake_flags "$app_dir/tests/tt-desktop-tests.pro" "$lint_dir/tests")
+app_flags=$(qmake_flags "$app_dir/tt-desktop.pro" "$lint_dir/app")
+mapfile -t cpp_files < <(printf '%s\n' "${sources[@]}" | grep '\.cpp$' | grep -v '/src/main\.cpp$')
+# Test files include the moc output of their own classes, so generate it first.
+while IFS= read -r test_file; do
+    make -C "$lint_dir/tests" --quiet "$(basename "$test_file" .cpp).moc"
+done < <(grep -l '#include ".*\.moc"' "$app_dir"/tests/*.cpp)
+tidy "$lint_dir/tests" "$test_flags" "${cpp_files[@]}"
+tidy "$lint_dir/app" "$app_flags" "$app_dir/src/main.cpp"

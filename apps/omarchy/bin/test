@@ -1,10 +1,31 @@
 #!/usr/bin/env bash
 # Builds and runs the Qt Test binary offscreen.
+# Usage: bin/test [--coverage] [test arguments]
+# With --coverage the tests build with gcov instrumentation in tests/build-coverage, and gcovr prints a line
+# and branch summary for src/. Install gcovr with `pip install gcovr`.
 set -euo pipefail
 app_dir=$(cd "$(dirname "$0")/.." && pwd)
+coverage=0
+if [ "${1:-}" = --coverage ]; then
+    coverage=1
+    shift
+fi
 cargo build --manifest-path "$app_dir/../../Cargo.toml" --locked -p tracker-bridge
-mkdir -p "$app_dir/tests/build"
-cd "$app_dir/tests/build"
-qmake6 "$app_dir/tests/tt-desktop-tests.pro" CONFIG+=debug
+qmake_flags=(CONFIG+=debug)
+build_dir=$app_dir/tests/build
+if [ "$coverage" = 1 ]; then
+    command -v gcovr >/dev/null || { echo "gcovr is missing; install it with pip install gcovr" >&2; exit 1; }
+    build_dir=$app_dir/tests/build-coverage
+    qmake_flags+=("QMAKE_CXXFLAGS+=--coverage" "QMAKE_LFLAGS+=--coverage")
+    # Old counters would add to the new run.
+    find "$build_dir" -name '*.gcda' -delete 2>/dev/null || true
+fi
+mkdir -p "$build_dir"
+cd "$build_dir"
+qmake6 "$app_dir/tests/tt-desktop-tests.pro" "${qmake_flags[@]}"
 make -j"$(nproc)"
 QT_QPA_PLATFORM=offscreen ./tt-desktop-tests "$@"
+if [ "$coverage" = 1 ]; then
+    gcovr --root "$app_dir" --object-directory "$build_dir" --filter "$app_dir/src/" --exclude-throw-branches \
+        --print-summary
+fi
