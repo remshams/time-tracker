@@ -64,6 +64,15 @@ class NativeScopeTests(unittest.TestCase):
             self.assertFalse(native, reason)
             self.assertEqual(reason, "none of the 11 changed files affect native checks")
 
+    def test_omarchy_app_changes_skip_native_checks(self):
+        self.write("apps/omarchy/src/main.cpp", "int main() {}\n")
+        self.write("apps/omarchy/bin/build", "#!/bin/sh\n")
+        self.write("scripts/install-omarchy-app.py", "pass\n")
+        self.commit("Change the Omarchy app")
+        native, reason = self.scope()
+        self.assertFalse(native, reason)
+        self.assertEqual(reason, "none of the 3 changed files affect native checks")
+
     def test_any_other_change_requires_native_checks(self):
         for name in ("apps/swiftui/App.swift", "crates/tracker-domain/src/lib.rs", "Cargo.lock",
                      "apps/server/src/main.rs", "apps/server/Cargo.toml", ".github/workflows/ci.yml",
