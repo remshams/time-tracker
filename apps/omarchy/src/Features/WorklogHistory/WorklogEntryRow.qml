@@ -28,7 +28,10 @@ Item {
     Accessible.role: Accessible.ListItem
     Accessible.name: qsTr("%1 to %2, %3").arg(modelData.startLabel).arg(modelData.endLabel).arg(format.duration(row.seconds))
     Accessible.selected: selected
-    Accessible.onPressAction: row.editTimesRequested()
+    Accessible.onPressAction: {
+        row.clicked()
+        row.editTimesRequested()
+    }
 
     Rectangle {
         anchors.fill: parent
