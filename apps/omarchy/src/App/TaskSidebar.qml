@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import "../../Shared"
+import "../Shared"
 
 // The task list with its Active and Archived tabs and the filter.
 Rectangle {
@@ -107,6 +107,9 @@ Rectangle {
             Keys.onDownPressed: catalog.moveSelection(1)
             Keys.onUpPressed: catalog.moveSelection(-1)
             Keys.onReturnPressed: root.filterDone()
+            Keys.onEnterPressed: root.filterDone()
+            // Tab ends filtering instead of reaching the window, where it would switch tabs.
+            Keys.onTabPressed: root.filterDone()
             Accessible.name: qsTr("Filter tasks")
         }
 

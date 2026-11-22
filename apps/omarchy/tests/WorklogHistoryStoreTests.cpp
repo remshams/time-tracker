@@ -46,6 +46,22 @@ struct Fixture {
 class WorklogHistoryStoreTests : public QObject {
     Q_OBJECT
 private slots:
+    void reloadAfterClearReadsTheSelectedTask() {
+        Fixture f;
+        f.load({log("w1", "2026-11-10T08:00:00.000Z", "2026-11-10T09:00:00.000Z")});
+        f.history.clear();
+        QVERIFY(f.history.taskId().isEmpty());
+        f.history.reload();
+        QCOMPARE(f.history.taskId(), QStringLiteral("a"));
+        QCOMPARE(f.gateway.lastArgs("history"), (QStringList{"a", QString()}));
+    }
+
+    void reloadWithoutASelectionDoesNothing() {
+        Fixture f;
+        f.history.reload();
+        QVERIFY(f.gateway.calls.isEmpty());
+    }
+
     void startsEmpty() {
         Fixture f;
         QVERIFY(f.history.taskId().isEmpty());
@@ -327,9 +343,9 @@ private slots:
         Fixture f;
         f.load(
             {log("w1", "2026-11-10T11:00:00.000Z"), log("w2", "2026-11-10T08:00:00.000Z", "2026-11-10T09:30:00.000Z")});
-        // Local start hours are 12 and 9, and the running worklog ends at 13:00 local.
+        // Local start hours are 12 and 9; the axis keeps its minimum of eight hours.
         QCOMPARE(f.history.axisStartHour(), 9);
-        QCOMPARE(f.history.axisEndHour(), 13);
+        QCOMPARE(f.history.axisEndHour(), 17);
         const QVariantList entries = f.history.days().first().toMap().value("entries").toList();
         const QVariantMap running = entries.at(0).toMap();
         QCOMPARE(running.value("worklogId").toString(), QStringLiteral("w1"));
@@ -337,27 +353,54 @@ private slots:
         QCOMPARE(running.value("startLabel").toString(), QStringLiteral("12:00"));
         QCOMPARE(running.value("endLabel").toString(), QStringLiteral("now"));
         QCOMPARE(running.value("seconds").toLongLong(), 3600);
-        QCOMPARE(running.value("from").toDouble(), 0.75);
-        QCOMPARE(running.value("to").toDouble(), 1.0);
+        QCOMPARE(running.value("from").toDouble(), 0.375);
+        QCOMPARE(running.value("to").toDouble(), 0.5);
         const QVariantMap closed = entries.at(1).toMap();
         QVERIFY(!closed.value("running").toBool());
         QCOMPARE(closed.value("startLabel").toString(), QStringLiteral("09:00"));
         QCOMPARE(closed.value("endLabel").toString(), QStringLiteral("10:30"));
         QCOMPARE(closed.value("seconds").toLongLong(), 5400);
         QCOMPARE(closed.value("from").toDouble(), 0.0);
-        QCOMPARE(closed.value("to").toDouble(), 0.375);
+        QCOMPARE(closed.value("to").toDouble(), 0.1875);
     }
 
-    void aWorklogPastMidnightIsClampedToItsStartDay() {
+    void aWorklogPastMidnightShowsOnBothDays() {
         Fixture f;
-        // 22:00 to 01:00 local; it belongs to the day it started.
+        // 22:00 to 01:00 local: one hour on the 10th, two hours on the 9th.
         f.load({log("w1", "2026-11-09T21:00:00.000Z", "2026-11-10T00:00:00.000Z")});
         const QVariantList days = f.history.days();
-        QCOMPARE(days.size(), 1);
-        const QVariantMap entry = days.first().toMap().value("entries").toList().first().toMap();
-        QCOMPARE(entry.value("seconds").toLongLong(), 3 * 3600);
-        QCOMPARE(entry.value("to").toDouble(), 1.0);
+        QCOMPARE(days.size(), 2);
+        const QVariantMap later = days.at(0).toMap();
+        QCOMPARE(later.value("totalSeconds").toLongLong(), 3600);
+        const QVariantMap morning = later.value("entries").toList().first().toMap();
+        QCOMPARE(morning.value("worklogId").toString(), QStringLiteral("w1"));
+        QCOMPARE(morning.value("startLabel").toString(), QStringLiteral("00:00"));
+        QCOMPARE(morning.value("endLabel").toString(), QStringLiteral("01:00"));
+        QCOMPARE(morning.value("seconds").toLongLong(), 3600);
+        QCOMPARE(morning.value("from").toDouble(), 0.0);
+        const QVariantMap earlier = days.at(1).toMap();
+        QCOMPARE(earlier.value("totalSeconds").toLongLong(), 2 * 3600);
+        const QVariantMap evening = earlier.value("entries").toList().first().toMap();
+        QCOMPARE(evening.value("startLabel").toString(), QStringLiteral("22:00"));
+        QCOMPARE(evening.value("endLabel").toString(), QStringLiteral("24:00"));
+        QCOMPARE(evening.value("to").toDouble(), 1.0);
+        // The axis covers both parts: midnight to the end of the day.
+        QCOMPARE(f.history.axisStartHour(), 0);
         QCOMPARE(f.history.axisEndHour(), 24);
+    }
+
+    void aRunningWorklogFromYesterdayIsRunningOnlyOnToday() {
+        Fixture f;
+        // The clock is 13:00 local on the 10th; the worklog started at 23:00 local on the 9th.
+        f.load({log("w1", "2026-11-09T22:00:00.000Z")});
+        const QVariantList days = f.history.days();
+        QCOMPARE(days.size(), 2);
+        const QVariantMap today = days.at(0).toMap().value("entries").toList().first().toMap();
+        QVERIFY(today.value("running").toBool());
+        QCOMPARE(today.value("endLabel").toString(), QStringLiteral("now"));
+        const QVariantMap yesterday = days.at(1).toMap().value("entries").toList().first().toMap();
+        QVERIFY(!yesterday.value("running").toBool());
+        QCOMPARE(yesterday.value("endLabel").toString(), QStringLiteral("24:00"));
     }
 
     void aWorklogThatEndsBeforeItStartsHasNoLengthAndStaysOnTheAxis() {
@@ -377,15 +420,15 @@ private slots:
         QVERIFY(f.history.days().isEmpty());
     }
 
-    void theAxisSpansAtLeastFourHours() {
+    void theAxisSpansAtLeastEightHours() {
         Fixture f;
         f.load({log("w1", "2026-11-10T08:00:00.000Z", "2026-11-10T08:30:00.000Z")});
-        // 09:00 to 09:30 local: the end hour is 10 but the axis keeps four hours.
+        // 09:00 to 09:30 local: the end hour is 10 but the axis keeps eight hours.
         QCOMPARE(f.history.axisStartHour(), 9);
-        QCOMPARE(f.history.axisEndHour(), 13);
+        QCOMPARE(f.history.axisEndHour(), 17);
         const QVariantMap entry = f.history.days().first().toMap().value("entries").toList().first().toMap();
         QCOMPARE(entry.value("from").toDouble(), 0.0);
-        QCOMPARE(entry.value("to").toDouble(), 0.125);
+        QCOMPARE(entry.value("to").toDouble(), 0.0625);
     }
 
     void theAxisGrowsToTheLatestEnd() {
@@ -396,10 +439,11 @@ private slots:
         QCOMPARE(f.history.axisEndHour(), 18);
     }
 
-    void theAxisNeverPassesMidnight() {
+    void theAxisWidensToEarlierHoursNearMidnight() {
         Fixture f;
+        // 21:00 to 23:30 local: the axis can't pass midnight, so it starts earlier.
         f.load({log("w1", "2026-11-10T20:00:00.000Z", "2026-11-10T22:30:00.000Z")});
-        QCOMPARE(f.history.axisStartHour(), 21);
+        QCOMPARE(f.history.axisStartHour(), 16);
         QCOMPARE(f.history.axisEndHour(), 24);
     }
 

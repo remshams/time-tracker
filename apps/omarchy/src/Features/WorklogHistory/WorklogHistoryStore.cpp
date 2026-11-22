@@ -2,6 +2,7 @@
 
 #include <QPointer>
 #include <QVariantMap>
+#include <algorithm>
 #include <cmath>
 
 #include "Contracts/TrackerGateway.h"
@@ -23,6 +24,9 @@ double minuteOfDay(const QDateTime &value, const QDate &day) {
     return local.time().msecsSinceStartOfDay() / 60000.0;
 }
 
+// The smallest hour span the axis shows, so one short worklog doesn't stretch across the row.
+constexpr int minimumAxisHours = 8;
+
 } // namespace
 
 WorklogHistoryStore::WorklogHistoryStore(TrackerGateway *gateway, TaskCatalogStore *catalog, DisplayClock *clock,
@@ -38,11 +42,36 @@ WorklogHistoryStore::WorklogHistoryStore(TrackerGateway *gateway, TaskCatalogSto
     connect(clock_, &DisplayClock::dayChanged, this, &WorklogHistoryStore::daysChanged);
 }
 
-QVariantList WorklogHistoryStore::days() const {
+QList<WorklogHistoryStore::DaySegment> WorklogHistoryStore::segments() const {
     const QDateTime now = clock_->now();
-    const QDate today = now.toLocalTime().date();
-    const double axisStart = axisStartHour() * 60.0;
-    const double axisSpan = qMax(60.0, (axisEndHour() - axisStartHour()) * 60.0);
+    QList<DaySegment> result;
+    for (const WorklogItem &worklog : worklogs_) {
+        // Invalid data, an end before the start, shows as an empty worklog on its start day.
+        const QDateTime end = std::max(worklog.start, worklog.end.value_or(now));
+        // A worklog that runs past midnight shows on every local day it touches. The loop
+        // walks back from the end, so the first part it keeps is the last one.
+        bool last = true;
+        for (QDate day = end.toLocalTime().date(); day >= worklog.start.toLocalTime().date(); day = day.addDays(-1)) {
+            const QDateTime from = std::max(worklog.start, day.startOfDay());
+            const QDateTime to = std::min(end, day.addDays(1).startOfDay());
+            if (from < to || worklog.start == end) {
+                result.append({&worklog, day, from, to, last});
+                last = false;
+            }
+        }
+    }
+    // Newest day first; within a day, worklogs keep their newest-first order.
+    std::stable_sort(result.begin(), result.end(),
+                     [](const DaySegment &left, const DaySegment &right) { return left.day > right.day; });
+    return result;
+}
+
+QVariantList WorklogHistoryStore::days() const {
+    const QDate today = clock_->now().toLocalTime().date();
+    const QList<DaySegment> parts = segments();
+    const auto [startHour, endHour] = axisHours(parts);
+    const double axisStart = startHour * 60.0;
+    const double axisSpan = (endHour - startHour) * 60.0;
     QVariantList result;
     QVariantMap day;
     QVariantList entries;
@@ -57,58 +86,57 @@ QVariantList WorklogHistoryStore::days() const {
         day.insert(QStringLiteral("entries"), entries);
         result.append(day);
     };
-    for (const WorklogItem &worklog : worklogs_) {
-        const QDate date = worklog.start.toLocalTime().date();
-        if (date != current) {
+    for (const DaySegment &part : parts) {
+        if (part.day != current) {
             flush();
-            current = date;
-            day = QVariantMap{{QStringLiteral("date"), date}};
+            current = part.day;
+            day = QVariantMap{{QStringLiteral("date"), part.day}};
             entries.clear();
             dayTotal = 0;
         }
-        const QDateTime end = worklog.end.value_or(now);
-        const qint64 seconds = qMax<qint64>(0, worklog.start.secsTo(end));
+        const qint64 seconds = qMax<qint64>(0, part.from.secsTo(part.to));
         dayTotal += seconds;
-        const double from = (minuteOfDay(worklog.start, date) - axisStart) / axisSpan;
-        const double to = (minuteOfDay(end, date) - axisStart) / axisSpan;
+        const bool running = part.worklog->isRunning() && part.last;
+        const bool endsAtMidnight = part.to == part.day.addDays(1).startOfDay();
+        const QString endLabel = running          ? tr("now")
+                                 : endsAtMidnight ? QStringLiteral("24:00")
+                                                  : Format::clockTime(part.to);
         entries.append(QVariantMap{
-            {QStringLiteral("worklogId"), worklog.id},
-            {QStringLiteral("running"), worklog.isRunning()},
-            {QStringLiteral("startLabel"), Format::clockTime(worklog.start)},
-            {QStringLiteral("endLabel"), worklog.isRunning() ? tr("now") : Format::clockTime(end)},
+            {QStringLiteral("worklogId"), part.worklog->id},
+            {QStringLiteral("running"), running},
+            {QStringLiteral("startLabel"), Format::clockTime(part.from)},
+            {QStringLiteral("endLabel"), endLabel},
             {QStringLiteral("seconds"), seconds},
-            {QStringLiteral("from"), qBound(0.0, from, 1.0)},
-            {QStringLiteral("to"), qBound(0.0, to, 1.0)},
+            {QStringLiteral("from"), qBound(0.0, (minuteOfDay(part.from, part.day) - axisStart) / axisSpan, 1.0)},
+            {QStringLiteral("to"), qBound(0.0, (minuteOfDay(part.to, part.day) - axisStart) / axisSpan, 1.0)},
         });
     }
     flush();
     return result;
 }
 
-int WorklogHistoryStore::axisStartHour() const {
-    if (worklogs_.isEmpty()) {
-        return 8;
+std::pair<int, int> WorklogHistoryStore::axisHours(const QList<DaySegment> &parts) {
+    if (parts.isEmpty()) {
+        return {8, 18};
     }
     int earliest = 23;
-    for (const WorklogItem &worklog : worklogs_) {
-        earliest = qMin(earliest, worklog.start.toLocalTime().time().hour());
+    int latest = 1;
+    for (const DaySegment &part : parts) {
+        earliest = qMin(earliest, static_cast<int>(minuteOfDay(part.from, part.day)) / 60);
+        latest = qMax(latest, static_cast<int>(std::ceil(minuteOfDay(part.to, part.day) / 60.0)));
     }
-    return earliest;
+    // Widen short spans to the minimum, first to later hours, then to earlier ones.
+    const int end = qMin(24, qMax(latest, earliest + minimumAxisHours));
+    const int start = qMax(0, qMin(earliest, end - minimumAxisHours));
+    return {start, end};
+}
+
+int WorklogHistoryStore::axisStartHour() const {
+    return axisHours(segments()).first;
 }
 
 int WorklogHistoryStore::axisEndHour() const {
-    if (worklogs_.isEmpty()) {
-        return 18;
-    }
-    const QDateTime now = clock_->now();
-    int latest = 1;
-    for (const WorklogItem &worklog : worklogs_) {
-        const QDate day = worklog.start.toLocalTime().date();
-        const double minute = minuteOfDay(worklog.end.value_or(now), day);
-        latest = qMax(latest, static_cast<int>(std::ceil(minute / 60.0)));
-    }
-    // Keep at least four hours so short days don't stretch one worklog across the row.
-    return qMin(24, qMax(latest, axisStartHour() + 4));
+    return axisHours(segments()).second;
 }
 
 std::optional<WorklogItem> WorklogHistoryStore::worklog(const QString &worklogId) const {
@@ -121,6 +149,12 @@ std::optional<WorklogItem> WorklogHistoryStore::worklog(const QString &worklogId
 }
 
 void WorklogHistoryStore::reload() {
+    // After clear() the store has no task, but the catalog may still select one, for
+    // example after reconnecting to a source with the same tasks.
+    if (taskId_.isEmpty()) {
+        taskId_ = catalog_->selectedTaskId();
+        emit rowsChanged();
+    }
     if (!taskId_.isEmpty()) {
         request(QString());
     }

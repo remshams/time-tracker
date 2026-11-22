@@ -76,6 +76,8 @@ RustTrackerGateway::RustTrackerGateway(QObject *parent) : QObject(parent) {
 }
 
 RustTrackerGateway::~RustTrackerGateway() {
+    // Nobody waits for queued answers any more; only the running call has to finish.
+    worker_.clear();
     worker_.waitForDone();
     tt_bridge_close(bridge_);
 }

@@ -24,6 +24,22 @@ void TaskCatalogStore::accept(const QList<TaskItem> &tasks) {
     }
 }
 
+void TaskCatalogStore::reset() {
+    tasks_.clear();
+    loaded_ = false;
+    activeSelection_.clear();
+    archivedSelection_.clear();
+    rebuild();
+    emit tasksChanged();
+    emit selectionChanged();
+}
+
+void TaskCatalogStore::rememberForActive(const QString &taskId) {
+    if (archivedTab_) {
+        activeSelection_ = taskId;
+    }
+}
+
 void TaskCatalogStore::setArchivedTab(bool archived) {
     if (archivedTab_ == archived) {
         return;
@@ -63,6 +79,14 @@ QString TaskCatalogStore::selectedName() const {
 bool TaskCatalogStore::selectedArchived() const {
     const std::optional<TaskItem> selected = task(selectedId());
     return selected && selected->archived;
+}
+
+QString TaskCatalogStore::selectedLastWorked() const {
+    const std::optional<TaskItem> selected = task(selectedId());
+    if (!selected || !selected->latestStart) {
+        return {};
+    }
+    return Format::lastWorked(selected->latestStart, clock_->now().toLocalTime().date());
 }
 
 QString TaskCatalogStore::selectedColorName() const {

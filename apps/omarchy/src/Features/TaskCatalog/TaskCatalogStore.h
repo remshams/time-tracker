@@ -24,11 +24,19 @@ class TaskCatalogStore : public QObject {
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY selectionChanged)
     Q_PROPERTY(bool selectedArchived READ selectedArchived NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedColorName READ selectedColorName NOTIFY selectionChanged)
+    // When the selected task last ran, for the header: "Yesterday" or "3 days ago". Empty when
+    // it never ran.
+    Q_PROPERTY(QString selectedLastWorked READ selectedLastWorked NOTIFY tasksChanged)
 public:
     explicit TaskCatalogStore(DisplayClock *clock, QObject *parent = nullptr);
 
     // Takes in a confirmed task list from a refresh.
     void accept(const QList<TaskItem> &tasks);
+    // Forgets the tasks of the previous data source.
+    void reset();
+    // Makes `taskId` the task the Active tab selects next time, without switching tabs.
+    // An unarchived task lands there, like in the macOS app.
+    void rememberForActive(const QString &taskId);
 
     bool loaded() const { return loaded_; }
     bool archivedTab() const { return archivedTab_; }
@@ -43,6 +51,7 @@ public:
     QString selectedName() const;
     bool selectedArchived() const;
     QString selectedColorName() const;
+    QString selectedLastWorked() const;
 
     const QList<TaskItem> &tasks() const { return tasks_; }
     std::optional<TaskItem> task(const QString &taskId) const;

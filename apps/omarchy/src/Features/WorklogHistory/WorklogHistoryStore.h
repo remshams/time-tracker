@@ -52,6 +52,17 @@ signals:
     void daysChanged();
 
 private:
+    // The part of one worklog that falls on one local day.
+    struct DaySegment {
+        const WorklogItem *worklog;
+        QDate day;
+        QDateTime from;
+        QDateTime to;
+        bool last; // The part on the day the worklog ends, or runs now.
+    };
+    QList<DaySegment> segments() const;
+    static std::pair<int, int> axisHours(const QList<DaySegment> &parts);
+
     void selectTask(const QString &taskId);
     void request(const QString &cursor);
     void setLoading(bool loading);

@@ -95,9 +95,12 @@ private slots:
         QCOMPARE(state.count(), 1);
         f.store.accept(running("w2", "t1", "2026-11-10T11:30:00.000Z"));
         QCOMPARE(state.count(), 2);
+        // Moving the running worklog keeps its ID and start but changes its task.
         f.store.accept(running("w2", "t2", "2026-11-10T11:30:00.000Z"));
-        // Only the worklog identity and start count; the task cannot change for one worklog.
-        QCOMPARE(state.count(), 2);
+        QCOMPARE(state.count(), 3);
+        QCOMPARE(f.store.runningTaskId(), QStringLiteral("t2"));
+        f.store.accept(running("w2", "t2", "2026-11-10T11:30:00.000Z"));
+        QCOMPARE(state.count(), 3);
     }
 
     void startingAndStoppingChangeTheState() {

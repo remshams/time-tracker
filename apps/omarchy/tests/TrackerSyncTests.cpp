@@ -287,7 +287,23 @@ private slots:
         QVERIFY(!f.totals.known());
         QVERIFY(f.history.taskId().isEmpty());
         QCOMPARE(f.history.count(), 0);
+        QVERIFY(!f.catalog.loaded());
+        QVERIFY(f.catalog.tasks().isEmpty());
         QCOMPARE(f.gateway.count("refreshOverview"), 2);
+    }
+
+    void aNewSourceWithTheSameTasksLoadsTheSelectedHistoryAgain() {
+        Fixture f;
+        f.sync.refresh();
+        f.answer(overview());
+        f.gateway.respond("history", BridgeReply::success(historyJson({})));
+        QCOMPARE(f.gateway.count("history"), 1);
+        f.connection.applyDraft();
+        f.gateway.respond("connectTo", BridgeReply::success());
+        f.answer(overview());
+        // The new source has the same task IDs; its history is read, not left blank.
+        QCOMPARE(f.gateway.count("history"), 2);
+        QCOMPARE(f.history.taskId(), f.catalog.selectedTaskId());
     }
 
     // Other triggers
@@ -336,6 +352,21 @@ private slots:
         QCOMPARE(f.connection.status(), QStringLiteral("unavailable"));
         QVERIFY(f.tracking.known());
         QCOMPARE(f.gateway.count("connectTo"), 1);
+    }
+
+    void thePollWaitsWhileSettingsConnect() {
+        Fixture f(20);
+        f.gateway.autoReplies.insert("connectTo", BridgeReply::failure("Connection refused"));
+        f.sync.start();
+        f.gateway.autoReplies.remove("connectTo");
+        // Settings now connects elsewhere; reopening the saved target could switch back.
+        f.connection.setDraftRemote(true);
+        f.connection.setDraftServerUrl("http://a:1");
+        f.connection.applyDraft();
+        const int before = f.gateway.count("connectTo");
+        QTest::qWait(100);
+        QCOMPARE(f.gateway.count("connectTo"), before);
+        QVERIFY(f.connection.draftPending());
     }
 
     void thePollDoesNotRunBeforeStart() {
