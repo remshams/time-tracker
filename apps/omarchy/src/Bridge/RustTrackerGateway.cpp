@@ -77,7 +77,7 @@ RustTrackerGateway::RustTrackerGateway(QObject *parent) : QObject(parent) {
 
 RustTrackerGateway::~RustTrackerGateway() {
     // Queued writes still reach the data source, so a stop pressed just before quitting
-    // isn't lost. Queued reads are skipped, because nobody waits for their answers.
+    // isn't lost. Queued reads and reconnects are skipped, because nobody waits for them.
     stopping_ = true;
     worker_.waitForDone();
     tt_bridge_close(bridge_);
@@ -101,7 +101,7 @@ void RustTrackerGateway::connectTo(const ConnectionTarget &target, Callback done
             bridge = candidate;
         }
         return reply;
-    }, std::move(done));
+    }, std::move(done), Call::Read);
 }
 
 void RustTrackerGateway::testConnection(const ConnectionTarget &target, Callback done) {
