@@ -54,6 +54,9 @@ void TaskArchivingStore::finish(const BridgeReply &reply) {
             reply.userMessage(tr("The change could not be confirmed. Check the reloaded list before trying again."));
     }
     emit stateChanged();
+    if (reply.ok && unarchive_) {
+        catalog_->rememberForActive(taskId_);
+    }
     if (reply.ok) {
         emit succeeded();
     } else {

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import "../../Shared"
+import "../Shared"
 
 // The top of the window: what runs now and for how long. Clicking it stops the running
 // task, or starts the selected one while idle.

@@ -102,7 +102,14 @@ Rectangle {
                         color: theme.textDim
                     }
                     Txt {
-                        text: catalog.selectedArchived ? qsTr("archived") : root.todaySeconds > 0 || root.running ? qsTr("today") : qsTr("no time today")
+                        text: {
+                            if (root.todaySeconds > 0 || root.running)
+                                return catalog.selectedArchived ? qsTr("today, archived") : qsTr("today")
+                            // Reading the selection too keeps this current when another task is picked.
+                            const last = catalog.selectedTaskId.length > 0 ? catalog.selectedLastWorked : ""
+                            const when = last.length === 0 ? qsTr("Not tracked yet") : qsTr("Last tracked %1").arg(last.toLowerCase())
+                            return catalog.selectedArchived ? qsTr("%1, archived").arg(when) : when
+                        }
                         level: 1
                     }
                 }

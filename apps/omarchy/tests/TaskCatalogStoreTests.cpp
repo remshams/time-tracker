@@ -166,6 +166,53 @@ private slots:
         QVERIFY(store.colorNameOf(QString()).isEmpty());
     }
 
+    void resetForgetsTheTasksAndTheSelections() {
+        TestClock test;
+        TaskCatalogStore store(test.clock());
+        store.accept({item("a", "Alpha"), item("b", "Beta", true)});
+        QSignalSpy tasks(&store, &TaskCatalogStore::tasksChanged);
+        QSignalSpy selection(&store, &TaskCatalogStore::selectionChanged);
+        store.reset();
+        QVERIFY(!store.loaded());
+        QVERIFY(store.tasks().isEmpty());
+        QVERIFY(store.selectedTaskId().isEmpty());
+        QCOMPARE(store.model()->rowCount(), 0);
+        QCOMPARE(tasks.count(), 1);
+        QCOMPARE(selection.count(), 1);
+        store.setArchivedTab(true);
+        QVERIFY(store.selectedTaskId().isEmpty());
+    }
+
+    void rememberForActiveSelectsTheTaskOnTheNextSwitch() {
+        TestClock test;
+        TaskCatalogStore store(test.clock());
+        store.accept({item("a", "Alpha"), item("b", "Beta", true)});
+        store.setArchivedTab(true);
+        store.rememberForActive("b");
+        // After the unarchive the task is active.
+        store.accept({item("a", "Alpha"), item("b", "Beta")});
+        QCOMPARE(store.selectedTaskId(), QString());
+        store.setArchivedTab(false);
+        QCOMPARE(store.selectedTaskId(), QStringLiteral("b"));
+    }
+
+    void rememberForActiveLeavesTheActiveTabAlone() {
+        TestClock test;
+        TaskCatalogStore store(test.clock());
+        store.accept({item("a", "Alpha"), item("b", "Beta")});
+        store.rememberForActive("b");
+        QCOMPARE(store.selectedTaskId(), QStringLiteral("a"));
+    }
+
+    void selectedLastWorkedNamesWhenTheTaskRan() {
+        TestClock test("2026-11-10T12:00:00.000Z");
+        TaskCatalogStore store(test.clock());
+        store.accept({item("a", "Alpha", false, "2026-11-09T09:00:00.000Z"), item("b", "Beta")});
+        QCOMPARE(store.selectedLastWorked(), QStringLiteral("Yesterday"));
+        store.select("b");
+        QVERIFY(store.selectedLastWorked().isEmpty());
+    }
+
     // QML reads names through this map, so a rename must change it and announce it.
     void namesFollowEveryAcceptedTaskList() {
         TestClock test;

@@ -20,6 +20,7 @@ TrackerSync::TrackerSync(TrackerGateway *gateway, DisplayClock *clock, Stores st
     connect(stores_.tracking, &TrackingStore::refreshRequested, this, [this] { refresh(true); });
     connect(stores_.connection, &ConnectionStore::connected, this, [this] {
         // A new data source shares nothing with the previous one.
+        stores_.catalog->reset();
         stores_.tracking->reset();
         stores_.totals->reset();
         stores_.history->clear();
@@ -34,6 +35,11 @@ void TrackerSync::start() {
 
 void TrackerSync::poll() {
     // Without a working connection, try to open it again instead of reading.
+    // A connection change from Settings is on its way; reopening the old target now could
+    // land after it and switch the data source back.
+    if (stores_.connection->draftPending()) {
+        return;
+    }
     if (stores_.connection->status() == QStringLiteral("unavailable") && !stores_.tracking->known()) {
         stores_.connection->connectSaved();
         return;

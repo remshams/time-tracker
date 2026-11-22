@@ -5,8 +5,6 @@ import QtQuick.Layouts
 import "../Shared"
 import "../Features/Connection"
 import "../Features/DailyTotals"
-import "../Features/TaskCatalog"
-import "../Features/Tracking"
 import "../Features/WorklogHistory"
 import "../Features/TaskCreation"
 import "../Features/TaskRename"
@@ -191,7 +189,11 @@ ApplicationWindow {
                     onArchiveRequested: taskId => window.archive(taskId)
                     onCreateRequested: createDialog.openNew()
                     onBulkArchiveRequested: bulkArchiveDialog.openPreview()
-                    onFilterDone: window.refocus()
+                    onFilterDone: {
+                        // The scope would hand the keyboard straight back to the field it last focused.
+                        sidebar.filterField.focus = false
+                        window.refocus()
+                    }
                 }
                 Rectangle {
                     Layout.preferredWidth: 1

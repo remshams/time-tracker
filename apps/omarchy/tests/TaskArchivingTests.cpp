@@ -98,6 +98,26 @@ private slots:
         QVERIFY(store->error().isEmpty());
     }
 
+    void aSuccessfulUnarchiveSelectsTheTaskOnTheNextSwitchToActive() {
+        catalog->setArchivedTab(true);
+        store->begin(QStringLiteral("z"));
+        QVERIFY(gateway->respond(QStringLiteral("unarchiveTask"), changed(QStringLiteral("z"))));
+        // The refresh brings the task back as active.
+        catalog->accept(
+            {task(QStringLiteral("a"), QStringLiteral("Alpha")), task(QStringLiteral("z"), QStringLiteral("Zulu"))});
+        catalog->setArchivedTab(false);
+        QCOMPARE(catalog->selectedTaskId(), QStringLiteral("z"));
+    }
+
+    void anArchiveDoesNotChangeTheActiveSelectionMemory() {
+        catalog->accept(
+            {task(QStringLiteral("a"), QStringLiteral("Alpha")), task(QStringLiteral("b"), QStringLiteral("Beta"))});
+        store->begin(QStringLiteral("b"));
+        store->submit();
+        QVERIFY(gateway->respond(QStringLiteral("archiveTask"), changed(QStringLiteral("b"))));
+        QCOMPARE(catalog->selectedTaskId(), QStringLiteral("a"));
+    }
+
     void aFailedUnarchiveOpensTheDialogWithTheError() {
         QSignalSpy dialog(store.get(), &TaskArchivingStore::dialogRequested);
         QSignalSpy refresh(store.get(), &TaskArchivingStore::refreshRequested);

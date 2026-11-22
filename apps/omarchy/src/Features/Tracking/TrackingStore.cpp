@@ -16,8 +16,10 @@ TrackingStore::TrackingStore(TrackerGateway *gateway, DisplayClock *clock, QObje
 
 void TrackingStore::accept(const std::optional<WorklogItem> &running) {
     const bool wasAvailable = available();
-    const bool changed = !known_ || running_.has_value() != running.has_value() ||
-                         (running_ && running && (running_->id != running->id || running_->start != running->start));
+    const bool changed =
+        !known_ || running_.has_value() != running.has_value() ||
+        (running_ && running &&
+         (running_->id != running->id || running_->start != running->start || running_->taskId != running->taskId));
     known_ = true;
     running_ = running;
     if (changed) {

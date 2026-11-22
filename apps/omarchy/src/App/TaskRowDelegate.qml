@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import "../../Shared"
+import "../Shared"
 
 // One sidebar row: color dot, name, when it last ran and today's time.
 Item {
