@@ -269,7 +269,7 @@ jobs:
           python -m venv --system-site-packages .build/gcovr
           .build/gcovr/bin/pip install gcovr==8.8
           echo "$GITHUB_WORKSPACE/.build/gcovr/bin" >> "$GITHUB_PATH"
-      - name: Check C++ formatting and clang-tidy
+      - name: Check C++ formatting, QML design tokens, and clang-tidy
         run: apps/omarchy/bin/lint
       - name: Test with coverage
         run: apps/omarchy/bin/test --coverage
