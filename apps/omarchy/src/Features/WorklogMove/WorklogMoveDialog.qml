@@ -39,7 +39,7 @@ TrackerDialog {
         }
         Txt {
             Layout.fillWidth: true
-            text: worklogMove.running ? qsTr("%1, %2 to now").arg(catalog.nameOf(worklogMove.sourceTaskId)).arg(format.clockTime(worklogMove.start)) : qsTr("%1, %2 to %3").arg(catalog.nameOf(worklogMove.sourceTaskId)).arg(format.clockTime(worklogMove.start)).arg(format.clockTime(worklogMove.end))
+            text: worklogMove.running ? qsTr("%1, %2 to now").arg((catalog.names[worklogMove.sourceTaskId] ?? "")).arg(format.clockTime(worklogMove.start)) : qsTr("%1, %2 to %3").arg((catalog.names[worklogMove.sourceTaskId] ?? "")).arg(format.clockTime(worklogMove.start)).arg(format.clockTime(worklogMove.end))
             font.bold: true
         }
     }

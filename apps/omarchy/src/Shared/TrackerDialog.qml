@@ -66,6 +66,7 @@ Popup {
             font.pixelSize: 16
             font.bold: true
             Accessible.role: Accessible.Heading
+            Accessible.name: root.title
         }
 
         ColumnLayout {

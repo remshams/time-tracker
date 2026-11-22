@@ -43,7 +43,7 @@ ApplicationWindow {
     minimumWidth: 640
     minimumHeight: 420
     visible: true
-    title: tracking.running ? qsTr("%1 %2 - Time Tracker").arg(format.duration(tracking.elapsedSeconds)).arg(catalog.nameOf(tracking.runningTaskId)) : qsTr("Time Tracker")
+    title: tracking.running ? qsTr("%1 %2 - Time Tracker").arg(format.duration(tracking.elapsedSeconds)).arg((catalog.names[tracking.runningTaskId] ?? "")) : qsTr("Time Tracker")
     color: theme.background
     font.family: theme.fontFamily
 
@@ -136,10 +136,12 @@ ApplicationWindow {
                 window.rename(catalog.selectedTaskId)
                 return
             case "a":
-                window.archive(catalog.selectedTaskId)
-                return
             case "A":
-                bulkArchiveDialog.openPreview()
+                // Some keyboards report Shift+A with the text "a", so the modifier decides.
+                if (event.modifiers & Qt.ShiftModifier)
+                    bulkArchiveDialog.openPreview()
+                else
+                    window.archive(catalog.selectedTaskId)
                 return
             case "t":
                 window.worklogAction(correctionDialog)

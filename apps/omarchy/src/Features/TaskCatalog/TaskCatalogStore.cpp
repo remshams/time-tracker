@@ -48,6 +48,14 @@ int TaskCatalogStore::activeCount() const {
         std::count_if(tasks_.cbegin(), tasks_.cend(), [](const TaskItem &task) { return !task.archived; }));
 }
 
+QVariantMap TaskCatalogStore::names() const {
+    QVariantMap result;
+    for (const TaskItem &item : tasks_) {
+        result.insert(item.id, item.name);
+    }
+    return result;
+}
+
 QString TaskCatalogStore::selectedName() const {
     return nameOf(selectedId());
 }

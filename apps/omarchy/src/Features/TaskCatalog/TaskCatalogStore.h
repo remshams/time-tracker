@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantMap>
 #include <optional>
 
 #include "Contracts/Models.h"
@@ -17,6 +18,8 @@ class TaskCatalogStore : public QObject {
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY filterTextChanged)
     Q_PROPERTY(TaskListModel *model READ model CONSTANT)
     Q_PROPERTY(int activeCount READ activeCount NOTIFY tasksChanged)
+    // Task names by ID. QML reads names through this map, so bindings update after a rename.
+    Q_PROPERTY(QVariantMap names READ names NOTIFY tasksChanged)
     Q_PROPERTY(QString selectedTaskId READ selectedTaskId NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY selectionChanged)
     Q_PROPERTY(bool selectedArchived READ selectedArchived NOTIFY selectionChanged)
@@ -34,6 +37,7 @@ public:
     void setFilterText(const QString &text);
     TaskListModel *model() { return &model_; }
     int activeCount() const;
+    QVariantMap names() const;
 
     QString selectedTaskId() const { return selectedId(); }
     QString selectedName() const;

@@ -55,7 +55,7 @@ TrackerDialog {
             }
             Txt {
                 Layout.fillWidth: true
-                text: catalog.nameOf(worklogDeletion.taskId)
+                text: (catalog.names[worklogDeletion.taskId] ?? "")
                 font.bold: true
             }
         }

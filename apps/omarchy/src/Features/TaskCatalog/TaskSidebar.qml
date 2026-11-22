@@ -146,6 +146,8 @@ Rectangle {
                     wrapMode: Text.Wrap
                     level: 1
                     text: catalog.filterText.length > 0 ? qsTr("No task matches \"%1\".").arg(catalog.filterText) : catalog.archivedTab ? qsTr("No archived tasks.") : qsTr("No active tasks. Press n to create one.")
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: text
                 }
             }
         }
