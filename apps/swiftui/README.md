@@ -172,6 +172,18 @@ Exact duration uses the TUI format, such as `1h 23m 45s`; rounded duration uses 
 
 Native interaction checks require a Mac. Open the menu with the global shortcut and with a right-click. Check the popup starts below the menu bar on each display, with the menu bar always visible and with automatic hiding enabled. Use arrows to navigate Today and Start tracking, open a task submenu with Right, and invoke every command with Return. Hover to open the same submenus. Click an idle task row directly and confirm it starts; click the running task row directly and confirm it stops. Repeat with its submenu already visible. Copy a task name, exact duration, and rounded duration from both task lists, including an archived task, confirmed zero totals, cached state, and a running task after leaving the menu open for a minute. Confirm unavailable tracking and copy commands are disabled. Change tracking from another client while the menu is open and confirm a captured Stop command cannot stop the replacement worklog. Close with Escape or an outside click, then confirm a primary click on the status icon still starts or stops tracking. Record another Open menu binding and an Open Quick Track binding, restart to verify persistence, check a global registration conflict, and switch keyboard layouts.
 
+## Quick Track
+
+Control-Option-Space opens Quick Track, a floating dialog for starting and stopping tasks from the keyboard. It opens over the app in front, also in full screen, on the screen with the pointer. It doesn't activate Time Tracker or bring its window forward. Settings > Menu shortcut records another binding for it.
+
+The search field has the focus. The header shows the running task with its elapsed time and a Stop button, or Not tracking, and today's total. Below it, without a search, come today's tasks with their time, then the other active tasks, each group by recent activity. The running and archived tasks don't show in the list. Typing filters the tasks with the same rule as the TUI's task search and highlights the first match.
+
+- Return starts the highlighted task, switching from the running one, and closes the dialog. With nothing highlighted, Return does nothing.
+- Down and Up move the highlight. Up from the first task highlights the header, and Return there stops tracking.
+- Command plus a copy key copies the highlighted task's value: Command-C its name, Command-T the exact and Command-S the rounded time today, with the default keys. Right-clicking a task offers the same actions. With text selected in the search field, Command-C copies the text.
+- When no active task has the typed name, the last row offers to create a task with that name and start it. A rejected name keeps the dialog open with the error.
+- Escape clears the search, or closes the dialog when the search is empty. Clicking outside, switching apps or pressing the shortcut again also closes it.
+
 ## Formatting and linting
 
 Install the repository's pinned tools with Swift 6.4 or newer and Python 3.12 or newer:
