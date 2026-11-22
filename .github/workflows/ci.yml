@@ -228,6 +228,50 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  omarchy:
+    if: ${{ !inputs.native_benchmark }}
+    name: Omarchy desktop lint, tests, and release build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: archlinux:latest
+    env:
+      RUSTUP_TOOLCHAIN: '1.98.1'
+    steps:
+      - name: Install the Qt, LLVM, and Rust toolchains
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git qt6-base qt6-declarative qt6-wayland rustup clang \
+            python python-pip python-gobject
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Cache Cargo dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-omarchy-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+      - name: Cache Rust build output
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: target
+          key: rust-omarchy-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs') }}
+          restore-keys: |
+            rust-omarchy-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-
+      - name: Install gcovr
+        run: |
+          python -m venv .build/gcovr
+          .build/gcovr/bin/pip install gcovr==8.8
+          echo "$GITHUB_WORKSPACE/.build/gcovr/bin" >> "$GITHUB_PATH"
+      - name: Check C++ formatting and clang-tidy
+        run: apps/omarchy/bin/lint
+      - name: Test with coverage
+        run: apps/omarchy/bin/test --coverage
+      - name: Build the release binary
+        run: apps/omarchy/bin/build release
+
   native-scope:
     if: ${{ !inputs.native_benchmark }}
     name: Native check scope
@@ -392,7 +436,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [lint, rust-quality, swift-quality, swift-mutations, native-scope, native-macos]
+    needs: [lint, rust-quality, swift-quality, swift-mutations, omarchy, native-scope, native-macos]
     if: ${{ always() && !inputs.native_benchmark }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
