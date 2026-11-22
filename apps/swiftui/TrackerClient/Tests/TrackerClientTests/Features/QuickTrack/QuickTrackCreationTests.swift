@@ -218,4 +218,45 @@ final class QuickTrackCreationTests: XCTestCase {
         XCTAssertEqual(rejections, 1)
         XCTAssertEqual(fixture.client.operations.count { if case .create = $0 { true } else { false } }, 1)
     }
+
+    @MainActor
+    func testClickOnTheCreateRowCreatesOnlyWhileItShows() async throws {
+        let fixture = try await typed(firstTask.name)
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        var rejections = 0
+        store.onReject = { rejections += 1 }
+        XCTAssertNil(store.content.createName, "An active task has this name, so there's no create row.")
+        store.activate(.create)
+        XCTAssertEqual(rejections, 1)
+        store.setQuery("New task")
+        let search = try await fixture.client.next()
+        try await fixture.update("the new search") {
+            search.found([])
+        } until: {
+            !store.isSearching
+        }
+        store.activate(.create)
+        let creation = try await fixture.client.next()
+        XCTAssertEqual(creation.operation, .create(name: "New task", at: "2025-01-01T00:00:00.000Z"))
+    }
+
+    @MainActor
+    func testCreateFinishingAfterTheDialogClosedDoesNotSearch() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        let creation = try await fixture.client.next()
+        store.close()
+        creation.created(task: created)
+        let reload = try await fixture.client.next()
+        let searchesBefore = fixture.client.operations.count { if case .search = $0 { true } else { false } }
+        reload.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
+        let start = try await skippingHistory(fixture)
+        guard case .start = start.operation else { return XCTFail("Expected a start request, got \(start.operation)") }
+        XCTAssertEqual(
+            fixture.client.operations.count { if case .search = $0 { true } else { false } }, searchesBefore,
+            "A closed dialog doesn't search again.")
+    }
 }
