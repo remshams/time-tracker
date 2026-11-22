@@ -56,6 +56,29 @@ class ViolationTests(unittest.TestCase):
     def test_a_divisor_is_a_proportion_and_passes(self):
         self.assertEqual(messages("radius: size / 2"), [])
         self.assertEqual(messages("radius: size/2"), [])
+        self.assertEqual(messages("radius: size /  2"), [])
+        # Only the divisor itself is a proportion.
+        self.assertEqual(len(messages("anchors.leftMargin: width / 2 + 8")), 1)
+
+    def test_grid_spacing_and_side_padding_are_checked(self):
+        for line in ("rowSpacing: 18", "columnSpacing: 40", "leftPadding: 6", "horizontalPadding: 10"):
+            with self.subTest(line=line):
+                self.assertEqual(len(messages(line)), 1)
+
+    def test_every_property_on_a_line_is_checked(self):
+        self.assertEqual(len(messages("Text { font.pixelSize: 13 }")), 1)
+        self.assertEqual(len(messages("x: 0; spacing: 8")), 1)
+        self.assertEqual(len(messages("font { pixelSize: 13 }")), 1)
+        found = messages("spacing: 8; padding: 4")
+        self.assertEqual(found, ["View.qml:1: spacing uses 8; take it from Tokens.qml",
+                                 "View.qml:1: padding uses 4; take it from Tokens.qml"])
+
+    def test_point_sizes_and_readonly_declarations_are_checked(self):
+        self.assertEqual(len(messages("font.pointSize: 10")), 1)
+        self.assertEqual(len(messages("readonly property int spacing: 8")), 1)
+
+    def test_a_full_tint_passes(self):
+        self.assertEqual(messages("color: Qt.alpha(theme.text, 1)"), [])
 
     def test_comments_are_ignored(self):
         self.assertEqual(messages("spacing: Tokens.spacing.small // was 8"), [])
@@ -65,15 +88,18 @@ class ViolationTests(unittest.TestCase):
 
 
 class CheckTests(unittest.TestCase):
-    def test_the_tokens_file_itself_is_skipped(self):
+    def test_only_the_shared_tokens_file_is_skipped(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory)
             (source / "Shared").mkdir()
             (source / "Shared" / "Tokens.qml").write_text("readonly property int small: 8\nspacing: 8\n")
+            (source / "Features").mkdir()
+            (source / "Features" / "Tokens.qml").write_text("spacing: 4\n")
             (source / "View.qml").write_text("spacing: 12\n")
             found = STYLE.check(source)
-        self.assertEqual(len(found), 1)
-        self.assertIn("View.qml:1", found[0])
+        self.assertEqual(len(found), 2)
+        self.assertTrue(any("Features/Tokens.qml:1" in message for message in found))
+        self.assertTrue(any("View.qml:1" in message for message in found))
 
     def test_main_fails_with_findings_and_passes_without(self):
         with tempfile.TemporaryDirectory() as directory:

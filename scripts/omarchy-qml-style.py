@@ -16,16 +16,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "apps" / "omarchy" / "src"
-TOKENS = "Tokens.qml"
+TOKENS = Path("Shared") / "Tokens.qml"
 
-# A property whose value must come from a token, and the literals it may still use.
+# A property whose value must come from a token. It can start a line, follow `{` or `;`, or
+# be a declaration with a default; its value runs to the next `;` or `}`.
 CHECKED = re.compile(
-    r"^\s*(?:(?:readonly\s+)?property\s+\w+\s+)?(?P<name>(?:font\.)?pixelSize|spacing|padding|[\w.]*[Mm]argins?|radius|opacity)\s*:\s*(?P<value>.*)$"
+    r"(?:^|[{;])\s*(?:(?:readonly\s+)?property\s+\w+\s+)?"
+    r"(?P<name>(?:font\.)?(?:pixelSize|pointSize)|\w*[Ss]pacing|\w*[Pp]adding|[\w.]*[Mm]argins?|radius|opacity)"
+    r"\s*:\s*(?P<value>[^;}]*)"
 )
 # Qt.alpha(color, 0.5) tints a color, so its factor is an opacity too.
 ALPHA = re.compile(r"Qt\.alpha\([^,]+,\s*(?P<value>[0-9.]+)\s*\)")
 # A divisor is a proportion, such as half a dot's size for a circle, not a design value.
-NUMBER = re.compile(r"(?<![\w./])(?<!/ )(\d+(?:\.\d+)?|\.\d+)(?![\w.])")
+NUMBER = re.compile(r"(?<![\w.])(?<!/)(\d+(?:\.\d+)?|\.\d+)(?![\w.])")
+DIVISOR = re.compile(r"/\s*(\d+(?:\.\d+)?)")
 
 
 def allowed(name: str, number: str) -> bool:
@@ -39,10 +43,11 @@ def violations(path: Path, text: str) -> list[str]:
     found: list[str] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         code = line.split("//", 1)[0]
-        match = CHECKED.match(code)
-        if match:
+        for match in CHECKED.finditer(code):
             name = match.group("name").split(".")[-1]
-            for number in NUMBER.findall(match.group("value")):
+            # Divisors are proportions, so they are blanked out before the numbers are read.
+            value = DIVISOR.sub("/", match.group("value"))
+            for number in NUMBER.findall(value):
                 if not allowed(name, number):
                     found.append(f"{path}:{line_number}: {name} uses {number}; take it from Tokens.qml")
         for tint in ALPHA.finditer(code):
@@ -54,7 +59,7 @@ def violations(path: Path, text: str) -> list[str]:
 def check(source: Path) -> list[str]:
     found: list[str] = []
     for path in sorted(source.rglob("*.qml")):
-        if path.name != TOKENS:
+        if path.relative_to(source) != TOKENS:
             found.extend(violations(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path, path.read_text()))
     return found
 
