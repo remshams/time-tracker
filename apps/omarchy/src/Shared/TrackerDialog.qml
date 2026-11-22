@@ -49,6 +49,8 @@ Popup {
     }
 
     contentItem: ColumnLayout {
+        // Without a text field in the dialog, this keeps the keyboard on the Return and Escape handling.
+        focus: true
         spacing: 0
         implicitWidth: root.dialogWidth
 
