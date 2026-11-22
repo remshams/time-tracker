@@ -145,6 +145,13 @@ class TaskTests(DesktopTestCase):
         self.assertIsNotNone(app.find("list item", contains="Customer call"))
         self.assertIsNone(app.find("list item", contains="Code review"))
 
+        # Tab leaves the filter; it doesn't switch to the Archived tab.
+        app.key("Tab")
+        app.key("j")
+        self.assertIsNotNone(app.find("list item", contains="Customer call"))
+        self.assertIsNone(app.find(contains="No archived tasks"))
+
+        app.key("slash")
         app.key("Escape")
         app.wait_for("list item", contains="Bug triage")
 
