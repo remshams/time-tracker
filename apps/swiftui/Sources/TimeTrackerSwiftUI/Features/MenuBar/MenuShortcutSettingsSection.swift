@@ -6,7 +6,7 @@ struct MenuShortcutSettingsSection: View {
 
     var body: some View {
         Section("Menu shortcut") {
-            ForEach([MenuShortcutAction.openMenu], id: \.self) { action in
+            ForEach([MenuShortcutAction.openMenu, .openQuickTrack], id: \.self) { action in
                 HStack {
                     Text(action.title)
                     Spacer()
@@ -15,7 +15,8 @@ struct MenuShortcutSettingsSection: View {
                     }
                     .frame(width: 160, height: 28)
                     .accessibilityLabel("\(action.title) shortcut")
-                    .accessibilityIdentifier("menu.shortcut.open")
+                    .accessibilityIdentifier(
+                        action == .openMenu ? "menu.shortcut.open" : "menu.shortcut.quick-track")
                 }
             }
             if let error = preferences.menuShortcutError {
@@ -33,7 +34,7 @@ struct MenuShortcutSettingsSection: View {
             )
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            Button("Restore default shortcut") { preferences.resetMenuShortcuts() }
+            Button("Restore default shortcuts") { preferences.resetMenuShortcuts() }
                 .accessibilityIdentifier("menu.shortcut.restore")
         }
     }

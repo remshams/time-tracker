@@ -13,7 +13,7 @@ final class MenuBarPreferencesStore {
     private(set) var menuShortcuts: MenuKeyboardShortcuts
     private var menuShortcutValidationError: String?
     private(set) var menuGlobalShortcutError: String?
-    @ObservationIgnored var registerMenuShortcut: ((MenuShortcut) -> String?)?
+    @ObservationIgnored var registerMenuShortcut: ((MenuShortcutAction, MenuShortcut) -> String?)?
     var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
 
     init(
@@ -40,10 +40,16 @@ final class MenuBarPreferencesStore {
     }
 
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
-        var candidate = action == .openMenu ? MenuKeyboardShortcuts() : menuShortcuts
+        // Only the global shortcuts can be edited, and the others stay at their defaults, so a global
+        // change starts from the defaults and keeps the current global bindings for the duplicate check.
+        var candidate = menuShortcuts
+        if action.isGlobal {
+            candidate = MenuKeyboardShortcuts(
+                openMenu: menuShortcuts.openMenu, openQuickTrack: menuShortcuts.openQuickTrack)
+        }
         candidate[action] = shortcut
-        // Recording the open menu shortcut again retries a failed global registration.
-        setMenuShortcuts(candidate, retryGlobal: action == .openMenu && menuGlobalShortcutError != nil)
+        // Recording a global shortcut again retries a failed global registration.
+        setMenuShortcuts(candidate, retryGlobal: action.isGlobal && menuGlobalShortcutError != nil)
     }
 
     func resetMenuShortcuts() { setMenuShortcuts(.defaults, retryGlobal: true) }
@@ -53,11 +59,20 @@ final class MenuBarPreferencesStore {
             reportMenuShortcutError(error)
             return
         }
-        let changesGlobal = retryGlobal || candidate.openMenu != menuShortcuts.openMenu
-        if changesGlobal, let error = registerMenuShortcut?(candidate.openMenu) {
-            reportMenuShortcutError(error)
-            return
+        let globals = MenuShortcutAction.allCases.filter {
+            $0.isGlobal && (retryGlobal || candidate[$0] != menuShortcuts[$0])
         }
+        var registered: [MenuShortcutAction] = []
+        for action in globals {
+            if let error = registerMenuShortcut?(action, candidate[action]) {
+                // Keep the bindings that were registered before this one failed.
+                for done in registered { _ = registerMenuShortcut?(done, menuShortcuts[done]) }
+                reportMenuShortcutError(error)
+                return
+            }
+            registered.append(action)
+        }
+        let changesGlobal = !globals.isEmpty
         menuShortcuts = candidate
         reportMenuShortcutError(nil)
         if changesGlobal { reportMenuGlobalShortcutError(nil) }
