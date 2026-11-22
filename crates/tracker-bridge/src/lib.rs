@@ -32,7 +32,7 @@ pub use tracking::{
 };
 pub use worklogs::{
     tt_bridge_correct_worklog_at, tt_bridge_delete_worklog, tt_bridge_history,
-    tt_bridge_move_candidates, tt_bridge_move_worklog,
+    tt_bridge_move_candidates, tt_bridge_move_worklog, tt_bridge_search_tasks,
 };
 
 pub struct Bridge {
@@ -94,6 +94,9 @@ mod correction_tests;
 
 #[cfg(test)]
 mod move_tests;
+
+#[cfg(test)]
+mod search_tests;
 
 #[cfg(test)]
 mod deletion_tests;

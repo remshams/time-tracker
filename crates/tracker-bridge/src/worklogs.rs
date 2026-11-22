@@ -103,6 +103,33 @@ pub unsafe extern "C" fn tt_bridge_move_candidates(
     }
 }
 
+/// Returns identifiers of non-archived tasks matching the query, best match
+/// first, from the last confirmed task cache.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. `query` must be null or a valid
+/// C string. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_search_tasks(
+    bridge: *mut Bridge,
+    query: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and a valid C string or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            let query: String = read_text(query, "Invalid task search query")?;
+            let ids: Vec<String> = bridge
+                .application
+                .search_active_tasks(&query)
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect();
+            Ok(json!(ids))
+        })
+    }
+}
+
 /// Moves a worklog only when its stored task and timestamps match the selection.
 /// A null expected end describes a running worklog.
 ///

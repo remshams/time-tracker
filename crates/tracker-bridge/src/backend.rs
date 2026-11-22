@@ -122,6 +122,9 @@ impl Backend {
     pub fn move_candidates(&self, source: TaskId, query: &str) -> Vec<MoveCandidate> {
         self.application.move_candidates(source, query)
     }
+    pub fn search_active_tasks(&self, query: &str) -> Vec<TaskId> {
+        self.application.search_active_tasks(query)
+    }
 
     fn check_write(&self) -> Result<(), BridgeError> {
         if self.application.is_remote()
