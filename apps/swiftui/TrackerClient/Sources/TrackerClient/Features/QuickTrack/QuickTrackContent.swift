@@ -90,7 +90,8 @@ public struct QuickTrackContent: Equatable, Sendable {
             highlight, query: query, tasks: tasks, createName: createName, headerSelectable: header.isRunning)
     }
 
-    static func isBlank(_ query: String) -> Bool { TaskNameEditingPolicy.normalized(query).isEmpty }
+    /// Whether `query` is empty once leading and trailing whitespace is removed.
+    public static func isBlank(_ query: String) -> Bool { TaskNameEditingPolicy.normalized(query).isEmpty }
 
     /// Keeps a highlight that still exists. While the user types, the first match is highlighted.
     private static func resolve(
