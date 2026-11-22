@@ -14,6 +14,9 @@ public final class QuickTrackStore: ChangeGuardedStore {
     private(set) var results: [String] = []
     private(set) var highlight: QuickTrackHighlight?
     private(set) var searchError: String?
+    private(set) var createError: String?
+    /// Whether a create request from the "Create and start" row is running.
+    public private(set) var isCreating = false
     /// Whether a search for the current query is still running.
     public private(set) var isSearching = false
     @ObservationIgnored private var revision = 0
@@ -24,18 +27,26 @@ public final class QuickTrackStore: ChangeGuardedStore {
     /// Called when Return can't act on the highlighted row, so the app can beep.
     @ObservationIgnored public var onReject: @MainActor () -> Void = {}
     private let client: any TrackerClient
+    private let clock: any TrackerClock
     private let sources: TrackerMenuSources
     private let tracking: TrackingStore
+    private let reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
 
-    init(client: any TrackerClient, sources: TrackerMenuSources, tracking: TrackingStore) {
+    init(
+        client: any TrackerClient, clock: any TrackerClock, sources: TrackerMenuSources, tracking: TrackingStore,
+        reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
+    ) {
         self.client = client
+        self.clock = clock
         self.sources = sources
         self.tracking = tracking
+        self.reloadAfterWrite = reloadAfterWrite
     }
 
     public var content: QuickTrackContent {
         QuickTrackContent(
-            sources.read(), query: query, results: results, highlight: highlight, searchError: searchError)
+            sources.read(), query: query, results: results, highlight: highlight,
+            messages: [searchError, createError].compactMap { $0 }, isCreating: isCreating)
     }
 
     /// Shows the dialog with an empty search and nothing highlighted.
@@ -44,6 +55,7 @@ public final class QuickTrackStore: ChangeGuardedStore {
         set(\.query, "")
         set(\.highlight, nil)
         set(\.searchError, nil)
+        set(\.createError, nil)
         activatesAfterSearch = false
         isPresented = true
         setVisible(true)
@@ -65,6 +77,7 @@ public final class QuickTrackStore: ChangeGuardedStore {
         guard isPresented, value != query else { return }
         query = value
         set(\.highlight, nil)
+        set(\.createError, nil)
         activatesAfterSearch = false
         search()
     }
@@ -93,7 +106,44 @@ public final class QuickTrackStore: ChangeGuardedStore {
             activatesAfterSearch = true
             return
         }
-        if performHighlightedAction() { close() } else { onReject() }
+        let content = content
+        if content.highlight == .create {
+            guard content.canCreate, let name = content.createName else { return onReject() }
+            create(name)
+        } else if performHighlightedAction(content) {
+            close()
+        } else {
+            onReject()
+        }
+    }
+
+    /// Creates a task named `name`, reloads the task list and starts the new task. A rejected name keeps the dialog
+    /// open with the error and the search text.
+    private func create(_ name: String) {
+        if let message = TaskNameEditingPolicy.transportError(name) {
+            set(\.createError, message)
+            return onReject()
+        }
+        set(\.isCreating, true)
+        set(\.createError, nil)
+        let occurredAt = formatTimestamp(clock.now)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let created = try await client.createTask(name: name, occurredAt: occurredAt).task
+                await reloadAfterWrite({})
+                set(\.isCreating, false)
+                guard sources.availability.canStart(taskID: created.id) else {
+                    return set(\.createError, "Created \(created.name), but tracking couldn't start.")
+                }
+                tracking.startTracking(taskID: created.id)
+                close()
+            } catch {
+                set(\.createError, writeFailure(error).localizedDescription)
+                set(\.isCreating, false)
+                await reloadAfterWrite({})
+            }
+        }
     }
 
     /// The value a copy action copies for `taskID`, or for the highlighted row when `taskID` is `nil`. The header
@@ -108,12 +158,11 @@ public final class QuickTrackStore: ChangeGuardedStore {
         switch content.highlight {
         case .task(let id): return id
         case .header: return tracking.active?.taskId
-        case nil: return nil
+        case .create, nil: return nil
         }
     }
 
-    private func performHighlightedAction() -> Bool {
-        let content = content
+    private func performHighlightedAction(_ content: QuickTrackContent) -> Bool {
         switch content.highlight {
         case .header:
             guard content.header.canStop, let worklogID = tracking.active?.id else { return false }
@@ -121,7 +170,7 @@ public final class QuickTrackStore: ChangeGuardedStore {
         case .task(let taskID):
             guard content.tasks.first(where: { $0.id == taskID })?.canStart == true else { return false }
             tracking.startTracking(taskID: taskID)
-        case nil:
+        case .create, nil:
             return false
         }
         return true
