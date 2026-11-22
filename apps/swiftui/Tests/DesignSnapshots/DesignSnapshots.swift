@@ -266,7 +266,7 @@ private let quickTrackScenarios: [QuickTrackScenario] = [
 /// Renders the Quick Track dialog in a borderless offscreen window over a plain backdrop, which stands in for the
 /// app below it.
 private func renderQuickTrack(_ scenario: QuickTrackScenario, appearance: NSAppearance.Name, to directory: URL)
-    throws -> URL
+    throws -> (url: URL, flat: Bool)
 {
     let client = FixtureClient(tasks: fixtureTasks, active: scenario.active)
     let features = TrackerFeatures(
@@ -293,9 +293,11 @@ private func renderQuickTrack(_ scenario: QuickTrackScenario, appearance: NSAppe
     window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
     window.orderFrontRegardless()
     spinRunLoop(1)
-    let flat = isScreenLocked()
+    // A locked screen or a failed window server capture falls back to drawing in-process, which loses the glass.
+    let image = isScreenLocked() ? nil : windowServerImage(of: window)
+    let flat = image == nil || isScreenLocked()
     let bitmap: NSBitmapImageRep
-    if !flat, let image = windowServerImage(of: window) {
+    if let image, !flat {
         bitmap = NSBitmapImageRep(cgImage: image)
     } else {
         bitmap = try inProcessImage(of: window)
@@ -310,7 +312,7 @@ private func renderQuickTrack(_ scenario: QuickTrackScenario, appearance: NSAppe
     window.orderOut(nil)
     window.close()
     features.quickTrack.close()
-    return url
+    return (url, flat)
 }
 
 /// AppKit moves a titled window back onto a screen when it's shown or resized, which put the snapshot windows on the
@@ -390,7 +392,8 @@ struct DesignSnapshots {
         let onlyQuickTrack = arguments.count > 2 && arguments[2] == "--quick-track"
         for scenario in quickTrackScenarios {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-                _ = try renderQuickTrack(scenario, appearance: appearance, to: directory)
+                let (url, flat) = try renderQuickTrack(scenario, appearance: appearance, to: directory)
+                if flat { flatFiles.append(url) }
             }
         }
         if onlyQuickTrack { return }
