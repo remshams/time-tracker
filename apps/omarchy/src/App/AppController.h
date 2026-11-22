@@ -19,6 +19,7 @@ class TrackerGateway;
 class TrackerSync;
 class TrackingStore;
 class WorklogCorrectionStore;
+class WorklogDeletionStore;
 class WorklogHistoryStore;
 class WorklogMoveStore;
 
@@ -51,4 +52,5 @@ private:
     BulkTaskArchivingStore *bulkArchiving_;
     WorklogCorrectionStore *correction_;
     WorklogMoveStore *move_;
+    WorklogDeletionStore *deletion_;
 };
