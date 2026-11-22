@@ -7,6 +7,11 @@
 #include "Features/TaskCatalog/TaskCatalogStore.h"
 #include "Shared/DisplayClock.h"
 
+namespace {
+// How long after a create its task may still take the selection.
+constexpr qint64 selectionWindowSeconds = 10;
+} // namespace
+
 TaskCreationStore::TaskCreationStore(TrackerGateway *gateway, TaskCatalogStore *catalog, DisplayClock *clock,
                                      QObject *parent)
     : QObject(parent), gateway_(gateway), catalog_(catalog), clock_(clock) {
@@ -51,6 +56,7 @@ void TaskCreationStore::finish(const BridgeReply &reply) {
     if (reply.ok) {
         createdId_ =
             reply.data.toObject().value(QStringLiteral("task")).toObject().value(QStringLiteral("id")).toString();
+        createdAt_ = clock_->now();
         error_.clear();
     } else {
         error_ =
@@ -65,6 +71,10 @@ void TaskCreationStore::finish(const BridgeReply &reply) {
 }
 
 void TaskCreationStore::selectCreated() {
+    // When the reload after the create fails, a much later poll must not move the selection.
+    if (!createdId_.isEmpty() && createdAt_.secsTo(clock_->now()) > selectionWindowSeconds) {
+        createdId_.clear();
+    }
     if (createdId_.isEmpty() || !catalog_->task(createdId_)) {
         return;
     }

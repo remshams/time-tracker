@@ -88,7 +88,12 @@ Item {
                 }
                 Duration {
                     Layout.rightMargin: 24
-                    seconds: dayBlock.modelData.totalSeconds
+                    seconds: {
+                        const day = dayBlock.modelData
+                        if (day.runningSeconds === 0 || tracking.runningWorklogId.length === 0)
+                            return day.totalSeconds
+                        return day.totalSeconds - day.runningSeconds + Math.max(0, tracking.elapsedSeconds - day.runningOffset)
+                    }
                     color: theme.textDim
                     pixelSize: 11
                 }

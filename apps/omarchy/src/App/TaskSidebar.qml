@@ -120,7 +120,11 @@ Rectangle {
             Layout.topMargin: 4
             clip: true
             model: catalog.model
-            currentIndex: catalog.model.indexOf(catalog.selectedTaskId)
+            // Reading the names too re-runs this after a reorder, which keeps the selected row in view.
+            currentIndex: {
+                catalog.names
+                return catalog.model.indexOf(catalog.selectedTaskId)
+            }
             highlightFollowsCurrentItem: false
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {}

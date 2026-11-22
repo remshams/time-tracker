@@ -14,6 +14,9 @@ Item {
     property bool selected: false
     property bool focusedList: false
     readonly property bool running: modelData.running
+    // The running part ticks with the tracking timer; the model itself rebuilds once a minute.
+    readonly property bool live: running && tracking.runningWorklogId === modelData.worklogId
+    readonly property var seconds: live ? Math.max(0, tracking.elapsedSeconds - modelData.runningOffset) : modelData.seconds
 
     signal clicked
     signal editTimesRequested
@@ -23,7 +26,7 @@ Item {
     height: 32
 
     Accessible.role: Accessible.ListItem
-    Accessible.name: qsTr("%1 to %2, %3").arg(modelData.startLabel).arg(modelData.endLabel).arg(format.duration(modelData.seconds))
+    Accessible.name: qsTr("%1 to %2, %3").arg(modelData.startLabel).arg(modelData.endLabel).arg(format.duration(row.seconds))
     Accessible.selected: selected
     Accessible.onPressAction: row.editTimesRequested()
 
@@ -111,7 +114,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: 24
         anchors.verticalCenter: parent.verticalCenter
-        seconds: row.modelData.seconds
+        seconds: row.seconds
         color: row.running ? row.barColor : theme.text
         bold: row.running
     }

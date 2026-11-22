@@ -34,8 +34,11 @@ WorklogHistoryStore::WorklogHistoryStore(TrackerGateway *gateway, TaskCatalogSto
     : QObject(parent), gateway_(gateway), catalog_(catalog), clock_(clock) {
     connect(catalog_, &TaskCatalogStore::selectionChanged, this, [this] { selectTask(catalog_->selectedTaskId()); });
     connect(clock_, &DisplayClock::ticked, this, [this] {
-        // The running row grows every second; "Today" becomes "Yesterday" at midnight.
-        if (!worklogs_.isEmpty() && worklogs_.first().isRunning()) {
+        // The running bar grows on the axis once a minute. Rebuilding the days every second
+        // would recreate the rows and close their menus; the running row's time ticks in QML.
+        const qint64 minute = clock_->now().toSecsSinceEpoch() / 60;
+        if (minute != shownMinute_ && !worklogs_.isEmpty() && worklogs_.first().isRunning()) {
+            shownMinute_ = minute;
             emit daysChanged();
         }
     });
@@ -76,6 +79,9 @@ QVariantList WorklogHistoryStore::days() const {
     QVariantMap day;
     QVariantList entries;
     qint64 dayTotal = 0;
+    // The running part of a day, which QML keeps current between rebuilds.
+    qint64 runningSeconds = 0;
+    qint64 runningOffset = 0;
     QDate current;
     auto flush = [&] {
         if (!current.isValid()) {
@@ -83,6 +89,8 @@ QVariantList WorklogHistoryStore::days() const {
         }
         day.insert(QStringLiteral("label"), Format::dayLabel(current, today));
         day.insert(QStringLiteral("totalSeconds"), dayTotal);
+        day.insert(QStringLiteral("runningSeconds"), runningSeconds);
+        day.insert(QStringLiteral("runningOffset"), runningOffset);
         day.insert(QStringLiteral("entries"), entries);
         result.append(day);
     };
@@ -93,10 +101,19 @@ QVariantList WorklogHistoryStore::days() const {
             day = QVariantMap{{QStringLiteral("date"), part.day}};
             entries.clear();
             dayTotal = 0;
+            runningSeconds = 0;
+            runningOffset = 0;
         }
         const qint64 seconds = qMax<qint64>(0, part.from.secsTo(part.to));
         dayTotal += seconds;
         const bool running = part.worklog->isRunning() && part.last;
+        // Seconds between the worklog's start and this part's start, so the running part's
+        // length is the tracking timer minus this offset.
+        const qint64 offset = part.worklog->start.secsTo(part.from);
+        if (running) {
+            runningSeconds = seconds;
+            runningOffset = offset;
+        }
         const bool endsAtMidnight = part.to == part.day.addDays(1).startOfDay();
         const QString endLabel = running          ? tr("now")
                                  : endsAtMidnight ? QStringLiteral("24:00")
@@ -107,6 +124,7 @@ QVariantList WorklogHistoryStore::days() const {
             {QStringLiteral("startLabel"), Format::clockTime(part.from)},
             {QStringLiteral("endLabel"), endLabel},
             {QStringLiteral("seconds"), seconds},
+            {QStringLiteral("runningOffset"), offset},
             {QStringLiteral("from"), qBound(0.0, (minuteOfDay(part.from, part.day) - axisStart) / axisSpan, 1.0)},
             {QStringLiteral("to"), qBound(0.0, (minuteOfDay(part.to, part.day) - axisStart) / axisSpan, 1.0)},
         });

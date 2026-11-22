@@ -79,4 +79,5 @@ private:
     QString error_;
     // Each request takes a new generation; answers for an older one are dropped.
     int generation_ = 0;
+    qint64 shownMinute_ = -1;
 };

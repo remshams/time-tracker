@@ -109,8 +109,15 @@ Rectangle {
                         return qsTr("Last confirmed state. The connection is unavailable.")
                     if (tracking.error.length > 0)
                         return tracking.error
-                    if (tracking.running)
-                        return qsTr("Running since %1. Space stops it.").arg(format.clockTime(tracking.runningSince))
+                    if (tracking.running) {
+                        const since = format.clockTime(tracking.runningSince)
+                        // Space acts on the selected task, so the hint follows the selection.
+                        if (catalog.selectedTaskId === tracking.runningTaskId)
+                            return qsTr("Running since %1. Space stops it.").arg(since)
+                        if (catalog.selectedArchived || catalog.selectedTaskId.length === 0)
+                            return qsTr("Running since %1. Press s to stop it.").arg(since)
+                        return qsTr("Running since %1. Space switches to the selected task.").arg(since)
+                    }
                     if (root.shownTaskId.length > 0)
                         return qsTr("Idle. Space starts the selected task.")
                     return ""
@@ -144,15 +151,24 @@ Rectangle {
             spacing: 2
             Txt {
                 Layout.alignment: Qt.AlignRight
-                text: qsTr("Today")
+                // Cached totals come from an earlier report because the latest one failed.
+                text: totals.cached ? qsTr("Today, cached") : qsTr("Today")
                 font.pixelSize: 11
                 level: 1
             }
             Duration {
                 Layout.alignment: Qt.AlignRight
+                visible: totals.known
                 seconds: totals.totalSeconds
                 pixelSize: 16
-                color: totals.known ? theme.text : theme.textFaint
+                color: totals.cached ? theme.textDim : theme.text
+            }
+            Txt {
+                Layout.alignment: Qt.AlignRight
+                visible: !totals.known
+                text: qsTr("Unavailable")
+                font.pixelSize: 16
+                level: 2
             }
         }
     }

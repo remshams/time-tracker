@@ -22,6 +22,10 @@ void TrackingStore::accept(const std::optional<WorklogItem> &running) {
          (running_->id != running->id || running_->start != running->start || running_->taskId != running->taskId));
     known_ = true;
     running_ = running;
+    // The error shows with the reload that follows the failed command and goes with the next one.
+    if (!error_.isEmpty() && ++readsSinceError_ > 1) {
+        setError(QString());
+    }
     if (changed) {
         emit stateChanged();
         emit elapsedChanged();
@@ -122,6 +126,7 @@ void TrackingStore::finish(const BridgeReply &reply, const QString &unconfirmed)
     setPending(false);
     if (!reply.ok) {
         setError(reply.userMessage(unconfirmed));
+        readsSinceError_ = 0;
     }
     emit refreshRequested();
 }

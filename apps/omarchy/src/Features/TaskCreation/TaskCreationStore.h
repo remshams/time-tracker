@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QObject>
 
 #include "Contracts/BridgeReply.h"
@@ -50,4 +51,5 @@ private:
     QString error_;
     bool pending_ = false;
     QString createdId_;
+    QDateTime createdAt_;
 };
