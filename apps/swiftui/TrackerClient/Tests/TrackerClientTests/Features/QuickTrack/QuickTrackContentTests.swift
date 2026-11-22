@@ -24,10 +24,11 @@ final class QuickTrackContentTests: XCTestCase {
     @MainActor
     private func content(
         _ inputs: TrackerMenuInputs, query: String = "", results: [String]? = nil,
-        highlight: QuickTrackHighlight? = nil, searchError: String? = nil
+        highlight: QuickTrackHighlight? = nil, messages: [String] = [], isCreating: Bool = false
     ) -> QuickTrackContent {
         QuickTrackContent(
-            inputs, query: query, results: results ?? allResults, highlight: highlight, searchError: searchError)
+            inputs, query: query, results: results ?? allResults, highlight: highlight, messages: messages,
+            isCreating: isCreating)
     }
 
     @MainActor
@@ -86,7 +87,7 @@ final class QuickTrackContentTests: XCTestCase {
     func testStatusLinesListAutoPauseTrackingAndSearchMessages() {
         let content = content(
             inputs(autoPause: "Paused while the screen is locked", trackingError: "Tracking failed"),
-            searchError: "Search failed: offline")
+            messages: ["Search failed: offline"])
         XCTAssertEqual(
             content.statusLines,
             ["Paused while the screen is locked", "Tracking failed", "Search failed: offline"])
@@ -109,7 +110,7 @@ final class QuickTrackContentTests: XCTestCase {
         XCTAssertEqual(
             content(running, query: "t", highlight: .task("gone")).highlight, .task("task-two"),
             "A highlight whose row is gone falls back to the first match.")
-        XCTAssertNil(content(running, query: "t", results: []).highlight)
+        XCTAssertNil(content(running, query: "second task", results: []).highlight)
     }
 
     @MainActor
@@ -137,5 +138,45 @@ final class QuickTrackContentTests: XCTestCase {
         XCTAssertEqual(moved(nil, down: true), .task("task-two"))
         XCTAssertEqual(moved(.task("task-two"), down: false), .task("task-two"))
         XCTAssertNil(content(inputs(), results: []).movingHighlight(down: true))
+    }
+
+    @MainActor
+    func testCreateRowShowsForANewNameOnly() {
+        XCTAssertNil(content(inputs()).createName, "A blank query offers no create row.")
+        XCTAssertNil(content(inputs(), query: "   ").createName)
+        XCTAssertEqual(content(inputs(), query: "  New task  ").createName, "New task")
+        XCTAssertNil(content(inputs(), query: "second TASK").createName, "An active task has this name.")
+        XCTAssertNil(
+            content(inputs(active: activeWorklog), query: "first task").createName,
+            "The running task counts as taken.")
+        XCTAssertEqual(
+            content(inputs(), query: "Archived task").createName, "Archived task",
+            "An archived task's name can be used again.")
+    }
+
+    @MainActor
+    func testCreateRowIsHighlightedOnlyWhenItIsTheOnlyRow() {
+        XCTAssertEqual(content(inputs(), query: "task", results: ["task-two"]).highlight, .task("task-two"))
+        XCTAssertEqual(content(inputs(), query: "New", results: []).highlight, .create)
+        XCTAssertEqual(content(inputs(), query: "New", results: ["task-two"], highlight: .create).highlight, .create)
+        XCTAssertEqual(
+            content(inputs(), query: "second task", results: [], highlight: .create).highlight, nil,
+            "A highlight on a create row that's gone falls back to the first row.")
+    }
+
+    @MainActor
+    func testArrowsReachTheCreateRowAfterTheTasks() {
+        let typed = content(inputs(), query: "New", results: ["task-two"], highlight: .task("task-two"))
+        XCTAssertEqual(typed.movingHighlight(down: true), .create)
+        let onCreate = content(inputs(), query: "New", results: ["task-two"], highlight: .create)
+        XCTAssertEqual(onCreate.movingHighlight(down: true), .create)
+        XCTAssertEqual(onCreate.movingHighlight(down: false), .task("task-two"))
+    }
+
+    @MainActor
+    func testCreateIsUnavailableWhileStaleOrCreating() {
+        XCTAssertTrue(content(inputs(), query: "New").canCreate)
+        XCTAssertFalse(content(inputs(stale: true), query: "New").canCreate)
+        XCTAssertFalse(content(inputs(), query: "New", isCreating: true).canCreate)
     }
 }

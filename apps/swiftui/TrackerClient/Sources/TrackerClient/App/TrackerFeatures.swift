@@ -81,7 +81,6 @@ public final class TrackerFeatures {
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
-        quickTrack = QuickTrackStore(client: client, sources: menuSources, tracking: tracking)
         sync = TrackerSync(
             client: client, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
@@ -103,7 +102,10 @@ public final class TrackerFeatures {
         dailyTotals.acceptReportedTaskList = { [weak sync] resources in sync?.acceptReportedTaskList(resources) }
         dailyTotals.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
         dailyTotals.refreshTaskList = { [weak sync] in sync?.refresh() }
-        quickTrack.setVisible = { [weak sync] visible in sync?.setQuickTrackVisible(visible) }
+        quickTrack = QuickTrackStore(
+            client: client, clock: clock, sources: menuSources, tracking: tracking,
+            reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
+        quickTrack.setVisible = sync.setQuickTrackVisible(_:)
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
