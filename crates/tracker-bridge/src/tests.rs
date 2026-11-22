@@ -269,7 +269,7 @@ fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
 }
 
 #[test]
-fn task_resources_expose_explicit_tasks_in_the_swift_schema() {
+fn task_resources_expose_explicit_tasks_in_the_client_schema() {
     let directory = tempfile::tempdir().unwrap();
     let bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
 

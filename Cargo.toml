@@ -11,7 +11,7 @@ members = [
     "apps/tui",
     "apps/server",
     "apps/cli",
-    "apps/swiftui/bridge",
+    "crates/tracker-bridge",
 ]
 
 [workspace.package]

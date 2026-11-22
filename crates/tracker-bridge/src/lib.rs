@@ -1,4 +1,4 @@
-//! JSON bridge between SwiftUI and the application service.
+//! JSON bridge between the native desktop clients and the application service.
 
 mod backend;
 mod database;
