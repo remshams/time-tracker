@@ -20,6 +20,45 @@ class MenuBarUITests: TrackerUITestCase {
         dismissStatusMenu()
     }
 
+    func testShortcutOpensMenuOverAnotherAppWithoutActivatingTimeTracker() throws {
+        let task = try fixture.create("Background task")
+        launch()
+        XCTAssertTrue(trackerWindow.waitForExistence(timeout: timeout))
+        let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+        finder.activate()
+        waitUntil("Finder comes to the front") { self.app.state == .runningBackground }
+        let assertFinderStaysFrontmost: (String) -> Void = { step in
+            XCTAssertEqual(self.app.state, .runningBackground, "Time Tracker stays behind Finder: \(step)")
+            XCTAssertEqual(finder.state, .runningForeground, "Finder stays frontmost: \(step)")
+        }
+
+        openStatusMenu(from: finder)
+        assertFinderStaysFrontmost("menu open")
+        finder.typeKey(.downArrow, modifierFlags: [])
+        finder.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(menuTask(task).waitForExistence(timeout: timeout))
+        finder.typeKey(.rightArrow, modifierFlags: [])
+        finder.typeKey(.return, modifierFlags: [])
+        assertRunning(task)
+        assertFinderStaysFrontmost("after starting from the keyboard")
+
+        withRestoredClipboard {
+            openStatusMenu(from: finder)
+            copyFromMenu(.copyName, task: task, keyboard: finder)
+            assertClipboard(task.name)
+        }
+        assertFinderStaysFrontmost("after copying from the keyboard")
+
+        openStatusMenu(from: finder)
+        finder.typeKey("t", modifierFlags: [.control, .option])
+        waitUntil("The shortcut toggles the menu closed") { !self.app.menuItems["Open Time Tracker"].exists }
+        assertFinderStaysFrontmost("after closing with the shortcut")
+
+        openStatusMenu(from: finder)
+        app.menuItems["Open Time Tracker"].click()
+        waitUntil("Open Time Tracker brings the app forward") { self.app.state == .runningForeground }
+    }
+
     func testPrimaryClickWithoutLastTaskOpensMenuAndOutsideClickDismisses() throws {
         _ = try fixture.create("Planning")
         launch()
