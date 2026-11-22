@@ -332,7 +332,10 @@ such as `Features/WorklogCorrection` in both targets.
   the connection (`ConnectionStore`) and each dialog's draft. `App/TrackerSync`
   reads tasks, tracking and today's report in one worker job after connecting,
   after every write, at midnight and on a 30-second poll. `Shared/Theme`
-  follows the Omarchy theme's `colors.toml` and Hyprland's rounding. The app
+  follows the Omarchy theme's `colors.toml` and Hyprland's rounding, and the
+  views take font sizes, spacing, opacities and fixed sizes from the
+  `Shared/Tokens` singleton, which `scripts/omarchy-qml-style.py` enforces
+  ([ADR 0043](adr/0043-use-design-tokens-for-spacing-type-and-opacity-in-the-omarchy-app.md)). The app
   shows the main window only; the Omarchy bar widget, which lives outside this
   repository, is the status indicator and pauses tracking on screen lock
   ([ADR 0042](adr/0042-build-the-omarchy-client-with-qt-quick-on-the-shared-c-bridge.md)).
