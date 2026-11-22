@@ -56,4 +56,40 @@ final class SettingsUITests: TrackerUITestCase {
         openStatusMenu()
         dismissStatusMenu()
     }
+
+    func testQuickTrackShortcutRecordsSpaceAndRestoresItsDefault() throws {
+        launch()
+        openSettings()
+        let recorder = element("menu.shortcut.quick-track")
+        XCTAssertEqual(recorder.value as? String, "⌃⌥Space")
+        XCTAssertEqual(element("menu.shortcut.open").value as? String, "⌃⌥T")
+        recorder.click()
+        app.typeKey("q", modifierFlags: [.control, .option])
+        waitUntil("The Quick Track shortcut records its new keys") { recorder.value as? String == "⌃⌥Q" }
+        recorder.click()
+        app.typeKey(" ", modifierFlags: [.command, .option])
+        waitUntil("The Quick Track shortcut records Space") { recorder.value as? String == "⌘⌥Space" }
+        XCTAssertEqual(element("menu.shortcut.open").value as? String, "⌃⌥T")
+        relaunch()
+        openSettings()
+        XCTAssertEqual(element("menu.shortcut.quick-track").value as? String, "⌘⌥Space")
+        element("menu.shortcut.restore").click()
+        XCTAssertEqual(element("menu.shortcut.quick-track").value as? String, "⌃⌥Space")
+        XCTAssertEqual(element("menu.shortcut.open").value as? String, "⌃⌥T")
+        openStatusMenu()
+        dismissStatusMenu()
+    }
+
+    func testQuickTrackShortcutRejectsTheOpenMenuShortcut() throws {
+        launch()
+        openSettings()
+        element("menu.shortcut.quick-track").click()
+        app.typeKey("t", modifierFlags: [.control, .option])
+        let error = element("menu.shortcut.error")
+        XCTAssertTrue(error.waitForExistence(timeout: timeout))
+        XCTAssertTrue(
+            (error.value as? String ?? error.label).contains("Open Quick Track and Open menu use the same shortcut"))
+        XCTAssertEqual(element("menu.shortcut.quick-track").value as? String, "⌃⌥Space")
+        XCTAssertEqual(element("menu.shortcut.open").value as? String, "⌃⌥T")
+    }
 }
