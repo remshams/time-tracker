@@ -20,6 +20,7 @@ class TrackerSync;
 class TrackingStore;
 class WorklogCorrectionStore;
 class WorklogHistoryStore;
+class WorklogMoveStore;
 
 // Creates the gateway, the clock, the theme and every feature store, connects them, and
 // hands them to QML as context properties.
@@ -49,4 +50,5 @@ private:
     TaskArchivingStore *taskArchiving_;
     BulkTaskArchivingStore *bulkArchiving_;
     WorklogCorrectionStore *correction_;
+    WorklogMoveStore *move_;
 };
