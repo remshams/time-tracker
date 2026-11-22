@@ -32,7 +32,7 @@ The CI workflow has an opt-in `native_benchmark` dispatch. Supply the full SHA o
 | 1 | `core` | Smoke, catalog, creation, tracking, history, daily totals, worklog move, and their server variants |
 | 2 | `editing` | Rename, individual archive, existing and extended bulk archive, worklog correction and deletion, and server variants |
 | 3 | `server` | Connection, outages, concurrency, pagination races, unconfirmed-write reporting, rejected tracking conflicts, settings, per-source remembered tasks, and appearance |
-| 4 | `mac` | Menu actions, clipboard, shortcuts, and lifecycle; the menu bar and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the arm64 Release build, and the layout check |
+| 4 | `mac` | Menu actions, Quick Track, clipboard, shortcuts, and lifecycle; the menu bar, Quick Track and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the arm64 Release build, and the layout check |
 
 ## Fixtures and failure evidence
 
@@ -73,6 +73,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
 | 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
 | 23 | One dialog at a time: the task row and task list context menus, and the worklog row context menu open normally and stay closed while a sheet or the tracking failure alert is open | [OpenDialogUITests](Tests/UITests/App/OpenDialogUITests.swift) |
+| 24 | Quick Track: opening over another app without activating Time Tracker, search and Return, arrow keys, stopping from the header, Escape, closing on the shortcut or an outside click, copy keys and the context menu, creating and starting a task, a rejected name | [QuickTrackUITests](Tests/UITests/Features/QuickTrack/QuickTrackUITests.swift) and `ServerQuickTrackUITests` in the same file |
 
 ## Dedicated-Mac acceptance
 
