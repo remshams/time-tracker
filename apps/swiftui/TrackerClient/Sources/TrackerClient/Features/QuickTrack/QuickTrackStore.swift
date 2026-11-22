@@ -20,6 +20,8 @@ public final class QuickTrackStore: ChangeGuardedStore {
     /// Whether a search for the current query is still running.
     public private(set) var isSearching = false
     @ObservationIgnored private var revision = 0
+    /// Counts the openings, so a create request that ends after the dialog closed doesn't touch a later opening.
+    @ObservationIgnored private var session = 0
     /// Return pressed while a search ran. It runs once the result arrives, so it acts on the current query's match.
     @ObservationIgnored private var activatesAfterSearch = false
     /// Reports to `TrackerSync` whether the dialog shows. `TrackerFeatures` sets it.
@@ -57,6 +59,7 @@ public final class QuickTrackStore: ChangeGuardedStore {
         set(\.searchError, nil)
         set(\.createError, nil)
         activatesAfterSearch = false
+        session += 1
         isPresented = true
         setVisible(true)
         search()
@@ -99,14 +102,28 @@ public final class QuickTrackStore: ChangeGuardedStore {
     }
 
     /// Runs Return: starts the highlighted task or stops the running one, then closes the dialog. Calls `onReject`
-    /// when the highlighted row can't act right now.
+    /// when the highlighted row can't act right now. While a search for a typed query runs, Return waits for its
+    /// result, so it acts on the current query's first match.
     public func activate() {
         guard isPresented else { return }
         if isSearching && !QuickTrackContent.isBlank(query) {
             activatesAfterSearch = true
             return
         }
+        runHighlightedRow()
+    }
+
+    /// Runs a clicked row right away. The row is on screen, so a running search doesn't change what it does.
+    public func activate(_ row: QuickTrackHighlight) {
+        guard isPresented else { return }
+        activatesAfterSearch = false
+        set(\.highlight, row)
+        runHighlightedRow()
+    }
+
+    private func runHighlightedRow() {
         let content = content
+        guard !isCreating else { return onReject() }
         if content.highlight == .create {
             guard content.canCreate, let name = content.createName else { return onReject() }
             create(name)
@@ -117,8 +134,8 @@ public final class QuickTrackStore: ChangeGuardedStore {
         }
     }
 
-    /// Creates a task named `name`, reloads the task list and starts the new task. A rejected name keeps the dialog
-    /// open with the error and the search text.
+    /// Creates a task named `name`, reloads the task list and starts the new task, then closes the dialog. A rejected
+    /// name, or a new task that doesn't start, keeps the dialog open with the error and the search text.
     private func create(_ name: String) {
         if let message = TaskNameEditingPolicy.transportError(name) {
             set(\.createError, message)
@@ -127,23 +144,36 @@ public final class QuickTrackStore: ChangeGuardedStore {
         set(\.isCreating, true)
         set(\.createError, nil)
         let occurredAt = formatTimestamp(clock.now)
-        Task { [weak self] in
+        Task { [weak self, session] in
             guard let self else { return }
             do {
                 let created = try await client.createTask(name: name, occurredAt: occurredAt).task
                 await reloadAfterWrite({})
-                set(\.isCreating, false)
                 guard sources.availability.canStart(taskID: created.id) else {
-                    return set(\.createError, "Created \(created.name), but tracking couldn't start.")
+                    set(\.isCreating, false)
+                    return showCreateError("Created \(created.name), but tracking couldn't start.", in: session)
                 }
-                tracking.startTracking(taskID: created.id)
-                close()
+                tracking.startTracking(taskID: created.id) { [weak self] in
+                    guard let self else { return }
+                    set(\.isCreating, false)
+                    if tracking.active?.taskId == created.id {
+                        if session == self.session { close() }
+                    } else {
+                        showCreateError("Created \(created.name), but tracking couldn't start.", in: session)
+                    }
+                }
             } catch {
-                set(\.createError, writeFailure(error).localizedDescription)
                 set(\.isCreating, false)
+                showCreateError(writeFailure(error).localizedDescription, in: session)
                 await reloadAfterWrite({})
             }
         }
+    }
+
+    /// Shows a create error only in the opening that sent the request.
+    private func showCreateError(_ message: String, in session: Int) {
+        guard isPresented, session == self.session else { return }
+        set(\.createError, message)
     }
 
     /// The value a copy action copies for `taskID`, or for the highlighted row when `taskID` is `nil`. The header
