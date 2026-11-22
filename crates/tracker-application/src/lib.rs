@@ -21,8 +21,8 @@ pub use repository::{
     ActiveTrackingRead, InactiveTaskArchive, InactiveTaskPreviewRead, ReportRead, RepositoryError,
     TaskListReportRead, TrackerRepository, WorklogCorrection, WorklogDeletion, WorklogMove,
 };
-pub use service::move_candidates_for_tasks;
 pub use service::{TrackerApplication, TrackerApplicationService};
+pub use service::{move_candidates_for_tasks, search_active_tasks_in};
 
 #[cfg(test)]
 mod tests;

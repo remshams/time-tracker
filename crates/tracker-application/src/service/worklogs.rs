@@ -9,18 +9,20 @@ use crate::{
     TaskListItem, TaskOrdering, TrackerRepository, WorklogCursor, WorklogPage,
 };
 
-/// Selects move destinations from a caller's cached task catalog.
-/// Archived tasks and the source task are excluded even when the query is empty.
-pub fn move_candidates_for_tasks(
-    items: &[TaskListItem],
-    source_task_id: TaskId,
-    query: &str,
-) -> Vec<MoveCandidate> {
+/// Selects the non-archived tasks whose names match the query, in search rank order.
+/// An empty query selects every non-archived task.
+pub fn search_active_tasks_in(items: &[TaskListItem], query: &str) -> Vec<TaskId> {
+    active_matches(items, query)
+        .into_iter()
+        .map(|item| item.task.id())
+        .collect()
+}
+
+fn active_matches<'a>(items: &'a [TaskListItem], query: &str) -> Vec<&'a TaskListItem> {
     let mut matches = items
         .iter()
         .filter(|item| {
             !item.task.is_archived()
-                && item.task.id() != source_task_id
                 && crate::task_search::fuzzy_match(item.task.name().as_str(), query)
         })
         .collect::<Vec<_>>();
@@ -33,7 +35,18 @@ pub fn move_candidates_for_tasks(
         )
     });
     matches
+}
+
+/// Selects move destinations from a caller's cached task catalog.
+/// Archived tasks and the source task are excluded even when the query is empty.
+pub fn move_candidates_for_tasks(
+    items: &[TaskListItem],
+    source_task_id: TaskId,
+    query: &str,
+) -> Vec<MoveCandidate> {
+    active_matches(items, query)
         .into_iter()
+        .filter(|item| item.task.id() != source_task_id)
         .map(|item| MoveCandidate {
             id: item.task.id(),
             name: item.task.name().to_string(),
@@ -53,6 +66,11 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             source_task_id,
             query,
         )
+    }
+
+    /// Non-archived task IDs matching the query, from the current task catalog.
+    pub fn search_active_tasks(&self, query: &str) -> Vec<TaskId> {
+        search_active_tasks_in(&self.tasks(TaskOrdering::RecentlyWorked), query)
     }
 
     pub fn all_worklogs(
