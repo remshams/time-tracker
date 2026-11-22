@@ -110,6 +110,15 @@ public struct QuickTrackContent: Equatable, Sendable {
         }
     }
 
+    /// Whether `row` is on screen in this content.
+    func hasRow(_ row: QuickTrackHighlight) -> Bool {
+        switch row {
+        case .header: return header.isRunning
+        case .task(let id): return tasks.contains { $0.id == id }
+        case .create: return createName != nil
+        }
+    }
+
     /// The highlight one row below or above the current one. The header sits above the first task while a task
     /// runs. Moving past either end keeps the highlight where it is.
     func movingHighlight(down: Bool) -> QuickTrackHighlight? {

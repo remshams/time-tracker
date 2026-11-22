@@ -117,6 +117,8 @@ public final class QuickTrackStore: ChangeGuardedStore {
     public func activate(_ row: QuickTrackHighlight) {
         guard isPresented else { return }
         activatesAfterSearch = false
+        // The click comes from an earlier render; a row a newer search or reload removed isn't run.
+        guard content.hasRow(row) else { return onReject() }
         set(\.highlight, row)
         runHighlightedRow()
     }
@@ -149,6 +151,8 @@ public final class QuickTrackStore: ChangeGuardedStore {
             do {
                 let created = try await client.createTask(name: name, occurredAt: occurredAt).task
                 await reloadAfterWrite({})
+                // The search ran before the task existed; searching again lists it if tracking doesn't start.
+                if isPresented && session == self.session { search() }
                 guard sources.availability.canStart(taskID: created.id) else {
                     set(\.isCreating, false)
                     return showCreateError("Created \(created.name), but tracking couldn't start.", in: session)
@@ -226,9 +230,9 @@ public final class QuickTrackStore: ChangeGuardedStore {
         set(\.results, results)
         set(\.searchError, error)
         set(\.isSearching, false)
-        if activatesAfterSearch {
-            activatesAfterSearch = false
-            activate()
-        }
+        let runsPendingReturn = activatesAfterSearch
+        activatesAfterSearch = false
+        // A failed search leaves only the create row, so a pending Return must not create a task from it.
+        if runsPendingReturn && error == nil { activate() }
     }
 }
