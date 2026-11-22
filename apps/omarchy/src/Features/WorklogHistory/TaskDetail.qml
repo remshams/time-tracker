@@ -8,9 +8,9 @@ Rectangle {
     id: root
 
     property bool focused: false
-    property string selectedWorklogId
-    // A worklog past midnight is listed once per day, so the position tells its rows apart.
-    property int selectedPosition: -1
+    // The selected row. A worklog past midnight has one row per day, so the key names the day too.
+    property string selectedKey
+    readonly property string selectedWorklogId: selectedKey.split("@")[0]
 
     signal renameRequested(string taskId)
     signal archiveRequested(string taskId)
@@ -19,23 +19,22 @@ Rectangle {
     signal deleteRequested(string worklogId)
     signal createRequested
 
-    // Worklog IDs in display order, one per row, for keyboard navigation.
-    readonly property var worklogIds: {
-        const ids = []
+    // Row keys in display order, for keyboard navigation.
+    readonly property var rowKeys: {
+        const keys = []
         for (const day of history.days)
             for (const entry of day.entries)
-                ids.push(entry.worklogId)
-        return ids
+                keys.push(entry.rowKey)
+        return keys
     }
 
     function moveWorklogSelection(step) {
-        if (worklogIds.length === 0)
+        if (rowKeys.length === 0)
             return
-        const current = worklogIds[selectedPosition] === selectedWorklogId ? selectedPosition : worklogIds.indexOf(selectedWorklogId)
-        const next = current < 0 ? 0 : Math.max(0, Math.min(worklogIds.length - 1, current + step))
-        selectedWorklogId = worklogIds[next]
-        selectedPosition = next
-        if (next === worklogIds.length - 1 && history.hasMore)
+        const current = rowKeys.indexOf(selectedKey)
+        const next = current < 0 ? 0 : Math.max(0, Math.min(rowKeys.length - 1, current + step))
+        selectedKey = rowKeys[next]
+        if (next === rowKeys.length - 1 && history.hasMore)
             history.loadMore()
     }
 
@@ -46,8 +45,8 @@ Rectangle {
         return totals.secondsFor(taskId)
     }
 
-    onTaskIdChanged: selectedWorklogId = ""
-    onWorklogIdsChanged: if (selectedWorklogId.length > 0 && worklogIds.indexOf(selectedWorklogId) < 0) selectedWorklogId = ""
+    onTaskIdChanged: selectedKey = ""
+    onRowKeysChanged: if (selectedKey.length > 0 && rowKeys.indexOf(selectedKey) < 0) selectedKey = ""
 
     color: theme.background
 
@@ -155,8 +154,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             focused: root.focused
-            selectedWorklogId: root.selectedWorklogId
-            onSelected: id => root.selectedWorklogId = id
+            selectedKey: root.selectedKey
+            onSelected: key => root.selectedKey = key
             onEditTimesRequested: id => root.editTimesRequested(id)
             onMoveRequested: id => root.moveRequested(id)
             onDeleteRequested: id => root.deleteRequested(id)

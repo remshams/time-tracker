@@ -78,6 +78,22 @@ private slots:
         QCOMPARE(days.count(), 2);
     }
 
+    void rowsOfAWorklogPastMidnightHaveTheirOwnKeys() {
+        Fixture f;
+        f.load({log("w1", "2026-11-09T22:00:00.000Z")});
+        const QVariantList days = f.history.days();
+        const QVariantMap today = days.at(0).toMap();
+        const QVariantMap todayRow = today.value("entries").toList().first().toMap();
+        const QVariantMap yesterdayRow = days.at(1).toMap().value("entries").toList().first().toMap();
+        QCOMPARE(todayRow.value("rowKey").toString(), QStringLiteral("w1@2026-11-10"));
+        QCOMPARE(yesterdayRow.value("rowKey").toString(), QStringLiteral("w1@2026-11-09"));
+        // Both rows belong to a running worklog, so neither offers Delete.
+        QVERIFY(todayRow.value("worklogRunning").toBool());
+        QVERIFY(yesterdayRow.value("worklogRunning").toBool());
+        QCOMPARE(today.value("runningWorklogId").toString(), QStringLiteral("w1"));
+        QVERIFY(days.at(1).toMap().value("runningWorklogId").toString().isEmpty());
+    }
+
     void reloadWithoutASelectionDoesNothing() {
         Fixture f;
         f.history.reload();

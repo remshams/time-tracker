@@ -54,5 +54,6 @@ The app is C++ and Qt Quick, built with qmake6. It links the Rust core through t
 
 - `src/Bridge/RustTrackerGateway` runs every bridge call on one worker thread and answers on the GUI thread.
 - `src/Features/<Feature>/` holds each feature's C++ store and its QML views. Stores depend on `src/Contracts/TrackerGateway.h`, so tests script the replies with `tests/FakeTrackerGateway.h`.
+- `src/App/` holds the window and the views that combine several features: the sidebar, its task rows, the tracking strip and the status line.
 - `src/App/TrackerSync` reads tasks, tracking and today's totals after connecting, after every write, at midnight and every 30 seconds.
 - `src/Shared/Theme` reads `~/.local/state/omarchy/current/theme/colors.toml` and reloads it when the theme changes. It reads Hyprland's `decoration:rounding` once at startup.

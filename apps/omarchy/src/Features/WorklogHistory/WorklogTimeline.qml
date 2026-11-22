@@ -9,12 +9,12 @@ Item {
     id: root
 
     property bool focused: false
-    property string selectedWorklogId
+    property string selectedKey
     readonly property int labelWidth: 132
     readonly property int durationWidth: 92
     readonly property color taskColor: theme.taskColor(catalog.selectedColorName)
 
-    signal selected(string id)
+    signal selected(string key)
     signal editTimesRequested(string id)
     signal moveRequested(string id)
     signal deleteRequested(string id)
@@ -58,7 +58,25 @@ Item {
         anchors.fill: parent
         anchors.topMargin: axis.visible ? axis.height + 1 : 0
         clip: true
-        model: history.days
+        // The store rebuilds the days once a minute while a worklog runs, and after reloads.
+        // Replacing the model resets the scroll, so the same task keeps its position.
+        property string shownTaskId
+        model: []
+        Component.onCompleted: {
+            shownTaskId = catalog.selectedTaskId
+            model = history.days
+        }
+        Connections {
+            target: history
+            function onDaysChanged() {
+                const sameTask = days.shownTaskId === catalog.selectedTaskId
+                const y = days.contentY
+                days.shownTaskId = catalog.selectedTaskId
+                days.model = history.days
+                if (sameTask)
+                    days.contentY = y
+            }
+        }
         spacing: 6
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar {}
@@ -90,7 +108,8 @@ Item {
                     Layout.rightMargin: 24
                     seconds: {
                         const day = dayBlock.modelData
-                        if (day.runningSeconds === 0 || tracking.runningWorklogId.length === 0)
+                        // Only the day that holds the running worklog ticks, and only while it still runs.
+                        if (day.runningWorklogId.length === 0 || day.runningWorklogId !== tracking.runningWorklogId)
                             return day.totalSeconds
                         return day.totalSeconds - day.runningSeconds + Math.max(0, tracking.elapsedSeconds - day.runningOffset)
                     }
@@ -106,9 +125,9 @@ Item {
                     labelWidth: root.labelWidth
                     durationWidth: root.durationWidth
                     barColor: root.taskColor
-                    selected: root.selectedWorklogId === modelData.worklogId
+                    selected: root.selectedKey === modelData.rowKey
                     focusedList: root.focused
-                    onClicked: root.selected(modelData.worklogId)
+                    onClicked: root.selected(modelData.rowKey)
                     onEditTimesRequested: root.editTimesRequested(modelData.worklogId)
                     onMoveRequested: root.moveRequested(modelData.worklogId)
                     onDeleteRequested: root.deleteRequested(modelData.worklogId)

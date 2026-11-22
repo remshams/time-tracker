@@ -76,14 +76,18 @@ RustTrackerGateway::RustTrackerGateway(QObject *parent) : QObject(parent) {
 }
 
 RustTrackerGateway::~RustTrackerGateway() {
-    // Nobody waits for queued answers any more; only the running call has to finish.
-    worker_.clear();
+    // Queued writes still reach the data source, so a stop pressed just before quitting
+    // isn't lost. Queued reads are skipped, because nobody waits for their answers.
+    stopping_ = true;
     worker_.waitForDone();
     tt_bridge_close(bridge_);
 }
 
-void RustTrackerGateway::run(Job job, Callback done) {
-    worker_.start([this, job = std::move(job), done = std::move(done)]() mutable {
+void RustTrackerGateway::run(Job job, Callback done, Call call) {
+    worker_.start([this, job = std::move(job), done = std::move(done), call]() mutable {
+        if (call == Call::Read && stopping_) {
+            return;
+        }
         const BridgeReply reply = job(bridge_);
         QMetaObject::invokeMethod(this, [done = std::move(done), reply]() { done(reply); }, Qt::QueuedConnection);
     });
@@ -105,7 +109,7 @@ void RustTrackerGateway::testConnection(const ConnectionTarget &target, Callback
         BridgeReply reply;
         tt_bridge_close(openChecked(target, &reply));
         return reply;
-    }, std::move(done));
+    }, std::move(done), Call::Read);
 }
 
 void RustTrackerGateway::refreshOverview(const QDateTime &dayStart, const QDateTime &dayEnd, const QDateTime &now,
@@ -127,13 +131,13 @@ void RustTrackerGateway::refreshOverview(const QDateTime &dayStart, const QDateT
             overview.insert(QStringLiteral("report"), report.data);
         }
         return BridgeReply::success(overview);
-    }, std::move(done));
+    }, std::move(done), Call::Read);
 }
 
 void RustTrackerGateway::history(const QString &taskId, const QString &cursor, Callback done) {
     run([task = utf8(taskId), page = utf8(cursor)](Bridge *&bridge) {
         return take(tt_bridge_history(bridge, task.constData(), optional(page)));
-    }, std::move(done));
+    }, std::move(done), Call::Read);
 }
 
 void RustTrackerGateway::createTask(const QString &name, const QDateTime &at, Callback done) {
@@ -167,7 +171,7 @@ void RustTrackerGateway::unarchiveTask(const QString &taskId, const QDateTime &a
 void RustTrackerGateway::previewInactiveTasks(int inactiveDays, const QDateTime &asOf, Callback done) {
     run([days = static_cast<uint32_t>(qMax(0, inactiveDays)), when = stamp(asOf)](Bridge *&bridge) {
         return take(tt_bridge_preview_inactive_tasks_at(bridge, days, when.constData()));
-    }, std::move(done));
+    }, std::move(done), Call::Read);
 }
 
 void RustTrackerGateway::archiveInactiveTasks(int inactiveDays, const QDateTime &asOf, Callback done) {
@@ -205,7 +209,7 @@ void RustTrackerGateway::correctWorklog(const QString &worklogId, const QString 
 void RustTrackerGateway::moveCandidates(const QString &sourceTaskId, const QString &query, Callback done) {
     run([task = utf8(sourceTaskId), text = utf8(query)](Bridge *&bridge) {
         return take(tt_bridge_move_candidates(bridge, task.constData(), text.constData()));
-    }, std::move(done));
+    }, std::move(done), Call::Read);
 }
 
 void RustTrackerGateway::moveWorklog(const QString &worklogId, const QString &expectedTaskId,

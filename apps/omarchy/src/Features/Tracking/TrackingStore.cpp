@@ -5,11 +5,20 @@
 #include "Contracts/TrackerGateway.h"
 #include "Shared/DisplayClock.h"
 
+namespace {
+// How long a tracking error stays at least.
+constexpr qint64 errorSeconds = 10;
+} // namespace
+
 TrackingStore::TrackingStore(TrackerGateway *gateway, DisplayClock *clock, QObject *parent)
     : QObject(parent), gateway_(gateway), clock_(clock) {
     connect(clock_, &DisplayClock::ticked, this, [this] {
         if (running_) {
             emit elapsedChanged();
+        }
+        // An error stays long enough to read and goes once a read showed the reloaded state.
+        if (!error_.isEmpty() && reloadedSinceError_ && errorSince_.secsTo(clock_->now()) >= errorSeconds) {
+            setError(QString());
         }
     });
 }
@@ -22,10 +31,7 @@ void TrackingStore::accept(const std::optional<WorklogItem> &running) {
          (running_->id != running->id || running_->start != running->start || running_->taskId != running->taskId));
     known_ = true;
     running_ = running;
-    // The error shows with the reload that follows the failed command and goes with the next one.
-    if (!error_.isEmpty() && ++readsSinceError_ > 1) {
-        setError(QString());
-    }
+    reloadedSinceError_ = true;
     if (changed) {
         emit stateChanged();
         emit elapsedChanged();
@@ -126,7 +132,8 @@ void TrackingStore::finish(const BridgeReply &reply, const QString &unconfirmed)
     setPending(false);
     if (!reply.ok) {
         setError(reply.userMessage(unconfirmed));
-        readsSinceError_ = 0;
+        errorSince_ = clock_->now();
+        reloadedSinceError_ = false;
     }
     emit refreshRequested();
 }

@@ -80,6 +80,7 @@ QVariantList WorklogHistoryStore::days() const {
     QVariantList entries;
     qint64 dayTotal = 0;
     // The running part of a day, which QML keeps current between rebuilds.
+    QString runningWorklogId;
     qint64 runningSeconds = 0;
     qint64 runningOffset = 0;
     QDate current;
@@ -89,6 +90,7 @@ QVariantList WorklogHistoryStore::days() const {
         }
         day.insert(QStringLiteral("label"), Format::dayLabel(current, today));
         day.insert(QStringLiteral("totalSeconds"), dayTotal);
+        day.insert(QStringLiteral("runningWorklogId"), runningWorklogId);
         day.insert(QStringLiteral("runningSeconds"), runningSeconds);
         day.insert(QStringLiteral("runningOffset"), runningOffset);
         day.insert(QStringLiteral("entries"), entries);
@@ -101,6 +103,7 @@ QVariantList WorklogHistoryStore::days() const {
             day = QVariantMap{{QStringLiteral("date"), part.day}};
             entries.clear();
             dayTotal = 0;
+            runningWorklogId.clear();
             runningSeconds = 0;
             runningOffset = 0;
         }
@@ -111,6 +114,7 @@ QVariantList WorklogHistoryStore::days() const {
         // length is the tracking timer minus this offset.
         const qint64 offset = part.worklog->start.secsTo(part.from);
         if (running) {
+            runningWorklogId = part.worklog->id;
             runningSeconds = seconds;
             runningOffset = offset;
         }
@@ -120,7 +124,11 @@ QVariantList WorklogHistoryStore::days() const {
                                                   : Format::clockTime(part.to);
         entries.append(QVariantMap{
             {QStringLiteral("worklogId"), part.worklog->id},
+            // A worklog past midnight has one row per day; the key tells those rows apart.
+            {QStringLiteral("rowKey"), part.worklog->id + QLatin1Char('@') + part.day.toString(Qt::ISODate)},
             {QStringLiteral("running"), running},
+            // Every part of a running worklog, also yesterday's, belongs to a worklog that can't be deleted.
+            {QStringLiteral("worklogRunning"), part.worklog->isRunning()},
             {QStringLiteral("startLabel"), Format::clockTime(part.from)},
             {QStringLiteral("endLabel"), endLabel},
             {QStringLiteral("seconds"), seconds},
