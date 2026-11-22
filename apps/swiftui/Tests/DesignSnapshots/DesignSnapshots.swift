@@ -303,10 +303,16 @@ private func renderQuickTrack(_ scenario: QuickTrackScenario, appearance: NSAppe
         bitmap = try inProcessImage(of: window)
     }
     let suffix = appearance == .darkAqua ? "dark" : "light"
-    let url = directory.appendingPathComponent("\(scenario.name)-\(suffix)\(flat ? "-flat" : "").png")
+    func snapshotURL(flat: Bool) -> URL {
+        directory.appendingPathComponent("\(scenario.name)-\(suffix)\(flat ? "-flat" : "").png")
+    }
+    let url = snapshotURL(flat: flat)
     guard let png = bitmap.representation(using: .png, properties: [:]) else {
         throw BridgeFailure(message: "AppKit couldn't encode the snapshot as a PNG.")
     }
+    // A capture of the other kind from an earlier run would show older code next to this one.
+    let other = snapshotURL(flat: !flat)
+    if FileManager.default.fileExists(atPath: other.path) { try FileManager.default.removeItem(at: other) }
     try png.write(to: url)
     print(url.path)
     window.orderOut(nil)
