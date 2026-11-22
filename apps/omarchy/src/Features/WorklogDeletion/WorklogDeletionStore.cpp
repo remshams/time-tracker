@@ -38,14 +38,15 @@ void WorklogDeletionStore::cancel() {
 }
 
 void WorklogDeletionStore::confirm() {
-    if (!canDelete()) {
+    if (!canDelete() || !original_) {
         return;
     }
+    const WorklogItem original = *original_;
     setError(QString());
     setPending(true);
     const int session = session_;
     QPointer<WorklogDeletionStore> self(this);
-    gateway_->deleteWorklog(original_->id, original_->taskId, original_->startText, original_->endText,
+    gateway_->deleteWorklog(original.id, original.taskId, original.startText, original.endText,
                             [self, session](const BridgeReply &reply) {
         if (!self) {
             return;

@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QList>
 #include <QStringList>
+#include <ranges>
 
 #include "Contracts/TrackerGateway.h"
 
@@ -21,10 +22,10 @@ public:
 
     // Answers the oldest open call to `method`. Returns false when there is none.
     bool respond(const QString &method, const BridgeReply &reply) {
-        for (int index = 0; index < calls.size(); ++index) {
-            if (calls[index].method == method && calls[index].done) {
-                Callback done = std::move(calls[index].done);
-                calls[index].done = nullptr;
+        for (Call &call : calls) {
+            if (call.method == method && call.done) {
+                Callback done = std::move(call.done);
+                call.done = nullptr;
                 done(reply);
                 return true;
             }
@@ -41,9 +42,9 @@ public:
     }
 
     QStringList lastArgs(const QString &method) const {
-        for (auto it = calls.crbegin(); it != calls.crend(); ++it) {
-            if (it->method == method) {
-                return it->args;
+        for (const Call &call : std::views::reverse(calls)) {
+            if (call.method == method) {
+                return call.args;
             }
         }
         return {};

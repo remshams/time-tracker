@@ -159,12 +159,18 @@ void WorklogCorrectionStore::save() {
         return;
     }
     const std::optional<Replacement> draft = replacement();
+    if (!original_ || !draft) {
+        return;
+    }
+    // A copy of the original, because the setters below may change the member the analyzer would check.
+    const WorklogItem original = *original_;
+    const Replacement &values = *draft;
     setError(QString());
     setPending(true);
     refreshCanSave();
     const int session = session_;
     QPointer<WorklogCorrectionStore> self(this);
-    gateway_->correctWorklog(original_->id, original_->startText, original_->endText, draft->startText, draft->endText,
+    gateway_->correctWorklog(original.id, original.startText, original.endText, values.startText, values.endText,
                              clock_->now(), [self, session](const BridgeReply &reply) {
         if (!self) {
             return;

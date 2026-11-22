@@ -95,7 +95,7 @@ void BulkTaskArchivingStore::acceptPreview(quint64 generation, int days, const Q
     }
     loading_ = false;
     if (reply.ok) {
-        for (const QJsonValue &value : reply.data.toObject().value(QStringLiteral("tasks")).toArray()) {
+        for (const auto &value : reply.data.toObject().value(QStringLiteral("tasks")).toArray()) {
             if (const std::optional<TaskItem> item = TaskItem::fromJson(value)) {
                 tasks_.append(QVariantMap{{QStringLiteral("id"), item->id},
                                           {QStringLiteral("name"), item->name},
