@@ -362,7 +362,8 @@ private func isScreenLocked() -> Bool {
 private func reportFlatSnapshots(_ files: [URL]) {
     let names = files.map { "  \($0.lastPathComponent)" }.joined(separator: "\n")
     let message = """
-        The screen was locked, so the window server didn't draw the snapshot window. These \(files.count) snapshots \
+        The screen was locked or the window server returned no image, so it didn't draw the snapshot window. \
+        These \(files.count) snapshots \
         were drawn in-process instead and have "-flat" in their names:
         \(names)
         The detail pane, the worklog history, the sidebar's daily total and bar, the Active/Archived picker, and \
@@ -371,7 +372,7 @@ private func reportFlatSnapshots(_ files: [URL]) {
         color dots in the list and the tracking pill are white, and in dark mode the task list and pill text is \
         dark on a dark background. Don't judge the task list, the tracking pill, glass, vibrancy, or contrast \
         against the glass from these snapshots. Tell the user that these checks were skipped because the screen \
-        was locked, or ask them to unlock the Mac and run the script again.
+        was locked or the capture failed, or ask them to unlock the Mac and run the script again.
 
         """
     FileHandle.standardError.write(Data(message.utf8))
