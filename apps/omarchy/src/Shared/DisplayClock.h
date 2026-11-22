@@ -9,7 +9,6 @@
 // redraw together. Tests pass their own time source and call tick() by hand.
 class DisplayClock : public QObject {
     Q_OBJECT
-    Q_PROPERTY(QDateTime now READ now NOTIFY ticked)
 public:
     using Source = std::function<QDateTime()>;
 

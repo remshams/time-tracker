@@ -62,7 +62,6 @@ private slots:
 
     void aRefreshFeedsEveryStore() {
         Fixture f;
-        QSignalSpy refreshed(&f.sync, &TrackerSync::refreshed);
         f.sync.refresh();
         f.answer(overview(worklogJson("w1", "a", "2026-11-10T11:00:00.000Z")));
         QVERIFY(f.catalog.loaded());
@@ -75,7 +74,6 @@ private slots:
         QCOMPARE(f.totals.secondsFor("a"), 600);
         QVERIFY(!f.tracking.stale());
         QCOMPARE(f.connection.status(), QStringLiteral("connected"));
-        QCOMPARE(refreshed.count(), 1);
     }
 
     void aRefreshWithIdleTrackingMakesTheStateKnown() {
@@ -212,7 +210,6 @@ private slots:
 
     void aFailedRefreshMarksTheStateStaleAndTheSourceUnavailable() {
         Fixture f;
-        QSignalSpy refreshed(&f.sync, &TrackerSync::refreshed);
         f.sync.refresh();
         f.answer(overview());
         f.sync.refresh();
@@ -221,7 +218,6 @@ private slots:
         QVERIFY(!f.tracking.available());
         QCOMPARE(f.connection.status(), QStringLiteral("unavailable"));
         QCOMPARE(f.connection.statusMessage(), QStringLiteral("Server unreachable"));
-        QCOMPARE(refreshed.count(), 1);
         // The last confirmed state stays visible.
         QVERIFY(f.catalog.loaded());
         QVERIFY(f.totals.known());

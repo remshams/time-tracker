@@ -35,9 +35,6 @@ public:
     // every write needs.
     Q_INVOKABLE void refresh(bool reloadHistory = false);
 
-signals:
-    void refreshed();
-
 private:
     void poll();
     void apply(const BridgeReply &reply, bool reloadHistory);

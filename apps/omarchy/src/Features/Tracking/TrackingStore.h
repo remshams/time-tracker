@@ -59,8 +59,6 @@ signals:
     void errorChanged();
     // A write finished, successfully or not; the task list must reload.
     void refreshRequested();
-    // A stop worked. The window announces it.
-    void stopped(const QString &taskId);
 
 private:
     void setPending(bool pending);

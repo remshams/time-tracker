@@ -1,6 +1,5 @@
 #include "Features/Tracking/TrackingStore.h"
 
-#include <QJsonObject>
 #include <QPointer>
 
 #include "Contracts/TrackerGateway.h"
@@ -78,18 +77,13 @@ void TrackingStore::stop() {
         return;
     }
     // Read before the setters below, because their signals could change running_.
-    const QString taskId = running_->taskId;
     const auto worklogId = running_->id;
     setError(QString());
     setPending(true);
     QPointer<TrackingStore> self(this);
-    gateway_->stopTracking(worklogId, clock_->now(), [self, taskId](const BridgeReply &reply) {
-        if (!self) {
-            return;
-        }
-        self->finish(reply, tr("The stop could not be confirmed. Check the timer before trying again."));
-        if (reply.ok && reply.data.toObject().value(QStringLiteral("didStop")).toBool()) {
-            emit self->stopped(taskId);
+    gateway_->stopTracking(worklogId, clock_->now(), [self](const BridgeReply &reply) {
+        if (self) {
+            self->finish(reply, tr("The stop could not be confirmed. Check the timer before trying again."));
         }
     });
 }

@@ -53,7 +53,6 @@ AppController::~AppController() = default;
 
 void AppController::expose(QQmlContext *context) {
     context->setContextProperty(QStringLiteral("theme"), theme_);
-    context->setContextProperty(QStringLiteral("clock"), clock_);
     context->setContextProperty(QStringLiteral("format"), format_);
     context->setContextProperty(QStringLiteral("connection"), connection_);
     context->setContextProperty(QStringLiteral("catalog"), catalog_);
