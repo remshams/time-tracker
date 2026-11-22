@@ -446,6 +446,10 @@ nonisolated final class TrackerWorker: TrackerClient, ReportClient, @unchecked S
         try await perform { try $0.currentBridge().moveCandidates(sourceTaskID: sourceTaskID, query: query) }
     }
 
+    func searchTasks(query: String) async throws -> [String] {
+        try await perform { try $0.currentBridge().searchTasks(query: query) }
+    }
+
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {
         try await perform {
             try $0.currentBridge().moveWorklog(expected: expected, destinationTaskID: destinationTaskID)

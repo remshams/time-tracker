@@ -1,0 +1,143 @@
+import AppKit
+import SwiftUI
+import TrackerClient
+
+/// Shows the Quick Track dialog in a floating panel over the current app.
+///
+/// The panel doesn't activate Time Tracker, so the main window stays where it is and the app in front stays in front.
+/// It still becomes the key window, so the search field gets the typed keys. The store decides when the dialog shows;
+/// this controller follows `QuickTrackStore.isPresented` and closes the dialog when the panel loses key status, for
+/// example after a click into another app.
+final class QuickTrackPanelController: NSObject, NSWindowDelegate {
+    private let store: QuickTrackStore
+    /// The configured menu shortcuts. The dialog runs the copy actions on the copy keys plus ⌘.
+    private let shortcuts: () -> MenuKeyboardShortcuts
+    private let panel: QuickTrackPanel
+    private let hostingView: QuickTrackHostingView
+    /// The top edge of the panel while it shows. The panel grows and shrinks downward from here.
+    private var top: CGFloat = 0
+
+    init(store: QuickTrackStore, shortcuts: @escaping () -> MenuKeyboardShortcuts) {
+        self.store = store
+        self.shortcuts = shortcuts
+        panel = QuickTrackPanel()
+        hostingView = QuickTrackHostingView(rootView: QuickTrackView(store: store))
+        super.init()
+        hostingView.sizingOptions = [.intrinsicContentSize]
+        hostingView.onSizeChange = { [weak self] in self?.fitToContent() }
+        panel.contentView = hostingView
+        panel.delegate = self
+        panel.commandKeyHandler = { [weak self] event in self?.copy(for: event) ?? false }
+        store.onReject = { NSSound.beep() }
+        Task { [weak self, store] in
+            for await isPresented in Observations({ store.isPresented }) {
+                guard let self else { return }
+                isPresented ? show() : hide()
+            }
+        }
+    }
+
+    /// The Quick Track shortcut opens the dialog, or closes it while it shows.
+    func toggle() {
+        store.isPresented ? store.close() : store.open()
+    }
+
+    private func show() {
+        guard !panel.isVisible else { return }
+        let screen = Self.screenWithPointer()
+        let visible = screen.visibleFrame
+        // Like Spotlight, the dialog sits a little above the middle of the screen.
+        top = visible.maxY - visible.height * QuickTrackLayout.topOffsetRatio
+        fitToContent(on: visible)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+    }
+
+    private func hide() {
+        guard panel.isVisible else { return }
+        panel.orderOut(nil)
+    }
+
+    private func fitToContent(on visible: NSRect? = nil) {
+        let area = visible ?? panel.screen?.visibleFrame ?? Self.screenWithPointer().visibleFrame
+        let size = hostingView.fittingSize
+        let origin = NSPoint(x: area.midX - size.width / 2, y: top - size.height)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+    }
+
+    private static func screenWithPointer() -> NSScreen {
+        let pointer = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main
+            ?? NSScreen.screens[0]
+    }
+
+    /// Runs a copy action when `event` is a copy key plus ⌘, and reports whether it handled the event. ⌘C with text
+    /// selected in the search field is left to the field, which copies the text.
+    private func copy(for event: NSEvent) -> Bool {
+        guard let pressed = MenuShortcut(event: event) else { return false }
+        let configured = shortcuts()
+        let copyActions: [MenuShortcutAction] = [.copyName, .copyExact, .copyRounded]
+        let action = copyActions.first { action in
+            let shortcut = configured[action]
+            return MenuShortcut(key: shortcut.key, modifiers: shortcut.modifiers.union(.command)) == pressed
+        }
+        guard let action else { return false }
+        if pressed == MenuShortcut(key: "c", modifiers: .command), hasSelectedSearchText { return false }
+        if let value = store.copyValue(action) { QuickTrackPasteboard.copy(value) } else { NSSound.beep() }
+        return true
+    }
+
+    private var hasSelectedSearchText: Bool {
+        guard let editor = panel.firstResponder as? NSTextView else { return false }
+        return editor.selectedRange().length > 0
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // A click outside the dialog or a switch to another app takes the key status away.
+        store.close()
+    }
+}
+
+/// A borderless, non-activating panel that can still become the key window.
+private final class QuickTrackPanel: NSPanel {
+    init() {
+        super.init(
+            contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            backing: .buffered, defer: true)
+        level = .floating
+        // The dialog appears on the current Space, also over an app in full screen.
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        isFloatingPanel = true
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = false
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        isMovable = false
+        animationBehavior = .utilityWindow
+        isReleasedWhenClosed = false
+        setAccessibilityIdentifier("quick-track.panel")
+        setAccessibilityLabel("Quick Track")
+    }
+
+    /// Gets each key press with ⌘ before the search field and the app's menus do, and returns whether it handled it.
+    var commandKeyHandler: ((NSEvent) -> Bool)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.modifierFlags.contains(.command), commandKeyHandler?(event) == true { return }
+        super.sendEvent(event)
+    }
+}
+
+/// Reports changes of the SwiftUI content's size, so the panel can follow it.
+private final class QuickTrackHostingView: NSHostingView<QuickTrackView> {
+    var onSizeChange: (() -> Void)?
+
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        onSizeChange?()
+    }
+}

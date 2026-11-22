@@ -99,6 +99,8 @@
 		745BDF4445457BB07CA3C29C /* WorklogUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */; };
 		B7C4923B11B8BB1AF3B416C2 /* TrackerUITestAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC884A44C0C6D93268EC277 /* TrackerUITestAssertions.swift */; };
 		F70000000000000000000001 /* DelayedProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000002 /* DelayedProgress.swift */; };
+		000987FB1764E22ABAD0069E /* QuickTrackPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */; };
+		687268B1AB9067BF07B092E5 /* QuickTrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -209,6 +211,8 @@
 		32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogUITestSupport.swift; sourceTree = "<group>"; };
 		CEC884A44C0C6D93268EC277 /* TrackerUITestAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerUITestAssertions.swift; sourceTree = "<group>"; };
 		F70000000000000000000002 /* DelayedProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayedProgress.swift; sourceTree = "<group>"; };
+		0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackPanelController.swift; sourceTree = "<group>"; };
+		0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -372,6 +376,7 @@
 				CEE7A060F0949D596710891F /* WorklogMove */,
 				2644D45AE1FF02C7DD9E6EDC /* WorklogDeletion */,
 				DC27D51D3BAB4404B6E435C9 /* Settings */,
+				EA3138C5593D2DCAFEBE7DF2 /* QuickTrack */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -738,6 +743,15 @@
 			path = ProgressPresentation;
 			sourceTree = "<group>";
 		};
+		EA3138C5593D2DCAFEBE7DF2 /* QuickTrack */ = {
+			isa = PBXGroup;
+			children = (
+				0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */,
+				0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */,
+			);
+			path = QuickTrack;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -857,6 +871,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				687268B1AB9067BF07B092E5 /* QuickTrackView.swift in Sources */,
+				000987FB1764E22ABAD0069E /* QuickTrackPanelController.swift in Sources */,
 				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */,
 				B8C0B64849481F9C0CB43B5D /* WorklogDeletionView.swift in Sources */,
