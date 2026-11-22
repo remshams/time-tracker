@@ -20,6 +20,8 @@ enum Spacing {
 enum CornerRadius {
     static let small: CGFloat = 4
     static let medium: CGFloat = 8
+    /// A floating panel, such as the Quick Track dialog.
+    static let large: CGFloat = 16
 }
 
 /// Square frame sizes for icons and the controls that hold one, in points.
@@ -61,6 +63,8 @@ enum TextRole {
     /// The selected task's name at the top of the detail.
     static let display = Font.system(size: 26, weight: .semibold)
     static let sheetTitle = Font.title2.bold()
+    /// The Quick Track dialog's search field, which is its main control.
+    static let quickTrackSearch = Font.title2
     static let sectionTitle = Font.title3.weight(.semibold)
     /// A short line that stands in for missing content, such as "Select a task".
     static let placeholder = Font.title3
@@ -93,6 +97,8 @@ enum Emphasis {
     /// A halo around a marker.
     static let halo = 0.35
     static let disabled = 0.5
+    /// An enabled element at full strength, the counterpart of `disabled`.
+    static let full = 1.0
     /// A finished worklog's bar while its row isn't hovered.
     static let restingBar = 0.82
     /// The fill under the hatching of a running worklog's bar.
