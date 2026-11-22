@@ -7,6 +7,7 @@
 #include "Features/DailyTotals/DailyTotalsStore.h"
 #include "Features/TaskCatalog/TaskCatalogStore.h"
 #include "Features/TaskCreation/TaskCreationStore.h"
+#include "Features/TaskRename/TaskRenameStore.h"
 #include "Features/Tracking/TrackingStore.h"
 #include "Features/WorklogHistory/WorklogHistoryStore.h"
 #include "Shared/DisplayClock.h"
@@ -22,9 +23,11 @@ AppController::AppController(TrackerGateway *gateway, Theme *theme, QObject *par
       totals_(new DailyTotalsStore(catalog_, tracking_, clock_, this)),
       history_(new WorklogHistoryStore(gateway_, catalog_, clock_, this)),
       sync_(new TrackerSync(gateway_, clock_, {connection_, catalog_, tracking_, totals_, history_}, 30000, this)),
-      taskCreation_(new TaskCreationStore(gateway_, catalog_, clock_, this)) {
+      taskCreation_(new TaskCreationStore(gateway_, catalog_, clock_, this)),
+      taskRename_(new TaskRenameStore(gateway_, catalog_, clock_, this)) {
     // Every write is followed by a read, whether it worked or not.
     connect(taskCreation_, &TaskCreationStore::refreshRequested, this, [this] { sync_->refresh(true); });
+    connect(taskRename_, &TaskRenameStore::refreshRequested, this, [this] { sync_->refresh(true); });
 }
 
 AppController::~AppController() = default;
@@ -40,6 +43,7 @@ void AppController::expose(QQmlContext *context) {
     context->setContextProperty(QStringLiteral("history"), history_);
     context->setContextProperty(QStringLiteral("sync"), sync_);
     context->setContextProperty(QStringLiteral("taskCreation"), taskCreation_);
+    context->setContextProperty(QStringLiteral("taskRename"), taskRename_);
 }
 
 void AppController::start() {
