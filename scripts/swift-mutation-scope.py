@@ -278,6 +278,49 @@ REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
         ("Features/TaskCatalog/TaskCatalogTests.swift",),
         ("Features/TaskCatalog/TaskOrderTests.swift", "Features/TaskCatalog/TaskCatalogTests.swift"),
     ),
+    (
+        "The fake client answers the Quick Track task search",
+        (
+            (
+                "        case candidates(source: String, query: String)\n",
+                "        case candidates(source: String, query: String)\n        case search(query: String)\n",
+            ),
+            (
+                "        case candidates([WorklogMoveCandidate])\n",
+                "        case candidates([WorklogMoveCandidate])\n        case found([String])\n",
+            ),
+            (
+                "        func candidates(_ values: [WorklogMoveCandidate]) { complete(.success(.candidates(values))) }\n",
+                "        func candidates(_ values: [WorklogMoveCandidate]) { complete(.success(.candidates(values))) }\n"
+                "        func found(_ taskIDs: [String]) { complete(.success(.found(taskIDs))) }\n",
+            ),
+            (
+                "    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {\n",
+                "    func searchTasks(query: String) async throws -> [String] {\n"
+                "        let operation = Operation.search(query: query)\n"
+                "        guard case .found(let value) = try await perform(operation) else {\n"
+                "            throw wrongReply(\"search\", operation: operation)\n"
+                "        }\n"
+                "        return value\n"
+                "    }\n"
+                "    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {\n",
+            ),
+        ),
+        None,
+        (
+            (
+                "    func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate]\n",
+                "    func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate]\n"
+                "    /// The IDs of the active tasks whose names match `query`, most recent activity first (ADR 0009).\n"
+                "    func searchTasks(query: String) async throws -> [String]\n",
+            ),
+        ),
+        ("Features/QuickTrack/QuickTrackStoreTests.swift",),
+        (
+            "Features/QuickTrack/QuickTrackStoreTests.swift", "Features/QuickTrack/QuickTrackCopyTests.swift",
+            "Features/QuickTrack/QuickTrackCreationTests.swift",
+        ),
+    ),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
