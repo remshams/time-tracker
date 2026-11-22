@@ -58,6 +58,8 @@ CHANGE_GUARD = "Shared/ChangeGuardedStore.swift"
 WRITE_FAILURE = "Shared/WriteFailure.swift"
 PRESENTATION_GATE = "Shared/PresentationGate.swift"
 DISPLAY_CLOCK = "Shared/DisplayClock.swift"
+QUICK_TRACK_STORE = "Features/QuickTrack/QuickTrackStore.swift"
+QUICK_TRACK_CONTENT = "Features/QuickTrack/QuickTrackContent.swift"
 
 # Map each suite's assertions to complete files, including the code that creates and syncs its stores.
 # Update this map when a suite gains assertions about another production component.
@@ -165,6 +167,19 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, HISTORY, TRACKING, CATALOG, CONNECTION,
     ],
     "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY, CATALOG, CONNECTION],
+    "Features/QuickTrack/QuickTrackContentTests.swift": [QUICK_TRACK_CONTENT, MENU_SOURCES, MENU_DURATION, NAME_POLICY],
+    "Features/QuickTrack/QuickTrackStoreTests.swift": [
+        FEATURES, SYNC, TRACKING_AVAILABILITY, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, MENU_SOURCES, TRACKING,
+        CATALOG, CONNECTION, TOTALS, NAME_POLICY,
+    ],
+    "Features/QuickTrack/QuickTrackCopyTests.swift": [
+        FEATURES, SYNC, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, MENU_SOURCES, MENU_CLIPBOARD, MENU_BAR_STORE,
+        TRACKING, CATALOG, CONNECTION, TOTALS,
+    ],
+    "Features/QuickTrack/QuickTrackCreationTests.swift": [
+        FEATURES, SYNC, TRACKING_AVAILABILITY, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, MENU_SOURCES, NAME_POLICY,
+        WRITE_FAILURE, TRACKING, CATALOG, CONNECTION,
+    ],
     "Features/WorklogHistory/WorklogDaysTests.swift": [
         WORKLOG_DAYS, HOUR_AXIS, FEATURES, SYNC, HISTORY, TRACKING, TOTALS, CATALOG, CONNECTION,
     ],
