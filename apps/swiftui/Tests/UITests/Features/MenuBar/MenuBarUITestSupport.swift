@@ -56,15 +56,14 @@ extension TrackerUITestCase {
         menuTask(task).menuItems["menu.copy.\(task.id).\(action.rawValue)"]
     }
 
-    func copyFromMenu(_ action: MenuCopyAction, task: FixtureTask, keyboard: XCUIApplication? = nil) {
+    func copyFromMenu(_ action: MenuCopyAction, task: FixtureTask) {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        activateMenuCopy(action, task: task, keyboard: keyboard)
+        activateMenuCopy(action, task: task)
     }
 
-    func activateMenuCopy(_ action: MenuCopyAction, task: FixtureTask, keyboard: XCUIApplication? = nil) {
-        let keyboard: XCUIApplication = keyboard ?? app
+    func activateMenuCopy(_ action: MenuCopyAction, task: FixtureTask) {
         let item = copyMenuItem(action, task: task)
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
@@ -73,11 +72,11 @@ extension TrackerUITestCase {
             return tracking.exists && tracking.isEnabled
         }
         let clipboardBefore = NSPasteboard.general.changeCount
-        keyboard.typeKey(.rightArrow, modifierFlags: [])
+        app.typeKey(.rightArrow, modifierFlags: [])
         for _ in 0..<(action.stepsAfterTracking - (trackingEnabled ? 0 : 1)) {
-            keyboard.typeKey(.downArrow, modifierFlags: [])
+            app.typeKey(.downArrow, modifierFlags: [])
         }
-        keyboard.typeKey(.return, modifierFlags: [])
+        app.typeKey(.return, modifierFlags: [])
         waitUntil("The native copy action closes the menu") {
             !self.app.menuItems["Open Time Tracker"].exists
         }

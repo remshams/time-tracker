@@ -42,9 +42,13 @@ class MenuBarUITests: TrackerUITestCase {
         assertRunning(task)
         assertFinderStaysFrontmost("after starting from the keyboard")
 
+        // Only keys go through Finder: XCUITest activates Time Tracker before it clicks or hovers one of its elements.
         withRestoredClipboard {
             openStatusMenu(from: finder)
-            copyFromMenu(.copyName, task: task, keyboard: finder)
+            // The running task row, its Stop tracking item, then Copy task name.
+            for key in [XCUIKeyboardKey.downArrow, .rightArrow, .downArrow, .return] {
+                finder.typeKey(key, modifierFlags: [])
+            }
             assertClipboard(task.name)
         }
         assertFinderStaysFrontmost("after copying from the keyboard")
@@ -55,9 +59,10 @@ class MenuBarUITests: TrackerUITestCase {
         assertFinderStaysFrontmost("after closing with the shortcut")
 
         openStatusMenu(from: finder)
-        // Hover and Return instead of click(), which could activate the app by itself.
-        app.menuItems["Open Time Tracker"].hover()
-        finder.typeKey(.return, modifierFlags: [])
+        // Up from the top selects Quit Time Tracker, and the next Up selects Open Time Tracker.
+        for key in [XCUIKeyboardKey.upArrow, .upArrow, .return] {
+            finder.typeKey(key, modifierFlags: [])
+        }
         waitUntil("Open Time Tracker brings the app forward") { self.app.state == .runningForeground }
     }
 
