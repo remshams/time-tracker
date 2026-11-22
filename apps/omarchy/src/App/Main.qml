@@ -208,18 +208,9 @@ ApplicationWindow {
                     onRenameRequested: taskId => window.rename(taskId)
                     onArchiveRequested: taskId => window.archive(taskId)
                     onCreateRequested: createDialog.openNew()
-                    onEditTimesRequested: id => {
-                        detail.selectedWorklogId = id
-                        correctionDialog.openFor(id)
-                    }
-                    onMoveRequested: id => {
-                        detail.selectedWorklogId = id
-                        moveDialog.openFor(id)
-                    }
-                    onDeleteRequested: id => {
-                        detail.selectedWorklogId = id
-                        deletionDialog.openFor(id)
-                    }
+                    onEditTimesRequested: id => correctionDialog.openFor(id)
+                    onMoveRequested: id => moveDialog.openFor(id)
+                    onDeleteRequested: id => deletionDialog.openFor(id)
                 }
             }
 

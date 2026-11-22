@@ -394,6 +394,16 @@ private slots:
         QCOMPARE(f.gateway.count("connectTo"), 1);
     }
 
+    void aFailedReadMarksTheTotalsAsCached() {
+        Fixture f;
+        f.sync.refresh();
+        f.answer(overview());
+        f.sync.refresh();
+        f.answer(BridgeReply::failure("Server unreachable"));
+        QVERIFY(f.totals.known());
+        QVERIFY(f.totals.cached());
+    }
+
     void thePollDoesNotRunBeforeStart() {
         Fixture f(10);
         QTest::qWait(60);

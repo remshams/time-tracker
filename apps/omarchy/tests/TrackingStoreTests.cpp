@@ -87,14 +87,27 @@ private slots:
         QCOMPARE(availability.count(), 0);
     }
 
-    void anErrorStaysThroughTheReloadAndGoesWithTheNextRead() {
+    void anErrorStaysTenSecondsAndGoesAfterTheReload() {
         Fixture f;
         f.store.start("t1");
         f.gateway.respond("startTracking", BridgeReply::failure("Task is archived"));
-        // The reload that follows the failed command shows the error with the reloaded state.
+        // A read that was already queued, then the reload after the command.
         f.store.accept(std::nullopt);
+        f.store.accept(std::nullopt);
+        f.test.advanceTo("2026-11-10T12:00:09.000Z");
+        QCOMPARE(f.store.error(), QStringLiteral("Task is archived"));
+        f.test.advanceTo("2026-11-10T12:00:10.000Z");
+        QVERIFY(f.store.error().isEmpty());
+    }
+
+    void anErrorStaysUntilAReadShowsTheReloadedState() {
+        Fixture f;
+        f.store.start("t1");
+        f.gateway.respond("startTracking", BridgeReply::failure("Task is archived"));
+        f.test.advanceTo("2026-11-10T12:01:00.000Z");
         QCOMPARE(f.store.error(), QStringLiteral("Task is archived"));
         f.store.accept(std::nullopt);
+        f.test.advanceTo("2026-11-10T12:01:01.000Z");
         QVERIFY(f.store.error().isEmpty());
     }
 

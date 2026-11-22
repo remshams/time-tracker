@@ -83,6 +83,27 @@ private slots:
         QVERIFY(!await([&](const Done &done) { gateway.createTask("Name", ago(0), done); }).ok);
     }
 
+    void quittingStillRunsQueuedWritesAndSkipsQueuedReads() {
+        int readAnswers = 0;
+        {
+            RustTrackerGateway gateway;
+            QVERIFY(await([&](const Done &done) { gateway.connectTo({false, QString()}, done); }).ok);
+            // Queued behind each other; the gateway goes away before any of them runs.
+            gateway.refreshOverview(ago(86400), ago(-86400), ago(0), [&](const BridgeReply &) { ++readAnswers; });
+            gateway.createTask(QStringLiteral("Written while quitting"), ago(60), [](const BridgeReply &) {});
+            gateway.history(QStringLiteral("task"), QString(), [&](const BridgeReply &) { ++readAnswers; });
+        }
+        QCOMPARE(readAnswers, 0);
+        RustTrackerGateway reopened;
+        QVERIFY(await([&](const Done &done) { reopened.connectTo({false, QString()}, done); }).ok);
+        const Overview current = Overview::fromJson(overview(reopened).data);
+        bool written = false;
+        for (const TaskItem &task : current.tasks.value_or(QList<TaskItem>())) {
+            written = written || task.name == QStringLiteral("Written while quitting");
+        }
+        QVERIFY(written);
+    }
+
     void connectingTheLocalDatabaseCreatesItInTheDataHome() {
         RustTrackerGateway gateway;
         const BridgeReply reply = await([&](const Done &done) { gateway.connectTo({false, QString()}, done); });

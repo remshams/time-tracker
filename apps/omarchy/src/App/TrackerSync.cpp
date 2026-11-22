@@ -100,6 +100,8 @@ void TrackerSync::apply(const BridgeReply &reply, bool reloadHistory) {
         }
     } else {
         stores_.tracking->setStale(true);
+        // The shown totals are now the last confirmed ones.
+        stores_.totals->accept(std::nullopt);
         stores_.connection->markUnavailable(reply.error);
     }
     if (again_) {

@@ -131,7 +131,7 @@ Item {
         }
         MenuItem {
             text: qsTr("Delete")
-            enabled: !row.running
+            enabled: !row.modelData.worklogRunning
             onTriggered: row.deleteRequested()
         }
     }

@@ -73,5 +73,6 @@ private:
     bool pending_ = false;
     bool stale_ = false;
     QString error_;
-    int readsSinceError_ = 0;
+    QDateTime errorSince_;
+    bool reloadedSinceError_ = false;
 };

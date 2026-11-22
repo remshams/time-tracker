@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QThreadPool>
+#include <atomic>
 #include <functional>
 
 #include "Contracts/TrackerGateway.h"
@@ -42,8 +43,10 @@ public:
 
 private:
     using Job = std::function<BridgeReply(Bridge *&bridge)>;
-    void run(Job job, Callback done);
+    enum class Call { Read, Write };
+    void run(Job job, Callback done, Call call = Call::Write);
 
     QThreadPool worker_;
     Bridge *bridge_ = nullptr; // Touched only by jobs on `worker_`.
+    std::atomic_bool stopping_ = false;
 };
