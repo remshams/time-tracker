@@ -41,6 +41,10 @@ class MenuBarUITests: TrackerUITestCase {
         finder.typeKey(.return, modifierFlags: [])
         assertRunning(task)
         assertFinderStaysFrontmost("after starting from the keyboard")
+        // The menu is built when it opens. Wait until the app has reloaded after the start, so the next menu lists
+        // the task under Today with Stop tracking enabled.
+        let stop = app.buttons["Stop tracking"]
+        waitUntil("The start request finishes") { stop.exists && stop.isEnabled }
 
         // Only keys go through Finder: XCUITest activates Time Tracker before it clicks or hovers one of its elements.
         withRestoredClipboard {
