@@ -21,7 +21,8 @@ TrackerDialog {
 
     onOpened: {
         field.forceActiveFocus()
-        field.selectAll()
+        // Typing replaces the old name; the text binding lands after the dialog opens.
+        Qt.callLater(field.selectAll)
     }
     onAccepted: taskRename.submit()
 

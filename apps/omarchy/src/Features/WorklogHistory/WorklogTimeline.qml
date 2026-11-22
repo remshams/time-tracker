@@ -134,6 +134,8 @@ Item {
         anchors.margins: 32
         visible: history.loaded && history.count === 0 && history.error.length === 0
         text: catalog.selectedArchived ? qsTr("No worklogs.") : qsTr("No worklogs yet. Space starts tracking this task.")
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
         level: 1
     }
     Txt {
@@ -143,6 +145,8 @@ Item {
         anchors.margins: 32
         visible: history.error.length > 0
         text: history.error
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
         color: theme.danger
         wrapMode: Text.Wrap
     }

@@ -7,7 +7,7 @@ Item {
     implicitHeight: 3
 
     Accessible.role: Accessible.Indicator
-    Accessible.name: totals.leaderTaskId.length > 0 ? qsTr("Today: %1 has %2 percent").arg(catalog.nameOf(totals.leaderTaskId)).arg(totals.leaderPercent) : qsTr("No time today")
+    Accessible.name: totals.leaderTaskId.length > 0 ? qsTr("Today: %1 has %2 percent").arg((catalog.names[totals.leaderTaskId] ?? "")).arg(totals.leaderPercent) : qsTr("No time today")
 
     Rectangle {
         anchors.fill: parent

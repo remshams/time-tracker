@@ -22,9 +22,9 @@ Rectangle {
         if (!tracking.known)
             return qsTr("Tracking unavailable")
         if (tracking.running)
-            return qsTr("Stop %1, running for %2").arg(catalog.nameOf(tracking.runningTaskId)).arg(format.duration(tracking.elapsedSeconds))
+            return qsTr("Stop %1, running for %2").arg((catalog.names[tracking.runningTaskId] ?? "")).arg(format.duration(tracking.elapsedSeconds))
         if (shownTaskId.length > 0)
-            return qsTr("Start %1").arg(catalog.nameOf(shownTaskId))
+            return qsTr("Start %1").arg((catalog.names[shownTaskId] ?? ""))
         return qsTr("Nothing running")
     }
     Accessible.onPressAction: if (root.canAct) tracking.toggle(root.shownTaskId)
@@ -92,9 +92,9 @@ Rectangle {
                     if (!tracking.known)
                         return connection.status === "connecting" ? qsTr("Connecting") : qsTr("Unavailable")
                     if (tracking.running)
-                        return catalog.nameOf(tracking.runningTaskId)
+                        return (catalog.names[tracking.runningTaskId] ?? "")
                     if (root.shownTaskId.length > 0)
-                        return catalog.nameOf(root.shownTaskId)
+                        return (catalog.names[root.shownTaskId] ?? "")
                     return catalog.activeCount === 0 ? qsTr("No tasks yet") : qsTr("Nothing running")
                 }
                 font.pixelSize: 16

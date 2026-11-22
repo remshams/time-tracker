@@ -54,7 +54,7 @@ TrackerDialog {
         }
         Txt {
             Layout.fillWidth: true
-            text: catalog.nameOf(worklogCorrection.taskId)
+            text: (catalog.names[worklogCorrection.taskId] ?? "")
             font.bold: true
         }
     }
