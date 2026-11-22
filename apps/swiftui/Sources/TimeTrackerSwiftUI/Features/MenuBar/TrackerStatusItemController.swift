@@ -89,7 +89,8 @@ final class TrackerStatusItemController: NSObject {
         if let shownMenu {
             shownMenu.menu.cancelTracking()
         } else {
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            // Don't activate the app: that would bring the main window in front of the app the user works in.
+            // The menu takes the keyboard while it tracks.
             showNativeMenu()
         }
     }
