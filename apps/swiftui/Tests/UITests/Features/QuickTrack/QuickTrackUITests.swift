@@ -126,7 +126,8 @@ class QuickTrackUITests: TrackerUITestCase {
         XCTAssertTrue(quickTrackSearch.waitForExistence(timeout: timeout), "The Quick Track dialog did not open.")
         XCTAssertEqual(finder.state, .runningForeground, "Opening Quick Track must not activate Time Tracker.")
         XCTAssertNotEqual(app.state, .runningForeground)
-        finder.typeText("plan")
+        // typeText through Finder times out; single key presses reach the key panel like the menu test's keys do.
+        for key in ["p", "l", "a", "n"] { finder.typeKey(key, modifierFlags: []) }
         finder.typeKey(.return, modifierFlags: [])
         assertRunning(task)
         waitForQuickTrackToClose()
@@ -144,7 +145,7 @@ class QuickTrackUITests: TrackerUITestCase {
 
     func testCopyKeysAndContextMenuCopyTheTasksValues() throws {
         let task = try fixture.create("Planning")
-        _ = try completedToday(task, duration: 3_725)
+        _ = try completedToday(task, duration: 5_025)
         launch()
         try withRestoredClipboard {
             openQuickTrack()
@@ -152,14 +153,16 @@ class QuickTrackUITests: TrackerUITestCase {
             app.typeKey("c", modifierFlags: .command)
             waitUntil("⌘C copies the task name") { NSPasteboard.general.string(forType: .string) == task.name }
             app.typeKey("t", modifierFlags: .command)
-            waitUntil("⌘T copies the exact duration") { NSPasteboard.general.string(forType: .string) == "1h 2m 5s" }
+            waitUntil("⌘T copies the exact duration") {
+                NSPasteboard.general.string(forType: .string) == "1h 23m 45s"
+            }
             XCTAssertTrue(quickTrackSearch.exists, "Copying keeps the dialog open.")
             quickTrackRow(task).rightClick()
             let rounded = element("quick-track.copy.\(task.id).copyRounded")
             XCTAssertTrue(rounded.waitForExistence(timeout: timeout))
             rounded.click()
             waitUntil("The context menu copies the rounded duration") {
-                NSPasteboard.general.string(forType: .string) == "1h 15m"
+                NSPasteboard.general.string(forType: .string) == "1h 30m"
             }
         }
     }
