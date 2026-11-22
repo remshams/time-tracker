@@ -42,7 +42,7 @@ public struct MenuShortcut: Codable, Equatable, Hashable, Sendable {
         if modifiers.contains(.option) { text += "⌥" }
         if modifiers.contains(.shift) { text += "⇧" }
         if modifiers.contains(.command) { text += "⌘" }
-        return text + key.uppercased()
+        return text + (isSpace ? "Space" : key.uppercased())
     }
 
     private enum CodingKeys: String, CodingKey { case key, modifiers }
@@ -56,17 +56,26 @@ public struct MenuShortcut: Codable, Equatable, Hashable, Sendable {
 
     var normalized: Self { Self(key: key, modifiers: modifiers) }
 
+    public var isSpace: Bool { key == " " }
+
     var hasSupportedKey: Bool {
         key.unicodeScalars.count == 1 && key.unicodeScalars.allSatisfy { (33...126).contains($0.value) }
     }
 }
 
 public enum MenuShortcutAction: String, CaseIterable, Codable, Sendable {
-    case openMenu, moveDown, moveUp, copyName, copyExact, copyRounded
+    case openMenu, openQuickTrack, moveDown, moveUp, copyName, copyExact, copyRounded
+
+    /// Global actions work in any app. They need a Command, Control or Option modifier.
+    public var isGlobal: Bool { self == .openMenu || self == .openQuickTrack }
+
+    /// Only Quick Track accepts Space, which the menu bindings reserve for the native menu.
+    var allowsSpace: Bool { self == .openQuickTrack }
 
     public var title: String {
         switch self {
         case .openMenu: return "Open menu"
+        case .openQuickTrack: return "Open Quick Track"
         case .moveDown: return "Move down"
         case .moveUp: return "Move up"
         case .copyName: return "Copy task name"
@@ -78,6 +87,7 @@ public enum MenuShortcutAction: String, CaseIterable, Codable, Sendable {
 
 public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
     public var openMenu: MenuShortcut
+    public var openQuickTrack: MenuShortcut
     public var moveDown: MenuShortcut
     public var moveUp: MenuShortcut
     public var copyName: MenuShortcut
@@ -88,6 +98,7 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
 
     public init(
         openMenu: MenuShortcut = MenuShortcut(key: "t", modifiers: [.control, .option]),
+        openQuickTrack: MenuShortcut = MenuShortcut(key: " ", modifiers: [.control, .option]),
         moveDown: MenuShortcut = MenuShortcut(key: "j"),
         moveUp: MenuShortcut = MenuShortcut(key: "k"),
         copyName: MenuShortcut = MenuShortcut(key: "c"),
@@ -95,6 +106,7 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         copyRounded: MenuShortcut = MenuShortcut(key: "s")
     ) {
         self.openMenu = openMenu
+        self.openQuickTrack = openQuickTrack
         self.moveDown = moveDown
         self.moveUp = moveUp
         self.copyName = copyName
@@ -106,6 +118,7 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         get {
             switch action {
             case .openMenu: return openMenu
+            case .openQuickTrack: return openQuickTrack
             case .moveDown: return moveDown
             case .moveUp: return moveUp
             case .copyName: return copyName
@@ -116,6 +129,7 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         set {
             switch action {
             case .openMenu: openMenu = newValue
+            case .openQuickTrack: openQuickTrack = newValue
             case .moveDown: moveDown = newValue
             case .moveUp: moveUp = newValue
             case .copyName: copyName = newValue
@@ -132,15 +146,18 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         var bindings: [MenuShortcut: MenuShortcutAction] = [:]
         for action in MenuShortcutAction.allCases {
             let shortcut = self[action].normalized
-            if !shortcut.hasSupportedKey {
+            if !(shortcut.hasSupportedKey || (action.allowsSpace && shortcut.isSpace)) {
                 errors.append(
-                    "\(action.title) needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved.")
+                    action.allowsSpace
+                        ? "\(action.title) needs one printable ASCII key or Space. Arrow keys, Return and Escape are reserved."
+                        : "\(action.title) needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved."
+                )
             }
             if !shortcut.modifiers.subtracting(.allowed).isEmpty {
                 errors.append("\(action.title) only supports Command, Control, Option and Shift modifiers.")
             }
-            if action == .openMenu && shortcut.modifiers.intersection([.command, .control, .option]).isEmpty {
-                errors.append("Open menu needs Command, Control or Option to avoid capturing normal typing.")
+            if action.isGlobal && shortcut.modifiers.intersection([.command, .control, .option]).isEmpty {
+                errors.append("\(action.title) needs Command, Control or Option to avoid capturing normal typing.")
             }
             if let previous = bindings[shortcut] {
                 errors.append("\(action.title) and \(previous.title) use the same shortcut, \(shortcut.displayText).")
@@ -156,18 +173,25 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         includingGlobal: Bool = false
     ) -> MenuShortcutAction? {
         let shortcut = MenuShortcut(key: key, modifiers: modifiers)
-        guard shortcut.hasSupportedKey, modifiers.subtracting(.allowed).isEmpty else { return nil }
+        guard shortcut.hasSupportedKey || shortcut.isSpace, modifiers.subtracting(.allowed).isEmpty else {
+            return nil
+        }
         return MenuShortcutAction.allCases.first {
-            (includingGlobal || $0 != .openMenu) && self[$0].normalized == shortcut
+            (includingGlobal || !$0.isGlobal) && (!shortcut.isSpace || $0.allowsSpace)
+                && self[$0].normalized == shortcut
         }
     }
 
-    private enum CodingKeys: String, CodingKey { case openMenu, moveDown, moveUp, copyName, copyExact, copyRounded }
+    private enum CodingKeys: String, CodingKey {
+        case openMenu, openQuickTrack, moveDown, moveUp, copyName, copyExact, copyRounded
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             openMenu: try container.decode(MenuShortcut.self, forKey: .openMenu),
+            openQuickTrack: try container.decodeIfPresent(MenuShortcut.self, forKey: .openQuickTrack)
+                ?? Self.defaults.openQuickTrack,
             moveDown: try container.decode(MenuShortcut.self, forKey: .moveDown),
             moveUp: try container.decode(MenuShortcut.self, forKey: .moveUp),
             copyName: try container.decode(MenuShortcut.self, forKey: .copyName),

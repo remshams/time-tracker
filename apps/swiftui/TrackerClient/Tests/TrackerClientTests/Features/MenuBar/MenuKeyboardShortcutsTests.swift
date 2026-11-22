@@ -104,6 +104,88 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.action(forKey: "n", modifiers: [.shift, .command]), .copyName)
     }
 
+    func testQuickTrackDefaultsToControlOptionSpace() async {
+        let shortcuts = MenuKeyboardShortcuts.defaults
+        XCTAssertEqual(shortcuts.openQuickTrack, MenuShortcut(key: " ", modifiers: [.control, .option]))
+        XCTAssertEqual(shortcuts.openQuickTrack.displayText, "⌃⌥Space")
+        XCTAssertEqual(MenuShortcut(key: " ", modifiers: [.shift, .command]).displayText, "⇧⌘Space")
+        XCTAssertEqual(MenuShortcutAction.openQuickTrack.title, "Open Quick Track")
+        XCTAssertTrue(shortcuts.validationErrors().isEmpty)
+        XCTAssertEqual(shortcuts[.openQuickTrack], shortcuts.openQuickTrack)
+        XCTAssertEqual(
+            shortcuts.action(forKey: " ", modifiers: [.control, .option], includingGlobal: true), .openQuickTrack)
+        XCTAssertNil(shortcuts.action(forKey: " ", modifiers: [.control, .option]))
+        XCTAssertEqual(MenuShortcutAction.allCases.filter(\.isGlobal), [.openMenu, .openQuickTrack])
+    }
+
+    func testQuickTrackNeedsACommandControlOrOptionModifier() async {
+        for modifiers: MenuShortcut.Modifiers in [[], .shift] {
+            var shortcuts = MenuKeyboardShortcuts.defaults
+            shortcuts.openQuickTrack = MenuShortcut(key: "x", modifiers: modifiers)
+            XCTAssertEqual(
+                shortcuts.validationError,
+                "Open Quick Track needs Command, Control or Option to avoid capturing normal typing.")
+            shortcuts.openQuickTrack = MenuShortcut(key: " ", modifiers: modifiers)
+            XCTAssertEqual(
+                shortcuts.validationError,
+                "Open Quick Track needs Command, Control or Option to avoid capturing normal typing.")
+        }
+        var shortcuts = MenuKeyboardShortcuts.defaults
+        shortcuts.openQuickTrack = MenuShortcut(key: "x", modifiers: .command)
+        XCTAssertNil(shortcuts.validationError)
+    }
+
+    func testQuickTrackMustDifferFromOpenMenu() async {
+        var shortcuts = MenuKeyboardShortcuts.defaults
+        shortcuts.openQuickTrack = shortcuts.openMenu
+        XCTAssertEqual(
+            shortcuts.validationError,
+            "Open Quick Track and Open menu use the same shortcut, ⌃⌥T.")
+        shortcuts = .defaults
+        shortcuts.openMenu = shortcuts.openQuickTrack
+        XCTAssertFalse(shortcuts.validationErrors().isEmpty)
+    }
+
+    func testOnlyQuickTrackAcceptsSpace() async {
+        for action in MenuShortcutAction.allCases where action != .openQuickTrack {
+            var shortcuts = MenuKeyboardShortcuts.defaults
+            shortcuts[action] = MenuShortcut(key: " ", modifiers: [.command])
+            XCTAssertTrue(
+                shortcuts.validationErrors().contains {
+                    $0
+                        == "\(action.title) needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved."
+                }, "\(action)")
+            XCTAssertNil(shortcuts.action(forKey: " ", modifiers: [.command], includingGlobal: true))
+        }
+        var shortcuts = MenuKeyboardShortcuts.defaults
+        shortcuts.openQuickTrack = MenuShortcut(key: "é", modifiers: [.command])
+        XCTAssertEqual(
+            shortcuts.validationError,
+            "Open Quick Track needs one printable ASCII key or Space. Arrow keys, Return and Escape are reserved.")
+    }
+
+    func testSavedBindingsWithoutQuickTrackGetTheDefault() async throws {
+        let data = try JSONEncoder().encode(MenuKeyboardShortcuts.defaults)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNotNil(object.removeValue(forKey: "openQuickTrack"))
+        object["openMenu"] = ["key": "y", "modifiers": 6]
+        let old = try JSONSerialization.data(withJSONObject: object)
+        let loaded = try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: old)
+        XCTAssertEqual(loaded.openQuickTrack, MenuKeyboardShortcuts.defaults.openQuickTrack)
+        XCTAssertEqual(loaded.openMenu, MenuShortcut(key: "y", modifiers: [.control, .option]))
+    }
+
+    func testQuickTrackBindingRoundTripsAndInvalidSavedValuesAreRejected() async throws {
+        var shortcuts = MenuKeyboardShortcuts.defaults
+        shortcuts.openQuickTrack = MenuShortcut(key: " ", modifiers: [.command, .shift])
+        let loaded = try JSONDecoder().decode(
+            MenuKeyboardShortcuts.self, from: JSONEncoder().encode(shortcuts))
+        XCTAssertEqual(loaded, shortcuts)
+        shortcuts.openQuickTrack = shortcuts.openMenu
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: JSONEncoder().encode(shortcuts)))
+    }
+
     func testUnknownModifierBitsFailValidationAndDecoding() async throws {
         let unknown = MenuShortcut.Modifiers(rawValue: 1 << 7)
         var shortcuts = MenuKeyboardShortcuts.defaults
