@@ -55,3 +55,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0040](0040-use-design-tokens-for-spacing-type-and-color-in-the-macos-app.md) | Use design tokens for spacing, type and color in the macOS app | Accepted; partially superseded by ADR 0041. |
 | [0041](0041-add-icon-border-and-motion-tokens-for-the-tracking-pill.md) | Add icon, border and motion tokens for the tracking pill | Accepted |
 | [0042](0042-build-the-omarchy-client-with-qt-quick-on-the-shared-c-bridge.md) | Build the Omarchy client with Qt Quick on the shared C bridge | Proposed |
+| [0043](0043-use-design-tokens-for-spacing-type-and-opacity-in-the-omarchy-app.md) | Use design tokens for spacing, type and opacity in the Omarchy app | Proposed |
