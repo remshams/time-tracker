@@ -18,6 +18,7 @@ class Theme;
 class TrackerGateway;
 class TrackerSync;
 class TrackingStore;
+class WorklogCorrectionStore;
 class WorklogHistoryStore;
 
 // Creates the gateway, the clock, the theme and every feature store, connects them, and
@@ -47,4 +48,5 @@ private:
     TaskRenameStore *taskRename_;
     TaskArchivingStore *taskArchiving_;
     BulkTaskArchivingStore *bulkArchiving_;
+    WorklogCorrectionStore *correction_;
 };

@@ -29,6 +29,8 @@ Popup {
 
     parent: Overlay.overlay
     anchors.centerIn: parent
+    // A layout ignores an implicit width set on it, so the frame fixes the width itself.
+    width: root.dialogWidth
     modal: true
     focus: true
     padding: 0
@@ -52,7 +54,6 @@ Popup {
         // Without a text field in the dialog, this keeps the keyboard on the Return and Escape handling.
         focus: true
         spacing: 0
-        implicitWidth: root.dialogWidth
 
         Keys.onReturnPressed: root.accept()
         Keys.onEnterPressed: root.accept()
