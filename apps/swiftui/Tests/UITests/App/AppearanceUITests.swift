@@ -28,6 +28,8 @@ final class AppearanceUITests: TrackerUITestCase {
             app.typeKey("x", modifierFlags: [])
             let error = element("menu.shortcut.error")
             XCTAssertTrue(error.waitForExistence(timeout: timeout))
+            // The Settings form scrolls on small screens; hovering scrolls the error into view like a user would.
+            error.hover()
             XCTAssertTrue(error.isHittable)
             app.terminate()
         }
