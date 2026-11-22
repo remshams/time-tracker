@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the black-box E2E tests against a release-like build of tt-desktop in a headless
+# Runs the black-box E2E tests against a debug build of tt-desktop in a headless
 # sway session with its own D-Bus and accessibility bus, away from the user's desktop.
 # Needs sway, wtype, at-spi2-core and python-gobject.
 # Usage: bin/e2e [unittest arguments, for example -k test_space]
