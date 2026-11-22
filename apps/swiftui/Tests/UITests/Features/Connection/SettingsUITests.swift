@@ -57,6 +57,26 @@ final class SettingsUITests: TrackerUITestCase {
         dismissStatusMenu()
     }
 
+    func testQuickTrackRegistrationErrorSurvivesTheMenuAndOtherChanges() throws {
+        // Every registration of a Space shortcut fails, including the Quick Track default at launch.
+        app.launchEnvironment["TT_UI_TEST_CONFLICT_KEY"] = " "
+        launch()
+        openSettings()
+        let error = element("menu.shortcut.error")
+        XCTAssertTrue(error.waitForExistence(timeout: timeout), "The failed Quick Track hotkey shows an error.")
+        openStatusMenu()
+        dismissStatusMenu()
+        openSettings()
+        XCTAssertTrue(error.waitForExistence(timeout: timeout), "Closing the menu keeps the Quick Track error.")
+        let openMenu = element("menu.shortcut.open")
+        openMenu.click()
+        app.typeKey("y", modifierFlags: [.control, .option])
+        waitUntil("Open menu records its new keys") { openMenu.value as? String == "⌃⌥Y" }
+        XCTAssertTrue(error.exists, "The Quick Track error stays while its hotkey still fails.")
+        element("menu.shortcut.restore").click()
+        waitUntil("Restoring the defaults resets Open menu") { openMenu.value as? String == "⌃⌥T" }
+    }
+
     func testQuickTrackShortcutRecordsSpaceAndRestoresItsDefault() throws {
         launch()
         openSettings()
