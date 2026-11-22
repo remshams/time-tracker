@@ -25,6 +25,7 @@ NON_NATIVE_FILES = {
     "scripts/benchmark-native-ui.py",
     "scripts/deploy-server.py",
     "scripts/install-omarchy-app.py",
+    "scripts/omarchy-qml-style.py",
     "scripts/install-swift-muter.py",
     "scripts/install-swift-style-tools.py",
     "scripts/swift-coverage.py",
