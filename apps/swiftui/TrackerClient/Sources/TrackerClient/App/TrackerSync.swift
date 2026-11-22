@@ -30,7 +30,8 @@ public final class TrackerSync {
     private var sleeping = false
     private var windowVisible = false
     private var menuOpen = false
-    private var uiVisible: Bool { windowVisible || menuOpen }
+    private var quickTrackOpen = false
+    private var uiVisible: Bool { windowVisible || menuOpen || quickTrackOpen }
 
     init(
         client: any TrackerClient, scheduler: any TrackerScheduler, catalog: TaskCatalogStore,
@@ -83,6 +84,13 @@ public final class TrackerSync {
     public func setMenuVisible(_ visible: Bool) {
         let previouslyVisible = uiVisible
         menuOpen = visible
+        visibilityChanged(previouslyVisible: previouslyVisible)
+    }
+
+    /// Reports whether the Quick Track dialog shows. It counts as visible UI like the window and the menu.
+    func setQuickTrackVisible(_ visible: Bool) {
+        let previouslyVisible = uiVisible
+        quickTrackOpen = visible
         visibilityChanged(previouslyVisible: previouslyVisible)
     }
 
