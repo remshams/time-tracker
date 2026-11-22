@@ -5,7 +5,7 @@ Row {
     id: root
 
     property var seconds: 0
-    property int pixelSize: 13
+    property int pixelSize: Tokens.text.body
     property color color: theme.text
     property bool bold: false
 
@@ -22,6 +22,6 @@ Row {
         text: format.secondsSuffix(root.seconds)
         font.pixelSize: root.pixelSize
         font.bold: root.bold
-        color: Qt.alpha(root.color, 0.45)
+        color: Qt.alpha(root.color, Tokens.emphasis.seconds)
     }
 }

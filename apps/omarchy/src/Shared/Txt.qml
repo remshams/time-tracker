@@ -6,7 +6,7 @@ Text {
     property int level: 0
 
     font.family: theme.fontFamily
-    font.pixelSize: 13
+    font.pixelSize: Tokens.text.body
     color: level === 0 ? theme.text : level === 1 ? theme.textDim : theme.textFaint
     elide: Text.ElideRight
     verticalAlignment: Text.AlignVCenter

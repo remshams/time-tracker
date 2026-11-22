@@ -18,7 +18,7 @@ TrackerDialog {
     primaryText: qsTr("Connect")
     primaryEnabled: !root.serverMissing
     busy: connection.draftPending
-    dialogWidth: 520
+    dialogWidth: Tokens.size.wideDialogWidth
 
     function openSettings() {
         connection.resetDraft()
@@ -84,7 +84,7 @@ TrackerDialog {
         onTextEdited: connection.draftServerUrl = text
         inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
         font.family: theme.fontFamily
-        font.pixelSize: 13
+        font.pixelSize: Tokens.text.body
         Material.accent: theme.accent
         Material.foreground: theme.text
         Material.containerStyle: Material.Outlined
@@ -103,7 +103,7 @@ TrackerDialog {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 12
+        spacing: Tokens.spacing.medium
 
         Button {
             text: qsTr("Test connection")
@@ -128,7 +128,7 @@ TrackerDialog {
 
     Txt {
         Layout.fillWidth: true
-        Layout.topMargin: 6
+        Layout.topMargin: Tokens.spacing.small
         text: qsTr("Switching never copies data between the local database and a server. "
                    + "A server that is unreachable never falls back to the local database, "
                    + "and the app does not queue changes while it is offline.")

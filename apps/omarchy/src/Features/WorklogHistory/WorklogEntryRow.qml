@@ -23,7 +23,7 @@ Item {
     signal moveRequested
     signal deleteRequested
 
-    height: 32
+    height: Tokens.size.worklogRowHeight
 
     Accessible.role: Accessible.ListItem
     Accessible.name: qsTr("%1 to %2, %3").arg(modelData.startLabel).arg(modelData.endLabel).arg(format.duration(row.seconds))
@@ -35,11 +35,11 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        anchors.leftMargin: 20
-        anchors.rightMargin: 12
-        radius: Math.min(4, theme.radius)
-        color: row.selected ? theme.selection : mouse.containsMouse ? Qt.alpha(theme.selection, 0.45) : "transparent"
-        opacity: row.selected && !row.focusedList ? 0.6 : 1
+        anchors.leftMargin: Tokens.spacing.xLarge
+        anchors.rightMargin: Tokens.spacing.medium
+        radius: Math.min(Tokens.radius.small, theme.radius)
+        color: row.selected ? theme.selection : mouse.containsMouse ? Qt.alpha(theme.selection, Tokens.emphasis.hover) : "transparent"
+        opacity: row.selected && !row.focusedList ? Tokens.emphasis.unfocusedSelection : 1
     }
 
     MouseArea {
@@ -56,7 +56,7 @@ Item {
     }
 
     Txt {
-        x: 32
+        x: Tokens.spacing.xxLarge
         width: row.labelWidth - 12
         height: parent.height
         text: row.modelData.startLabel + " – " + row.modelData.endLabel
@@ -67,46 +67,46 @@ Item {
     // The track spans the hour axis; the bar marks this worklog's part of the day.
     Item {
         id: track
-        x: 32 + row.labelWidth
+        x: Tokens.spacing.xxLarge + row.labelWidth
         width: row.width - x - 24 - row.durationWidth
         height: parent.height
 
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width
-            height: 6
-            radius: Math.min(3, theme.radius)
+            height: Tokens.size.barHeight
+            radius: Math.min(Tokens.radius.small, theme.radius)
             color: theme.line
-            opacity: 0.35
+            opacity: Tokens.emphasis.track
         }
         Rectangle {
             id: bar
             anchors.verticalCenter: parent.verticalCenter
             x: track.width * row.modelData.from
             width: Math.max(3, track.width * (row.modelData.to - row.modelData.from))
-            height: 6
-            radius: Math.min(3, theme.radius)
+            height: Tokens.size.barHeight
+            radius: Math.min(Tokens.radius.small, theme.radius)
             color: row.barColor
-            opacity: row.running ? 0.75 : 1
+            opacity: row.running ? Tokens.emphasis.runningBar : 1
         }
         Rectangle {
             visible: row.running
             anchors.verticalCenter: parent.verticalCenter
             x: bar.x + bar.width
-            width: 7
-            height: 16
+            width: Tokens.size.cursorWidth
+            height: Tokens.size.cursorHeight
             color: row.barColor
             SequentialAnimation on opacity {
                 running: row.running
                 loops: Animation.Infinite
                 NumberAnimation {
                     to: 0
-                    duration: 600
+                    duration: Tokens.motion.blink
                     easing.type: Easing.InOutQuad
                 }
                 NumberAnimation {
                     to: 1
-                    duration: 600
+                    duration: Tokens.motion.blink
                     easing.type: Easing.InOutQuad
                 }
             }
@@ -115,7 +115,7 @@ Item {
 
     Duration {
         anchors.right: parent.right
-        anchors.rightMargin: 24
+        anchors.rightMargin: Tokens.spacing.xLarge
         anchors.verticalCenter: parent.verticalCenter
         seconds: row.seconds
         color: row.running ? row.barColor : theme.text

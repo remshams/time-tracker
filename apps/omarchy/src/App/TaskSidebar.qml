@@ -26,11 +26,11 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 12
-            Layout.topMargin: 14
-            Layout.bottomMargin: 8
-            spacing: 18
+            Layout.leftMargin: Tokens.spacing.large
+            Layout.rightMargin: Tokens.spacing.medium
+            Layout.topMargin: Tokens.spacing.medium
+            Layout.bottomMargin: Tokens.spacing.small
+            spacing: Tokens.spacing.large
 
             Repeater {
                 model: [{
@@ -43,7 +43,7 @@ Rectangle {
                 delegate: Column {
                     required property var modelData
                     readonly property bool current: catalog.archivedTab === modelData.archived
-                    spacing: 4
+                    spacing: Tokens.spacing.xSmall
 
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData.label
@@ -62,7 +62,7 @@ Rectangle {
                     }
                     Rectangle {
                         width: parent.width
-                        height: 2
+                        height: Tokens.border.focus
                         color: parent.current ? theme.accent : "transparent"
                     }
                 }
@@ -72,14 +72,14 @@ Rectangle {
             }
             Txt {
                 text: "+"
-                font.pixelSize: 18
+                font.pixelSize: Tokens.text.glyph
                 level: 1
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("New task")
                 Accessible.onPressAction: root.createRequested()
                 MouseArea {
                     anchors.fill: parent
-                    anchors.margins: -6
+                    anchors.margins: -Tokens.spacing.small
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.createRequested()
                 }
@@ -89,12 +89,12 @@ Rectangle {
         TextField {
             id: filter
             Layout.fillWidth: true
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
+            Layout.leftMargin: Tokens.spacing.medium
+            Layout.rightMargin: Tokens.spacing.medium
             visible: activeFocus || text.length > 0
             placeholderText: qsTr("Filter tasks")
             font.family: theme.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: Tokens.text.body
             text: catalog.filterText
             onTextEdited: catalog.filterText = text
             Material.accent: theme.accent
@@ -117,7 +117,7 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.topMargin: 4
+            Layout.topMargin: Tokens.spacing.xSmall
             clip: true
             model: catalog.model
             // Reading the names too re-runs this after a reorder, which keeps the selected row in view.
@@ -144,7 +144,7 @@ Rectangle {
             Column {
                 anchors.centerIn: parent
                 visible: list.count === 0 && catalog.loaded
-                spacing: 10
+                spacing: Tokens.spacing.medium
                 width: parent.width - 32
 
                 Txt {
@@ -161,19 +161,19 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 1
+            Layout.preferredHeight: Tokens.border.hairline
             color: theme.line
         }
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.margins: 10
-            Layout.leftMargin: 16
+            Layout.margins: Tokens.spacing.medium
+            Layout.leftMargin: Tokens.spacing.large
             visible: !catalog.archivedTab
             Txt {
                 Layout.fillWidth: true
                 text: qsTr("Archive inactive tasks")
-                font.pixelSize: 11
+                font.pixelSize: Tokens.text.caption
                 level: 1
                 Accessible.role: Accessible.Button
                 Accessible.name: text

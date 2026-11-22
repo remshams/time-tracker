@@ -1,10 +1,11 @@
 import QtQuick
+import "../../Shared"
 
 // Today's time split by task across the full window width, largest share first.
 Item {
     id: root
 
-    implicitHeight: 3
+    implicitHeight: Tokens.size.shareBarHeight
 
     Accessible.role: Accessible.Indicator
     Accessible.name: totals.leaderTaskId.length > 0 ? qsTr("Today: %1 has %2 percent").arg((catalog.names[totals.leaderTaskId] ?? "")).arg(totals.leaderPercent) : qsTr("No time today")
@@ -12,7 +13,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: theme.line
-        opacity: 0.5
+        opacity: Tokens.emphasis.shareTrack
     }
 
     Row {

@@ -1,0 +1,6 @@
+singleton Tokens 1.0 Tokens.qml
+Duration 1.0 Duration.qml
+KeyHint 1.0 KeyHint.qml
+TaskDot 1.0 TaskDot.qml
+TrackerDialog 1.0 TrackerDialog.qml
+Txt 1.0 Txt.qml

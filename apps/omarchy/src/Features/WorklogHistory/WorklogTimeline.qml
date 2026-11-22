@@ -10,8 +10,8 @@ Item {
 
     property bool focused: false
     property string selectedKey
-    readonly property int labelWidth: 132
-    readonly property int durationWidth: 92
+    readonly property int labelWidth: Tokens.size.timelineLabelWidth
+    readonly property int durationWidth: Tokens.size.timelineDurationWidth
     readonly property color taskColor: theme.taskColor(catalog.selectedColorName)
 
     signal selected(string key)
@@ -24,9 +24,9 @@ Item {
         id: axis
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: 32 + root.labelWidth
-        anchors.rightMargin: 24 + root.durationWidth
-        height: 34
+        anchors.leftMargin: Tokens.spacing.xxLarge + root.labelWidth
+        anchors.rightMargin: Tokens.spacing.xLarge + root.durationWidth
+        height: Tokens.size.axisHeight
         visible: history.count > 0
 
         Repeater {
@@ -40,7 +40,7 @@ Item {
                 x: axis.width * index / span - width / 2
                 anchors.verticalCenter: parent.verticalCenter
                 text: String(hour).padStart(2, "0")
-                font.pixelSize: 11
+                font.pixelSize: Tokens.text.caption
                 level: 2
             }
         }
@@ -48,7 +48,7 @@ Item {
     Rectangle {
         anchors.top: axis.bottom
         width: parent.width
-        height: 1
+        height: Tokens.border.hairline
         color: theme.line
         visible: axis.visible
     }
@@ -56,7 +56,7 @@ Item {
     ListView {
         id: days
         anchors.fill: parent
-        anchors.topMargin: axis.visible ? axis.height + 1 : 0
+        anchors.topMargin: axis.visible ? axis.height + Tokens.border.hairline : 0
         clip: true
         // The store rebuilds the days once a minute while a worklog runs, and after reloads.
         // Replacing the model resets the scroll, so the same task keeps its position.
@@ -77,11 +77,11 @@ Item {
                     days.contentY = y
             }
         }
-        spacing: 6
+        spacing: Tokens.spacing.small
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar {}
-        topMargin: 12
-        bottomMargin: 16
+        topMargin: Tokens.spacing.medium
+        bottomMargin: Tokens.spacing.large
 
         Accessible.role: Accessible.List
         Accessible.name: qsTr("Worklogs")
@@ -95,9 +95,9 @@ Item {
 
             RowLayout {
                 width: parent.width
-                height: 30
+                height: Tokens.size.dayHeaderHeight
                 Txt {
-                    Layout.leftMargin: 32
+                    Layout.leftMargin: Tokens.spacing.xxLarge
                     Layout.fillWidth: true
                     text: dayBlock.modelData.label
                     font.bold: true
@@ -105,7 +105,7 @@ Item {
                     Accessible.name: text
                 }
                 Duration {
-                    Layout.rightMargin: 24
+                    Layout.rightMargin: Tokens.spacing.xLarge
                     seconds: {
                         const day = dayBlock.modelData
                         // Only the day that holds the running worklog ticks, and only while it still runs.
@@ -114,7 +114,7 @@ Item {
                         return day.totalSeconds - day.runningSeconds + Math.max(0, tracking.elapsedSeconds - day.runningOffset)
                     }
                     color: theme.textDim
-                    pixelSize: 11
+                    pixelSize: Tokens.text.caption
                 }
             }
 
@@ -155,7 +155,7 @@ Item {
     Txt {
         anchors.left: parent.left
         anchors.top: parent.top
-        anchors.margins: 32
+        anchors.margins: Tokens.spacing.xxLarge
         visible: history.loaded && history.count === 0 && history.error.length === 0
         text: catalog.selectedArchived ? qsTr("No worklogs.") : qsTr("No worklogs yet. Space starts tracking this task.")
         Accessible.role: Accessible.StaticText
@@ -166,7 +166,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 32
+        anchors.margins: Tokens.spacing.xxLarge
         visible: history.error.length > 0
         text: history.error
         Accessible.role: Accessible.StaticText

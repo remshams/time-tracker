@@ -12,9 +12,10 @@ TrackerDialog {
     // One date or time input. Return reaches the dialog, which saves.
     component DraftField: TextField {
         Layout.fillWidth: true
+        // A stretch weight, not a size: the two fields of a row share the width equally.
         Layout.preferredWidth: 1
         font.family: theme.fontFamily
-        font.pixelSize: 13
+        font.pixelSize: Tokens.text.body
         selectByMouse: true
         inputMethodHints: Qt.ImhPreferNumbers
         Material.accent: theme.accent
@@ -47,7 +48,7 @@ TrackerDialog {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 8
+        spacing: Tokens.spacing.small
         TaskDot {
             dotColor: theme.taskColor(catalog.colorNameOf(worklogCorrection.taskId))
         }
@@ -67,7 +68,7 @@ TrackerDialog {
         Txt {
             text: qsTr("Start")
             level: 1
-            Layout.preferredWidth: 40
+            Layout.preferredWidth: Tokens.size.formLabelWidth
         }
         DraftField {
             id: startDate
@@ -89,7 +90,7 @@ TrackerDialog {
             visible: !worklogCorrection.running
             text: qsTr("End")
             level: 1
-            Layout.preferredWidth: 40
+            Layout.preferredWidth: Tokens.size.formLabelWidth
         }
         DraftField {
             visible: !worklogCorrection.running
@@ -120,7 +121,7 @@ TrackerDialog {
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 8
+        spacing: Tokens.spacing.small
         Txt {
             text: worklogCorrection.running ? qsTr("Running for") : qsTr("Duration")
             level: 1
@@ -153,6 +154,6 @@ TrackerDialog {
         Layout.fillWidth: true
         text: qsTr("Times are in %1.").arg(worklogCorrection.timeZone)
         level: 2
-        font.pixelSize: 12
+        font.pixelSize: Tokens.text.caption
     }
 }

@@ -8,20 +8,20 @@ Rectangle {
 
     property bool historyFocused: false
 
-    implicitHeight: 30
+    implicitHeight: Tokens.size.statusLineHeight
     color: theme.panel
 
     Rectangle {
         width: parent.width
-        height: 1
+        height: Tokens.border.hairline
         color: theme.line
     }
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 16
-        anchors.rightMargin: 16
-        spacing: 18
+        anchors.leftMargin: Tokens.spacing.large
+        anchors.rightMargin: Tokens.spacing.large
+        spacing: Tokens.spacing.large
 
         KeyHint {
             keys: "space"
@@ -68,7 +68,7 @@ Rectangle {
         Txt {
             // A long failure reason elides instead of pushing the key hints away.
             Layout.maximumWidth: root.width * 0.5
-            font.pixelSize: 11
+            font.pixelSize: Tokens.text.caption
             color: connection.status === "unavailable" ? theme.danger : theme.textFaint
             text: {
                 const source = connection.remote ? connection.serverUrl : qsTr("Local database")

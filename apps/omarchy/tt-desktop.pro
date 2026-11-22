@@ -11,7 +11,7 @@ isEmpty(TT_GIT_REVISION): TT_GIT_REVISION = unknown
 DEFINES += TT_GIT_REVISION=\\\"$$TT_GIT_REVISION\\\"
 
 # Every QML file under src/ is compiled into the binary at the same relative path.
-qml.files = $$files($$PWD/src/*.qml, true)
+qml.files = $$files($$PWD/src/*.qml, true) $$files($$PWD/src/qmldir, true)
 qml.base = $$PWD/src
 qml.prefix = /
 RESOURCES += qml
