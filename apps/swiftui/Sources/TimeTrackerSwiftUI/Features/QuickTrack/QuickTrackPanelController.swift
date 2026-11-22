@@ -116,14 +116,16 @@ private final class QuickTrackPanel: NSPanel {
         setAccessibilityLabel("Quick Track")
     }
 
-    /// Gets each key press with ⌘ before the search field and the app's menus do, and returns whether it handled it.
+    /// Gets each key equivalent, such as a key press with ⌘, and returns whether it handled it.
     var commandKeyHandler: ((NSEvent) -> Bool)?
 
     override var canBecomeKey: Bool { true }
 
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.modifierFlags.contains(.command), commandKeyHandler?(event) == true { return }
-        super.sendEvent(event)
+    // AppKit offers a key press with ⌘ to the key window's key equivalents before the main menu, so the copy keys
+    // win over Edit > Copy.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, commandKeyHandler?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
     }
 }
 
@@ -133,6 +135,7 @@ private final class QuickTrackHostingView: NSHostingView<QuickTrackView> {
 
     override func invalidateIntrinsicContentSize() {
         super.invalidateIntrinsicContentSize()
-        onSizeChange?()
+        // Resizing the panel during the layout pass that invalidated the size would lay it out again from inside it.
+        DispatchQueue.main.async { [weak self] in self?.onSizeChange?() }
     }
 }
