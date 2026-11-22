@@ -284,7 +284,7 @@
 			children = (
 				000000000000000000000010 /* TrackerBridge.h */,
 			);
-			path = "Sources/CTrackerBridge/include";
+			path = "../../crates/tracker-bridge/include";
 			sourceTree = "<group>";
 		};
 		000000000000000000000005 /* Products */ = {
@@ -844,7 +844,7 @@
 			);
 			name = "Build Rust bridge";
 			outputPaths = (
-				"$(TARGET_TEMP_DIR)/libtracker_swift_bridge.a",
+				"$(TARGET_TEMP_DIR)/libtracker_bridge.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = "/bin/sh";
@@ -1036,7 +1036,7 @@
 				MARKETING_VERSION = 0.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-ltracker_swift_bridge",
+					"-ltracker_bridge",
 					"-framework",
 					Security,
 					"-framework",
@@ -1075,7 +1075,7 @@
 				MARKETING_VERSION = 0.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-ltracker_swift_bridge",
+					"-ltracker_bridge",
 					"-framework",
 					Security,
 					"-framework",
