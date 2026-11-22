@@ -57,7 +57,7 @@ Item {
 
     Txt {
         x: Tokens.spacing.xxLarge
-        width: row.labelWidth - 12
+        width: row.labelWidth - Tokens.spacing.medium
         height: parent.height
         text: row.modelData.startLabel + " – " + row.modelData.endLabel
         color: row.running ? row.barColor : theme.text
@@ -68,7 +68,7 @@ Item {
     Item {
         id: track
         x: Tokens.spacing.xxLarge + row.labelWidth
-        width: row.width - x - 24 - row.durationWidth
+        width: row.width - x - Tokens.spacing.xLarge - row.durationWidth
         height: parent.height
 
         Rectangle {
@@ -83,7 +83,7 @@ Item {
             id: bar
             anchors.verticalCenter: parent.verticalCenter
             x: track.width * row.modelData.from
-            width: Math.max(3, track.width * (row.modelData.to - row.modelData.from))
+            width: Math.max(Tokens.size.minimumBarWidth, track.width * (row.modelData.to - row.modelData.from))
             height: Tokens.size.barHeight
             radius: Math.min(Tokens.radius.small, theme.radius)
             color: row.barColor

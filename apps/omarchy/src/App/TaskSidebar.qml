@@ -145,7 +145,7 @@ Rectangle {
                 anchors.centerIn: parent
                 visible: list.count === 0 && catalog.loaded
                 spacing: Tokens.spacing.medium
-                width: parent.width - 32
+                width: parent.width - 2 * Tokens.spacing.large
 
                 Txt {
                     width: parent.width

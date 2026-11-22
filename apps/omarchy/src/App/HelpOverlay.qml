@@ -54,8 +54,8 @@ Popup {
         }
         GridLayout {
             columns: 2
-            columnSpacing: 40
-            rowSpacing: 18
+            columnSpacing: Tokens.spacing.xxLarge
+            rowSpacing: Tokens.spacing.large
             Repeater {
                 model: root.groups
                 ColumnLayout {

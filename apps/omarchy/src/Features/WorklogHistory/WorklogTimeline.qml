@@ -137,7 +137,7 @@ Item {
 
         footer: Item {
             width: days.width
-            height: history.hasMore || history.loading ? 44 : 0
+            height: history.hasMore || history.loading ? Tokens.size.footerHeight : 0
             Txt {
                 anchors.centerIn: parent
                 visible: history.hasMore || history.loading
