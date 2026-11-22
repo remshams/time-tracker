@@ -17,8 +17,9 @@ enum MenuCopyAction: String {
 extension TrackerUITestCase {
     var statusButton: XCUIElement { element("menu.status") }
 
-    func openStatusMenu() {
-        app.typeKey("t", modifierFlags: [.control, .option])
+    /// Presses the global shortcut. Pass `keyboard` to send it while another app is frontmost.
+    func openStatusMenu(from keyboard: XCUIApplication? = nil) {
+        (keyboard ?? app).typeKey("t", modifierFlags: [.control, .option])
         XCTAssertTrue(app.menuItems["Open Time Tracker"].waitForExistence(timeout: timeout))
     }
 
@@ -55,14 +56,15 @@ extension TrackerUITestCase {
         menuTask(task).menuItems["menu.copy.\(task.id).\(action.rawValue)"]
     }
 
-    func copyFromMenu(_ action: MenuCopyAction, task: FixtureTask) {
+    func copyFromMenu(_ action: MenuCopyAction, task: FixtureTask, keyboard: XCUIApplication? = nil) {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        activateMenuCopy(action, task: task)
+        activateMenuCopy(action, task: task, keyboard: keyboard)
     }
 
-    func activateMenuCopy(_ action: MenuCopyAction, task: FixtureTask) {
+    func activateMenuCopy(_ action: MenuCopyAction, task: FixtureTask, keyboard: XCUIApplication? = nil) {
+        let keyboard: XCUIApplication = keyboard ?? app
         let item = copyMenuItem(action, task: task)
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
@@ -71,11 +73,11 @@ extension TrackerUITestCase {
             return tracking.exists && tracking.isEnabled
         }
         let clipboardBefore = NSPasteboard.general.changeCount
-        app.typeKey(.rightArrow, modifierFlags: [])
+        keyboard.typeKey(.rightArrow, modifierFlags: [])
         for _ in 0..<(action.stepsAfterTracking - (trackingEnabled ? 0 : 1)) {
-            app.typeKey(.downArrow, modifierFlags: [])
+            keyboard.typeKey(.downArrow, modifierFlags: [])
         }
-        app.typeKey(.return, modifierFlags: [])
+        keyboard.typeKey(.return, modifierFlags: [])
         waitUntil("The native copy action closes the menu") {
             !self.app.menuItems["Open Time Tracker"].exists
         }
