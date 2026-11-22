@@ -203,6 +203,18 @@ class TrackerApp:
 
         return wait_for(focused, f"{name!r} to have the keyboard")
 
+    def wait_enabled(self, button: str) -> Node:
+        """Waits until the named button can be pressed, as a person would before pressing Return."""
+
+        def enabled():
+            for node in self.nodes():
+                if node.role == "button" and node.name == button:
+                    if node.accessible.get_state_set().contains(Atspi.StateType.SENSITIVE):
+                        return node
+            return None
+
+        return wait_for(enabled, f"{button!r} to be enabled")
+
     def wait_gone(self, role: str | None = None, name: str | None = None, contains: str | None = None) -> None:
         wait_for(lambda: self.find(role, name, contains) is None, f"{role} {name or contains!r} to go away")
 
