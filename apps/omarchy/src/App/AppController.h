@@ -11,6 +11,7 @@ class Format;
 class QQmlContext;
 class TaskCatalogStore;
 class TaskCreationStore;
+class TaskRenameStore;
 class Theme;
 class TrackerGateway;
 class TrackerSync;
@@ -41,4 +42,5 @@ private:
     WorklogHistoryStore *history_;
     TrackerSync *sync_;
     TaskCreationStore *taskCreation_;
+    TaskRenameStore *taskRename_;
 };
