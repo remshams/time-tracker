@@ -685,6 +685,7 @@ async fn remote_client_round_trips_every_application_operation() {
     let candidates = client.move_candidates(first.id(), "Second");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].id, second.id());
+    assert_eq!(client.search_active_tasks("Second"), [second.id()]);
 
     let started = match client
         .set_active_task(first.id(), at + Duration::seconds(3))
