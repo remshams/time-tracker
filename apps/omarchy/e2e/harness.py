@@ -191,6 +191,18 @@ class TrackerApp:
     def wait_for(self, role: str | None = None, name: str | None = None, contains: str | None = None) -> Node:
         return wait_for(lambda: self.find(role, name, contains), f"{role} {name or contains!r}")
 
+    def wait_focused(self, name: str) -> Node:
+        """Waits until the named text field has the keyboard, so typed text lands in it."""
+
+        def focused():
+            for node in self.nodes():
+                if node.role == "text" and node.name == name:
+                    if node.accessible.get_state_set().contains(Atspi.StateType.FOCUSED):
+                        return node
+            return None
+
+        return wait_for(focused, f"{name!r} to have the keyboard")
+
     def wait_gone(self, role: str | None = None, name: str | None = None, contains: str | None = None) -> None:
         wait_for(lambda: self.find(role, name, contains) is None, f"{role} {name or contains!r} to go away")
 
