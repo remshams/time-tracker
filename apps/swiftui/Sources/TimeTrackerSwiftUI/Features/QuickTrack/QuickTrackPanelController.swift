@@ -104,7 +104,6 @@ private final class QuickTrackPanel: NSPanel {
         super.init(
             contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered, defer: true)
-        level = .floating
         // The dialog appears on the current Space, also over an app in full screen.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         isFloatingPanel = true
