@@ -28,6 +28,8 @@ public final class TrackerFeatures {
     public let menuBar: MenuBarStore
     /// The stores the menu bar observes.
     public let menuSources: TrackerMenuSources
+    /// The Quick Track dialog.
+    public let quickTrack: QuickTrackStore
     /// Views read the auto-pause preference and status here and turn the auto-pause on or off; the lifecycle
     /// observer reports screen lock events here.
     public let trackingAutomation: TrackingAutomationStore
@@ -79,6 +81,7 @@ public final class TrackerFeatures {
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
+        quickTrack = QuickTrackStore(client: client, sources: menuSources, tracking: tracking)
         sync = TrackerSync(
             client: client, scheduler: scheduler, catalog: taskCatalog,
             history: worklogHistory, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
@@ -100,6 +103,7 @@ public final class TrackerFeatures {
         dailyTotals.acceptReportedTaskList = { [weak sync] resources in sync?.acceptReportedTaskList(resources) }
         dailyTotals.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
         dailyTotals.refreshTaskList = { [weak sync] in sync?.refresh() }
+        quickTrack.setVisible = { [weak sync] visible in sync?.setQuickTrackVisible(visible) }
         taskRename = TaskRenameStore(
             client: client, clock: clock, connection: connection, catalog: taskCatalog, gate: presentationGate,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))

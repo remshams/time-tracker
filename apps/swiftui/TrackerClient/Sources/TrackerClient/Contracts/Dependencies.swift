@@ -22,6 +22,8 @@ public protocol TrackerClient: Sendable {
         occurredAt: String
     ) async throws -> WorklogCorrectionResult
     func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate]
+    /// The IDs of the active tasks whose names match `query`, most recent activity first (ADR 0009).
+    func searchTasks(query: String) async throws -> [String]
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult
     func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws

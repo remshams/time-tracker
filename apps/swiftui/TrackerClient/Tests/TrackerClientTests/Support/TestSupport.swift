@@ -21,6 +21,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case rename(task: String, expectedName: String, name: String, at: String)
         case correct(expected: WorklogItem, start: String, end: String?, at: String)
         case candidates(source: String, query: String)
+        case search(query: String)
         case move(expected: WorklogItem, destination: String)
         case delete(expected: WorklogItem)
         case start(task: String, expected: String?, at: String)
@@ -40,6 +41,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case created(TaskCreationResult)
         case corrected(WorklogCorrectionResult)
         case candidates([WorklogMoveCandidate])
+        case found([String])
         case moved(WorklogMoveResult)
         case deleted(WorklogDeletionResult)
         case paused(TrackingPauseResult)
@@ -112,6 +114,7 @@ final class FakeClient: TrackerClient, ReportClient {
             complete(.success(.corrected(WorklogCorrectionResult(worklog: worklog))))
         }
         func candidates(_ values: [WorklogMoveCandidate]) { complete(.success(.candidates(values))) }
+        func found(_ taskIDs: [String]) { complete(.success(.found(taskIDs))) }
         func moved(worklog: WorklogItem) {
             complete(.success(.moved(WorklogMoveResult(worklog: worklog))))
         }
@@ -317,6 +320,13 @@ final class FakeClient: TrackerClient, ReportClient {
         let operation = Operation.candidates(source: sourceTaskID, query: query)
         guard case .candidates(let value) = try await perform(operation) else {
             throw wrongReply("candidates", operation: operation)
+        }
+        return value
+    }
+    func searchTasks(query: String) async throws -> [String] {
+        let operation = Operation.search(query: query)
+        guard case .found(let value) = try await perform(operation) else {
+            throw wrongReply("search", operation: operation)
         }
         return value
     }
