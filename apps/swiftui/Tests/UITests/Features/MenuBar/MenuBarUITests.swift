@@ -55,7 +55,9 @@ class MenuBarUITests: TrackerUITestCase {
         assertFinderStaysFrontmost("after closing with the shortcut")
 
         openStatusMenu(from: finder)
-        app.menuItems["Open Time Tracker"].click()
+        // Hover and Return instead of click(), which could activate the app by itself.
+        app.menuItems["Open Time Tracker"].hover()
+        finder.typeKey(.return, modifierFlags: [])
         waitUntil("Open Time Tracker brings the app forward") { self.app.state == .runningForeground }
     }
 
