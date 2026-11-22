@@ -42,7 +42,10 @@ class QuickTrackUITests: TrackerUITestCase {
         XCTAssertFalse(quickTrackRow(running).exists, "The running task shows only in the header.")
         XCTAssertTrue(quickTrackRow(other).waitForExistence(timeout: timeout))
         app.typeKey(.return, modifierFlags: [])
+        // Give a wrongly handled Return time to act before checking that nothing changed.
+        Thread.sleep(forTimeInterval: 1)
         XCTAssertTrue(quickTrackSearch.exists, "Return does nothing while no row is highlighted.")
+        XCTAssertEqual(try fixture.activeWorklog()?.taskID, running.id)
         app.typeKey(.downArrow, modifierFlags: [])
         app.typeKey(.return, modifierFlags: [])
         assertRunning(other)
@@ -80,7 +83,7 @@ class QuickTrackUITests: TrackerUITestCase {
         launch()
         openQuickTrack()
         quickTrackSearch.typeText("zzz")
-        XCTAssertTrue(element("quick-track.empty").waitForExistence(timeout: timeout))
+        XCTAssertTrue(element("quick-track.create").waitForExistence(timeout: timeout))
         app.typeKey(.escape, modifierFlags: [])
         waitUntil("Escape clears the search") { (self.quickTrackSearch.value as? String ?? "").isEmpty }
         XCTAssertTrue(quickTrackRow(task).waitForExistence(timeout: timeout))

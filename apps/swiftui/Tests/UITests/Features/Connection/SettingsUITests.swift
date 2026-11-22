@@ -67,12 +67,13 @@ final class SettingsUITests: TrackerUITestCase {
         app.typeKey("q", modifierFlags: [.control, .option])
         waitUntil("The Quick Track shortcut records its new keys") { recorder.value as? String == "⌃⌥Q" }
         recorder.click()
-        app.typeKey(" ", modifierFlags: [.command, .option])
-        waitUntil("The Quick Track shortcut records Space") { recorder.value as? String == "⌘⌥Space" }
+        // ⌃⌥⇧Space has no system binding; ⌘⌥Space opens a Finder search window.
+        app.typeKey(" ", modifierFlags: [.control, .option, .shift])
+        waitUntil("The Quick Track shortcut records Space") { recorder.value as? String == "⌃⌥⇧Space" }
         XCTAssertEqual(element("menu.shortcut.open").value as? String, "⌃⌥T")
         relaunch()
         openSettings()
-        XCTAssertEqual(element("menu.shortcut.quick-track").value as? String, "⌘⌥Space")
+        XCTAssertEqual(element("menu.shortcut.quick-track").value as? String, "⌃⌥⇧Space")
         element("menu.shortcut.restore").click()
         XCTAssertEqual(element("menu.shortcut.quick-track").value as? String, "⌃⌥Space")
         XCTAssertEqual(element("menu.shortcut.open").value as? String, "⌃⌥T")
