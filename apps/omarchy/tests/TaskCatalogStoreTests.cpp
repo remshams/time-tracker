@@ -166,6 +166,18 @@ private slots:
         QVERIFY(store.colorNameOf(QString()).isEmpty());
     }
 
+    // QML reads names through this map, so a rename must change it and announce it.
+    void namesFollowEveryAcceptedTaskList() {
+        TestClock test;
+        TaskCatalogStore store(test.clock());
+        QSignalSpy changed(&store, &TaskCatalogStore::tasksChanged);
+        store.accept({item("a", "Alpha"), item("b", "Beta", true)});
+        QCOMPARE(store.names(), (QVariantMap{{"a", "Alpha"}, {"b", "Beta"}}));
+        store.accept({item("a", "Renamed"), item("b", "Beta", true)});
+        QCOMPARE(store.names().value("a").toString(), QStringLiteral("Renamed"));
+        QCOMPARE(changed.count(), 2);
+    }
+
     void acceptKeepsTheSelectionWhenTheTaskStays() {
         TestClock test;
         TaskCatalogStore store(test.clock());
