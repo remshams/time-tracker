@@ -287,7 +287,7 @@ jobs:
             .build/native-debug
             .build/native-release
             apps/swiftui/TrackerClient/.build
-          key: native-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-rust-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'apps/swiftui/**/*.swift', 'apps/swiftui/**/*.h', 'apps/swiftui/**/*.pbxproj', 'apps/swiftui/**/*.plist', 'apps/swiftui/**/*.sh') }}
+          key: native-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-rust-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'apps/swiftui/**/*.swift', 'apps/swiftui/**/*.h', 'crates/tracker-bridge/include/*.h', 'apps/swiftui/**/*.pbxproj', 'apps/swiftui/**/*.plist', 'apps/swiftui/**/*.sh') }}
           restore-keys: |
             native-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-rust-${{ env.RUSTUP_TOOLCHAIN }}-
       - name: Test the Swift package on macOS
