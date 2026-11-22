@@ -260,6 +260,13 @@ nonisolated private final class RustBridge {
         }
     }
 
+    func searchTasks(query: String) throws -> [String] {
+        guard !query.utf8.contains(0) else {
+            throw BridgeFailure(message: "Task search queries must not contain null characters.")
+        }
+        return try query.withCString { try decode(tt_bridge_search_tasks(handle, $0)) }
+    }
+
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) throws -> WorklogMoveResult {
         try expected.id.withCString { worklog in
             try expected.taskId.withCString { source in
