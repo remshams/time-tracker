@@ -117,6 +117,7 @@ async fn selected_backends_preserve_task_tracking_history_and_report_workflows()
             backend.move_candidates(first.id(), "Second")[0].id,
             second.id()
         );
+        assert!(backend.search_active_tasks("Second").contains(&second.id()));
 
         let SetActiveTaskOutcome::Started { worklog: started } = backend
             .start_tracking_if_idle(first.id(), at(10))

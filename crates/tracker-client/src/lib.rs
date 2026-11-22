@@ -128,6 +128,14 @@ impl TrackerBackend {
         }
     }
 
+    /// Non-archived task IDs matching the query, in search rank order.
+    pub fn search_active_tasks(&self, query: &str) -> Vec<TaskId> {
+        match self {
+            Self::Local(application) => application.search_active_tasks(query),
+            Self::Remote(application) => application.search_active_tasks(query),
+        }
+    }
+
     /// Returns the task catalog, or `None` before a remote backend has read it.
     pub fn task_observation(&self) -> Option<Vec<TaskListItem>> {
         match self {
