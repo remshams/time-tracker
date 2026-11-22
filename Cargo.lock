@@ -2880,6 +2880,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker-bridge"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracker-application",
+ "tracker-client",
+ "tracker-domain",
+ "tracker-protocol",
+ "tracker-remote",
+ "tracker-server",
+ "tracker-storage",
+]
+
+[[package]]
 name = "tracker-cli"
 version = "0.1.0"
 dependencies = [
@@ -3001,25 +3020,6 @@ dependencies = [
  "tracker-application",
  "tracker-domain",
  "uuid",
-]
-
-[[package]]
-name = "tracker-swift-bridge"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracker-application",
- "tracker-client",
- "tracker-domain",
- "tracker-protocol",
- "tracker-remote",
- "tracker-server",
- "tracker-storage",
 ]
 
 [[package]]

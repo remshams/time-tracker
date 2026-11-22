@@ -13,15 +13,15 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tracker_application::TrackerApplication;
-use tracker_domain::{TaskName, TrackingState};
-use tracker_storage::SqliteRepository;
-use tracker_swift_bridge::{
+use tracker_bridge::{
     Bridge, tt_bridge_archive_task_with_expected_name_at, tt_bridge_close,
     tt_bridge_create_task_at, tt_bridge_history, tt_bridge_open_path, tt_bridge_open_remote,
     tt_bridge_refresh_resources, tt_bridge_rename_task_with_expected_name_at,
     tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at, tt_bridge_string_free,
     tt_bridge_tasks, tt_bridge_tracking,
 };
+use tracker_domain::{TaskName, TrackingState};
+use tracker_storage::SqliteRepository;
 
 struct Server {
     directory: TempDir,
