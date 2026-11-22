@@ -10,6 +10,7 @@ class DisplayClock;
 class Format;
 class QQmlContext;
 class TaskCatalogStore;
+class TaskArchivingStore;
 class TaskCreationStore;
 class TaskRenameStore;
 class Theme;
@@ -43,4 +44,5 @@ private:
     TrackerSync *sync_;
     TaskCreationStore *taskCreation_;
     TaskRenameStore *taskRename_;
+    TaskArchivingStore *taskArchiving_;
 };
