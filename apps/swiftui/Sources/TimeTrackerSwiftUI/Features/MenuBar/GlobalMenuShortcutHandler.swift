@@ -30,7 +30,10 @@ final class GlobalMenuShortcutHandler {
             .publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                MainActor.assumeIsolated { self?.registerAfterLayoutChange() }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.preferences.reportMenuGlobalShortcutError(self.registerSavedShortcuts())
+                }
             }
     }
 
@@ -43,10 +46,6 @@ final class GlobalMenuShortcutHandler {
         do {
             if try registration.endMenuTracking() { preferences.reportMenuGlobalShortcutError(nil) }
         } catch { preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
-    }
-
-    private func registerAfterLayoutChange() {
-        preferences.reportMenuGlobalShortcutError(registerSavedShortcuts())
     }
 
     /// Registers both global shortcuts, even when the first fails, and returns the errors, if any.

@@ -109,13 +109,10 @@ private final class QuickTrackPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         isFloatingPanel = true
         hidesOnDeactivate = false
-        becomesKeyOnlyIfNeeded = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        isMovable = false
         animationBehavior = .utilityWindow
-        isReleasedWhenClosed = false
         setAccessibilityIdentifier("quick-track.panel")
         setAccessibilityLabel("Quick Track")
     }
@@ -124,7 +121,6 @@ private final class QuickTrackPanel: NSPanel {
     var commandKeyHandler: ((NSEvent) -> Bool)?
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.modifierFlags.contains(.command), commandKeyHandler?(event) == true { return }

@@ -124,7 +124,7 @@ struct QuickTrackView: View {
 
     private var emptyText: String {
         if store.isSearching { return "" }
-        return store.query.trimmingCharacters(in: .whitespaces).isEmpty ? "No tasks" : "No matching tasks"
+        return QuickTrackContent.isBlank(store.query) ? "No tasks" : "No matching tasks"
     }
 
     /// Highlights the clicked row, then runs it like Return.
