@@ -101,6 +101,7 @@
 		F70000000000000000000001 /* DelayedProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000002 /* DelayedProgress.swift */; };
 		000987FB1764E22ABAD0069E /* QuickTrackPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */; };
 		687268B1AB9067BF07B092E5 /* QuickTrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */; };
+		4D50977E08157471786035FA /* QuickTrackUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EE6E540A78BCF6AF143CD6 /* QuickTrackUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -213,6 +214,7 @@
 		F70000000000000000000002 /* DelayedProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayedProgress.swift; sourceTree = "<group>"; };
 		0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackPanelController.swift; sourceTree = "<group>"; };
 		0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackView.swift; sourceTree = "<group>"; };
+		35EE6E540A78BCF6AF143CD6 /* QuickTrackUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -607,6 +609,7 @@
 				B26979347C508C0544B722B8 /* WorklogCorrection */,
 				F834347BAA6FED751809F6AB /* WorklogMove */,
 				5639DEDC30E8877EB36D8B99 /* WorklogDeletion */,
+				90437FEB429DB2A96D401DA1 /* QuickTrack */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -748,6 +751,14 @@
 			children = (
 				0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */,
 				0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */,
+			);
+			path = QuickTrack;
+			sourceTree = "<group>";
+		};
+		90437FEB429DB2A96D401DA1 /* QuickTrack */ = {
+			isa = PBXGroup;
+			children = (
+				35EE6E540A78BCF6AF143CD6 /* QuickTrackUITests.swift */,
 			);
 			path = QuickTrack;
 			sourceTree = "<group>";
@@ -935,6 +946,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4D50977E08157471786035FA /* QuickTrackUITests.swift in Sources */,
 				0832BFE9F3604EABDB3A63CA /* WriteIntentAssertions.swift in Sources */,
 				22E7B3EB13B43650ABE84A7B /* ConnectionUITestSupport.swift in Sources */,
 				A10000000000000000000001 /* ArchiveFixture.swift in Sources */,
