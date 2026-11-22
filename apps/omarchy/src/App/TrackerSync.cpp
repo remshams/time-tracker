@@ -75,7 +75,6 @@ void TrackerSync::apply(const BridgeReply &reply, bool reloadHistory) {
         if (reloadHistory && stores_.catalog->selectedTaskId() == selectedBefore) {
             stores_.history->reload();
         }
-        emit refreshed();
     } else {
         stores_.tracking->setStale(true);
         stores_.connection->markUnavailable(reply.error);

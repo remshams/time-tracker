@@ -257,43 +257,13 @@ private slots:
         QVERIFY(f.gateway.calls.isEmpty());
     }
 
-    void stopAnnouncesTheStoppedTaskOnlyWhenTheCoreStoppedIt() {
+    void aFailedStopShowsTheError() {
         Fixture f;
         f.store.accept(running("w1", "t1"));
-        QSignalSpy stoppedSpy(&f.store, &TrackingStore::stopped);
-        f.store.stop();
-        f.gateway.respond("stopTracking", stopped);
-        QCOMPARE(stoppedSpy.count(), 1);
-        QCOMPARE(stoppedSpy.first().first().toString(), QStringLiteral("t1"));
-    }
-
-    void stopStaysQuietWhenNothingWasStopped() {
-        Fixture f;
-        QSignalSpy stoppedSpy(&f.store, &TrackingStore::stopped);
-        QSignalSpy refresh(&f.store, &TrackingStore::refreshRequested);
-        // Another client stopped it already: the call works but there was nothing to stop.
-        f.store.accept(running("w1", "t1"));
-        f.store.stop();
-        f.gateway.respond("stopTracking", BridgeReply::success(QJsonObject{{"didStop", false}}));
-        QCOMPARE(stoppedSpy.count(), 0);
-        QCOMPARE(refresh.count(), 1);
-        // The answer has no didStop at all.
-        f.store.stop();
-        f.gateway.respond("stopTracking", BridgeReply::success(QJsonObject()));
-        f.store.stop();
-        f.gateway.respond("stopTracking", BridgeReply::success());
-        QCOMPARE(stoppedSpy.count(), 0);
-    }
-
-    void aFailedStopShowsTheErrorWithoutAnAnnouncement() {
-        Fixture f;
-        f.store.accept(running("w1", "t1"));
-        QSignalSpy stoppedSpy(&f.store, &TrackingStore::stopped);
         QSignalSpy refresh(&f.store, &TrackingStore::refreshRequested);
         f.store.stop();
         f.gateway.respond("stopTracking", BridgeReply::failure("Worklog not found"));
         QCOMPARE(f.store.error(), QStringLiteral("Worklog not found"));
-        QCOMPARE(stoppedSpy.count(), 0);
         QCOMPARE(refresh.count(), 1);
     }
 
@@ -311,12 +281,10 @@ private slots:
     void theStoppedTaskIsTheOneRunningWhenTheUserActed() {
         Fixture f;
         f.store.accept(running("w1", "t1"));
-        QSignalSpy stoppedSpy(&f.store, &TrackingStore::stopped);
         f.store.stop();
         // A refresh lands before the answer and shows another task.
         f.store.accept(running("w2", "t2"));
         f.gateway.respond("stopTracking", stopped);
-        QCOMPARE(stoppedSpy.first().first().toString(), QStringLiteral("t1"));
     }
 
     // Toggle

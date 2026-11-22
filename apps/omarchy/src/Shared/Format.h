@@ -20,7 +20,7 @@ public:
     // "15:30" in local time.
     Q_INVOKABLE static QString clockTime(const QDateTime &value);
     // "Today", "Yesterday", or "Wed 11 Nov" relative to `today`.
-    Q_INVOKABLE static QString dayLabel(const QDate &day, const QDate &today);
+    static QString dayLabel(const QDate &day, const QDate &today);
     // When a task last ran: "Today 13:12", "Yesterday", "3 days ago" or "Never".
     static QString lastWorked(const std::optional<QDateTime> &latestStart, const QDate &today);
 };
