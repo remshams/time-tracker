@@ -44,7 +44,11 @@ final class GlobalMenuShortcutHandler {
 
     func endMenuTracking() {
         do {
-            if try registration.endMenuTracking() { preferences.reportMenuGlobalShortcutError(nil) }
+            // The error can belong to Open Quick Track, so a working Open menu hotkey doesn't clear it. Registering both
+            // again reports what still fails.
+            if try registration.endMenuTracking() {
+                preferences.reportMenuGlobalShortcutError(registerSavedShortcuts())
+            }
         } catch { preferences.reportMenuGlobalShortcutError(error.localizedDescription) }
     }
 
