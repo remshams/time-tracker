@@ -14,7 +14,7 @@ export PATH="$HOME/.cargo/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/u
 repository_dir=$(CDPATH= cd -- "$PROJECT_DIR/../.." && pwd)
 rust_target=aarch64-apple-darwin
 rust_target_dir="$TARGET_TEMP_DIR/rust"
-output_library="$TARGET_TEMP_DIR/libtracker_swift_bridge.a"
+output_library="$TARGET_TEMP_DIR/libtracker_bridge.a"
 tracker_cargo_bin=${TRACKER_CARGO_BIN:-cargo}
 cargo_flags=()
 
@@ -29,8 +29,8 @@ case "$CONFIGURATION" in
 esac
 
 "$tracker_cargo_bin" build --manifest-path "$repository_dir/Cargo.toml" --locked \
-    -p tracker-swift-bridge --target "$rust_target" \
+    -p tracker-bridge --target "$rust_target" \
     --target-dir "$rust_target_dir" "${cargo_flags[@]}"
 
 mkdir -p "$TARGET_TEMP_DIR"
-cp "$rust_target_dir/$rust_target/$profile/libtracker_swift_bridge.a" "$output_library"
+cp "$rust_target_dir/$rust_target/$profile/libtracker_bridge.a" "$output_library"
