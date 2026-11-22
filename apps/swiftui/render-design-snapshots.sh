@@ -1,5 +1,6 @@
 #!/bin/sh
 # Renders the tracker window offscreen with fixture data into PNGs for design reviews.
+# Pass --quick-track as the second argument to render only the Quick Track dialog.
 # It doesn't launch the app, open a visible window or take keyboard focus.
 set -eu
 
@@ -30,4 +31,4 @@ find "$app_dir/Sources/TimeTrackerSwiftUI" -name '*.swift' \
         "$app_dir/Tests/DesignSnapshots/DesignSnapshots.swift" \
         -framework AppKit -framework SwiftUI -framework Carbon -o "$build_dir/design-snapshots"
 
-"$build_dir/design-snapshots" "$out_dir"
+"$build_dir/design-snapshots" "$out_dir" ${2:+"$2"}
