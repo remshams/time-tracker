@@ -142,6 +142,27 @@ final class QuickTrackCreationTests: XCTestCase {
         XCTAssertEqual(store.query, "New task")
         XCTAssertEqual(store.content.statusLines, ["Task names must be at most 200 characters."])
         XCTAssertEqual(store.content.highlight, .create)
+        store.activate()
+        XCTAssertTrue(store.isCreating)
+        XCTAssertEqual(store.content.statusLines, [], "Trying again hides the earlier error while the request runs.")
+        _ = try await fixture.client.next()
+    }
+
+    @MainActor
+    func testTypingClearsACreateError() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        let creation = try await fixture.client.next()
+        creation.fail(BridgeFailure(message: "Rejected"))
+        let reload = try await fixture.client.next()
+        try await fixture.update("the reload") {
+            reload.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        } until: {
+            !store.isCreating
+        }
+        XCTAssertEqual(store.content.statusLines, ["Rejected"])
         store.setQuery("New task 2")
         XCTAssertEqual(store.content.statusLines, [], "Typing clears the error.")
     }
