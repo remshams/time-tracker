@@ -12,6 +12,7 @@
 #include "Features/TaskRename/TaskRenameStore.h"
 #include "Features/Tracking/TrackingStore.h"
 #include "Features/WorklogCorrection/WorklogCorrectionStore.h"
+#include "Features/WorklogDeletion/WorklogDeletionStore.h"
 #include "Features/WorklogHistory/WorklogHistoryStore.h"
 #include "Features/WorklogMove/WorklogMoveStore.h"
 #include "Shared/DisplayClock.h"
@@ -32,7 +33,8 @@ AppController::AppController(TrackerGateway *gateway, Theme *theme, QObject *par
       taskArchiving_(new TaskArchivingStore(gateway_, catalog_, clock_, this)),
       bulkArchiving_(new BulkTaskArchivingStore(gateway_, clock_, this)),
       correction_(new WorklogCorrectionStore(gateway_, history_, clock_, this)),
-      move_(new WorklogMoveStore(gateway_, history_, this)) {
+      move_(new WorklogMoveStore(gateway_, history_, this)),
+      deletion_(new WorklogDeletionStore(gateway_, history_, clock_, this)) {
     // Every write is followed by a read, whether it worked or not.
     connect(taskCreation_, &TaskCreationStore::refreshRequested, this, [this] { sync_->refresh(true); });
     connect(taskRename_, &TaskRenameStore::refreshRequested, this, [this] { sync_->refresh(true); });
@@ -41,6 +43,7 @@ AppController::AppController(TrackerGateway *gateway, Theme *theme, QObject *par
     // Every worklog write ends with a read, so the history and the totals show what the core kept.
     connect(correction_, &WorklogCorrectionStore::refreshRequested, this, [this] { sync_->refresh(true); });
     connect(move_, &WorklogMoveStore::refreshRequested, this, [this] { sync_->refresh(true); });
+    connect(deletion_, &WorklogDeletionStore::refreshRequested, this, [this] { sync_->refresh(true); });
 }
 
 AppController::~AppController() = default;
@@ -61,6 +64,7 @@ void AppController::expose(QQmlContext *context) {
     context->setContextProperty(QStringLiteral("bulkArchiving"), bulkArchiving_);
     context->setContextProperty(QStringLiteral("worklogCorrection"), correction_);
     context->setContextProperty(QStringLiteral("worklogMove"), move_);
+    context->setContextProperty(QStringLiteral("worklogDeletion"), deletion_);
 }
 
 void AppController::start() {
