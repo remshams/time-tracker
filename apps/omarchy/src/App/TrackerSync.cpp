@@ -44,6 +44,10 @@ void TrackerSync::poll() {
         stores_.connection->connectSaved();
         return;
     }
+    // The first connection is still opening; a read now could only fail.
+    if (stores_.connection->status() == QStringLiteral("connecting")) {
+        return;
+    }
     refresh(false);
 }
 
@@ -63,11 +67,22 @@ void TrackerSync::refresh(bool reloadHistory) {
     });
 }
 
+QString TrackerSync::historySignature() const {
+    const std::optional<TaskItem> selected = stores_.catalog->task(stores_.catalog->selectedTaskId());
+    const std::optional<WorklogItem> &running = stores_.tracking->runningWorklog();
+    QString signature = selected && selected->latestStart ? Timestamps::format(*selected->latestStart) : QString();
+    if (running) {
+        signature += QLatin1Char('|') + running->id + QLatin1Char('|') + running->taskId;
+    }
+    return signature;
+}
+
 void TrackerSync::apply(const BridgeReply &reply, bool reloadHistory) {
     inFlight_ = false;
     if (reply.ok) {
         const Overview overview = Overview::fromJson(reply.data);
         const QString selectedBefore = stores_.catalog->selectedTaskId();
+        const QString historyBefore = historySignature();
         if (overview.tasks) {
             stores_.catalog->accept(*overview.tasks);
         }
@@ -77,8 +92,10 @@ void TrackerSync::apply(const BridgeReply &reply, bool reloadHistory) {
         stores_.totals->accept(overview.report);
         stores_.tracking->setStale(false);
         stores_.connection->markReachable();
-        // A changed selection loads its own history.
-        if (reloadHistory && stores_.catalog->selectedTaskId() == selectedBefore) {
+        // A changed selection loads its own history. Otherwise the history reloads after a
+        // write, or when another client started, stopped or moved work on the selected task.
+        const bool historyChanged = historySignature() != historyBefore;
+        if ((reloadHistory || historyChanged) && stores_.catalog->selectedTaskId() == selectedBefore) {
             stores_.history->reload();
         }
     } else {

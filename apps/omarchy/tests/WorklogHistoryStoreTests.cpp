@@ -56,6 +56,28 @@ private slots:
         QCOMPARE(f.gateway.lastArgs("history"), (QStringList{"a", QString()}));
     }
 
+    void theRunningPartCarriesItsOffsetForTheLiveTimer() {
+        Fixture f;
+        // Started 23:00 local yesterday, so today's part begins one hour into the worklog.
+        f.load({log("w1", "2026-11-09T22:00:00.000Z")});
+        const QVariantMap today = f.history.days().first().toMap();
+        QCOMPARE(today.value("runningOffset").toLongLong(), 3600);
+        QCOMPARE(today.value("runningSeconds").toLongLong(), 13 * 3600);
+        const QVariantMap entry = today.value("entries").toList().first().toMap();
+        QCOMPARE(entry.value("runningOffset").toLongLong(), 3600);
+    }
+
+    void theRunningRowRebuildsTheDaysOncePerMinute() {
+        Fixture f;
+        f.load({log("w1", "2026-11-10T11:00:00.000Z")});
+        QSignalSpy days(&f.history, &WorklogHistoryStore::daysChanged);
+        f.test.advanceTo("2026-11-10T12:00:01.000Z");
+        f.test.advanceTo("2026-11-10T12:00:30.000Z");
+        QCOMPARE(days.count(), 1);
+        f.test.advanceTo("2026-11-10T12:01:00.000Z");
+        QCOMPARE(days.count(), 2);
+    }
+
     void reloadWithoutASelectionDoesNothing() {
         Fixture f;
         f.history.reload();

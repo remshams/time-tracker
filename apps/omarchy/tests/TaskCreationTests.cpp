@@ -33,7 +33,8 @@ class TaskCreationTests : public QObject {
 private slots:
     void init() {
         gateway = std::make_unique<FakeTrackerGateway>();
-        clock = std::make_unique<DisplayClock>([] { return kNow; }, false);
+        now = kNow;
+        clock = std::make_unique<DisplayClock>([this] { return now; }, false);
         catalog = std::make_unique<TaskCatalogStore>(clock.get());
         store = std::make_unique<TaskCreationStore>(gateway.get(), catalog.get(), clock.get());
     }
@@ -108,6 +109,29 @@ private slots:
                          task(QStringLiteral("a"), QStringLiteral("A")),
                          task(QStringLiteral("t1"), QStringLiteral("Plan"))});
         QVERIFY(!catalog->archivedTab());
+        QCOMPARE(catalog->selectedTaskId(), QStringLiteral("t1"));
+    }
+
+    void aMuchLaterListDoesNotTakeTheSelection() {
+        catalog->accept({task(QStringLiteral("a"), QStringLiteral("A"))});
+        store->setDraft(QStringLiteral("Plan"));
+        store->submit();
+        gateway->respond("createTask", created(QStringLiteral("t1"), QStringLiteral("Plan")));
+        // The reload after the create failed; the next list arrives with a later poll.
+        now = kNow.addSecs(30);
+        catalog->accept(
+            {task(QStringLiteral("a"), QStringLiteral("A")), task(QStringLiteral("t1"), QStringLiteral("Plan"))});
+        QCOMPARE(catalog->selectedTaskId(), QStringLiteral("a"));
+    }
+
+    void aListWithinTheWindowStillTakesTheSelection() {
+        catalog->accept({task(QStringLiteral("a"), QStringLiteral("A"))});
+        store->setDraft(QStringLiteral("Plan"));
+        store->submit();
+        gateway->respond("createTask", created(QStringLiteral("t1"), QStringLiteral("Plan")));
+        now = kNow.addSecs(10);
+        catalog->accept(
+            {task(QStringLiteral("a"), QStringLiteral("A")), task(QStringLiteral("t1"), QStringLiteral("Plan"))});
         QCOMPARE(catalog->selectedTaskId(), QStringLiteral("t1"));
     }
 
@@ -228,6 +252,7 @@ private slots:
 
 private:
     std::unique_ptr<FakeTrackerGateway> gateway;
+    QDateTime now;
     std::unique_ptr<DisplayClock> clock;
     std::unique_ptr<TaskCatalogStore> catalog;
     std::unique_ptr<TaskCreationStore> store;

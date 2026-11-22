@@ -95,14 +95,15 @@ private slots:
         QCOMPARE(f.connection.status(), QStringLiteral("connected"));
     }
 
-    void aMissingReportMakesTheTotalsUnknown() {
+    void aMissingReportKeepsTheLastTotalsAsCached() {
         Fixture f;
         f.sync.refresh();
         f.answer(overview());
         QVERIFY(f.totals.known());
         f.sync.refresh();
         f.answer(BridgeReply::success(overviewJson(tasks, QJsonValue::Null, QString())));
-        QVERIFY(!f.totals.known());
+        QVERIFY(f.totals.known());
+        QVERIFY(f.totals.cached());
         QVERIFY(f.catalog.loaded());
     }
 
@@ -367,6 +368,30 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(f.gateway.count("connectTo"), before);
         QVERIFY(f.connection.draftPending());
+    }
+
+    void aPollReloadsTheHistoryWhenAnotherClientChangesTracking() {
+        Fixture f;
+        f.sync.refresh();
+        f.answer(overview(worklogJson("w1", "a", "2026-11-10T11:00:00.000Z")));
+        f.gateway.respond("history", BridgeReply::success(historyJson({})));
+        QCOMPARE(f.gateway.count("history"), 1);
+        // Nothing changed: the history stays.
+        f.sync.refresh();
+        f.answer(overview(worklogJson("w1", "a", "2026-11-10T11:00:00.000Z")));
+        QCOMPARE(f.gateway.count("history"), 1);
+        // The bar widget paused and resumed: a new worklog runs.
+        f.sync.refresh();
+        f.answer(overview(worklogJson("w2", "a", "2026-11-10T11:30:00.000Z")));
+        QCOMPARE(f.gateway.count("history"), 2);
+    }
+
+    void thePollSkipsReadsWhileTheFirstConnectionOpens() {
+        Fixture f(20);
+        f.sync.start();
+        QTest::qWait(100);
+        QCOMPARE(f.gateway.count("refreshOverview"), 0);
+        QCOMPARE(f.gateway.count("connectTo"), 1);
     }
 
     void thePollDoesNotRunBeforeStart() {

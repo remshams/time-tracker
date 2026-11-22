@@ -38,6 +38,8 @@ public:
 private:
     void poll();
     void apply(const BridgeReply &reply, bool reloadHistory);
+    // What the selected task's history depends on: its latest start and the running worklog.
+    QString historySignature() const;
 
     TrackerGateway *gateway_;
     DisplayClock *clock_;

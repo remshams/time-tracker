@@ -87,6 +87,24 @@ private slots:
         QCOMPARE(availability.count(), 0);
     }
 
+    void anErrorStaysThroughTheReloadAndGoesWithTheNextRead() {
+        Fixture f;
+        f.store.start("t1");
+        f.gateway.respond("startTracking", BridgeReply::failure("Task is archived"));
+        // The reload that follows the failed command shows the error with the reloaded state.
+        f.store.accept(std::nullopt);
+        QCOMPARE(f.store.error(), QStringLiteral("Task is archived"));
+        f.store.accept(std::nullopt);
+        QVERIFY(f.store.error().isEmpty());
+    }
+
+    void runningWorklogIdFollowsTheState() {
+        Fixture f;
+        QVERIFY(f.store.runningWorklogId().isEmpty());
+        f.store.accept(running("w1", "t1", "2026-11-10T11:00:00.000Z"));
+        QCOMPARE(f.store.runningWorklogId(), QStringLiteral("w1"));
+    }
+
     void aDifferentWorklogChangesTheState() {
         Fixture f;
         f.store.accept(running("w1", "t1", "2026-11-10T11:00:00.000Z"));

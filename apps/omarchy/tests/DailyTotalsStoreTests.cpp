@@ -182,7 +182,9 @@ private slots:
     void theRunningWorklogCountsOnlyTodayWhenTheReportIsOlder() {
         Fixture f;
         // Started yesterday evening; the report was cut off before today began (23:00 UTC).
+        // The clock then passes midnight before a tick resets the totals.
         f.run("w1", "a", "2026-11-09T19:00:00.000Z");
+        f.test.set("2026-11-09T22:00:00.000Z");
         f.totals.accept(report("2026-11-09T22:00:00.000Z", {}));
         f.test.set("2026-11-10T12:00:00.000Z");
         // 23:00 UTC to 12:00 UTC.
@@ -266,13 +268,38 @@ private slots:
         QCOMPARE(changed.count(), 1);
     }
 
-    void acceptingNoReportMakesTheTotalsUnknown() {
+    void acceptingNoReportKeepsTheTotalsAsCached() {
         Fixture f;
         f.totals.accept(report("2026-11-10T12:00:00.000Z", {{"a", 60 * second}}));
+        QVERIFY(!f.totals.cached());
+        QSignalSpy changed(&f.totals, &DailyTotalsStore::totalsChanged);
+        f.totals.accept(std::nullopt);
+        QVERIFY(f.totals.known());
+        QVERIFY(f.totals.cached());
+        QCOMPARE(f.totals.secondsFor("a"), 60);
+        QCOMPARE(changed.count(), 1);
+        f.totals.accept(std::nullopt);
+        QCOMPARE(changed.count(), 1);
+        // The next report replaces them.
+        f.totals.accept(report("2026-11-10T12:00:00.000Z", {{"a", 120 * second}}));
+        QVERIFY(!f.totals.cached());
+        QCOMPARE(f.totals.secondsFor("a"), 120);
+    }
+
+    void acceptingNoReportWithoutTotalsStaysUnknown() {
+        Fixture f;
         QSignalSpy changed(&f.totals, &DailyTotalsStore::totalsChanged);
         f.totals.accept(std::nullopt);
         QVERIFY(!f.totals.known());
-        QCOMPARE(changed.count(), 1);
+        QVERIFY(!f.totals.cached());
+        QCOMPARE(changed.count(), 0);
+    }
+
+    void aReportForAnotherDayIsIgnored() {
+        Fixture f;
+        // Requested at 22:59 local on the 9th, answered after midnight.
+        f.totals.accept(report("2026-11-09T21:59:00.000Z", {{"a", 60 * second}}));
+        QVERIFY(!f.totals.known());
     }
 
     void aNewDayDropsYesterdaysReport() {

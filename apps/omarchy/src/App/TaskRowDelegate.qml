@@ -114,7 +114,8 @@ Item {
         }
 
         Duration {
-            visible: row.hasTime || row.running
+            // Without a report for today the time is unknown, so the row shows none.
+            visible: row.hasTime || (row.running && row.todaySeconds >= 0)
             seconds: Math.max(0, row.todaySeconds)
             color: row.running ? theme.text : theme.textDim
         }

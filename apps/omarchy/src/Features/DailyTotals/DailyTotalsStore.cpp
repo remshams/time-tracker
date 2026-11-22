@@ -24,7 +24,20 @@ DailyTotalsStore::DailyTotalsStore(TaskCatalogStore *catalog, TrackingStore *tra
 }
 
 void DailyTotalsStore::accept(const std::optional<DailyReport> &report) {
+    if (!report) {
+        // A failed report keeps the last totals of today, marked as cached.
+        if (report_ && !cached_) {
+            cached_ = true;
+            emit totalsChanged();
+        }
+        return;
+    }
+    // A report requested before midnight arrives after it; yesterday's totals are not today's.
+    if (report->cutoff.toLocalTime().date() != clock_->now().toLocalTime().date()) {
+        return;
+    }
     report_ = report;
+    cached_ = false;
     emit totalsChanged();
 }
 
@@ -33,6 +46,7 @@ void DailyTotalsStore::reset() {
         return;
     }
     report_.reset();
+    cached_ = false;
     emit totalsChanged();
 }
 

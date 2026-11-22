@@ -17,6 +17,7 @@ class TrackingStore : public QObject {
     Q_PROPERTY(bool known READ known NOTIFY stateChanged)
     Q_PROPERTY(bool running READ running NOTIFY stateChanged)
     Q_PROPERTY(QString runningTaskId READ runningTaskId NOTIFY stateChanged)
+    Q_PROPERTY(QString runningWorklogId READ runningWorklogId NOTIFY stateChanged)
     Q_PROPERTY(QDateTime runningSince READ runningSince NOTIFY stateChanged)
     Q_PROPERTY(qint64 elapsedSeconds READ elapsedSeconds NOTIFY elapsedChanged)
     Q_PROPERTY(bool stale READ stale NOTIFY staleChanged)
@@ -35,6 +36,7 @@ public:
     bool known() const { return known_; }
     bool running() const { return running_.has_value(); }
     QString runningTaskId() const { return running_ ? running_->taskId : QString(); }
+    QString runningWorklogId() const { return running_ ? running_->id : QString(); }
     QDateTime runningSince() const { return running_ ? running_->start : QDateTime(); }
     const std::optional<WorklogItem> &runningWorklog() const { return running_; }
     qint64 elapsedSeconds() const;
@@ -71,4 +73,5 @@ private:
     bool pending_ = false;
     bool stale_ = false;
     QString error_;
+    int readsSinceError_ = 0;
 };

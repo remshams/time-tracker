@@ -9,6 +9,8 @@ Rectangle {
 
     property bool focused: false
     property string selectedWorklogId
+    // A worklog past midnight is listed once per day, so the position tells its rows apart.
+    property int selectedPosition: -1
 
     signal renameRequested(string taskId)
     signal archiveRequested(string taskId)
@@ -17,7 +19,7 @@ Rectangle {
     signal deleteRequested(string worklogId)
     signal createRequested
 
-    // Worklog IDs in display order, for keyboard navigation.
+    // Worklog IDs in display order, one per row, for keyboard navigation.
     readonly property var worklogIds: {
         const ids = []
         for (const day of history.days)
@@ -29,9 +31,10 @@ Rectangle {
     function moveWorklogSelection(step) {
         if (worklogIds.length === 0)
             return
-        const current = worklogIds.indexOf(selectedWorklogId)
+        const current = worklogIds[selectedPosition] === selectedWorklogId ? selectedPosition : worklogIds.indexOf(selectedWorklogId)
         const next = current < 0 ? 0 : Math.max(0, Math.min(worklogIds.length - 1, current + step))
         selectedWorklogId = worklogIds[next]
+        selectedPosition = next
         if (next === worklogIds.length - 1 && history.hasMore)
             history.loadMore()
     }
@@ -51,7 +54,7 @@ Rectangle {
     // No task at all: invite the first one.
     Column {
         anchors.centerIn: parent
-        visible: catalog.loaded && catalog.activeCount === 0 && root.taskId.length === 0
+        visible: catalog.loaded && Object.keys(catalog.names).length === 0
         spacing: 14
         Txt {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -65,6 +68,16 @@ Rectangle {
             highlighted: true
             onClicked: root.createRequested()
         }
+    }
+
+    // Tasks exist, but none is selected, for example when every task is archived.
+    Txt {
+        anchors.centerIn: parent
+        visible: catalog.loaded && Object.keys(catalog.names).length > 0 && root.taskId.length === 0
+        text: qsTr("Select a task to see its worklogs.")
+        level: 1
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
     }
 
     ColumnLayout {
@@ -96,19 +109,21 @@ Rectangle {
                         dotColor: theme.taskColor(catalog.selectedColorName)
                         filled: root.todaySeconds > 0 || root.running
                     }
+                    // Without a report for today the total is unknown, so it isn't shown.
                     Duration {
-                        visible: root.todaySeconds > 0 || root.running
+                        visible: root.todaySeconds > 0 || (root.running && root.todaySeconds >= 0)
                         seconds: Math.max(0, root.todaySeconds)
                         color: theme.textDim
                     }
                     Txt {
                         text: {
-                            if (root.todaySeconds > 0 || root.running)
-                                return catalog.selectedArchived ? qsTr("today, archived") : qsTr("today")
+                            if (root.todaySeconds > 0 || (root.running && root.todaySeconds >= 0))
+                                return qsTr("today")
+                            if (root.running)
+                                return qsTr("Running")
                             // Reading the selection too keeps this current when another task is picked.
                             const last = catalog.selectedTaskId.length > 0 ? catalog.selectedLastWorked : ""
-                            const when = last.length === 0 ? qsTr("Not tracked yet") : qsTr("Last tracked %1").arg(last.toLowerCase())
-                            return catalog.selectedArchived ? qsTr("%1, archived").arg(when) : when
+                            return last.length === 0 ? qsTr("Not tracked yet") : qsTr("Last tracked %1").arg(last.toLowerCase())
                         }
                         level: 1
                     }
