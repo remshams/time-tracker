@@ -12,6 +12,9 @@ std::vector<Factory> &factories() {
 
 int main(int argc, char *argv[]) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
+    // A zone with a fixed offset of one hour, so local-time tests give the same answer on
+    // every machine and still tell local time from UTC.
+    qputenv("TZ", "CET-1");
     QGuiApplication app(argc, argv);
     int failures = 0;
     for (const TestRegistry::Factory &factory : TestRegistry::factories()) {
