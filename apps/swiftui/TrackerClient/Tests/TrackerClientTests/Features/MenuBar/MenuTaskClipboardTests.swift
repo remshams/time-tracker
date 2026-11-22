@@ -84,7 +84,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         XCTAssertEqual(
             fixture.features.menuBar.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "0m")
         XCTAssertNil(fixture.features.menuBar.menuCopyValue(.copyName, taskID: "missing-task", connection: .local))
-        for action in [MenuShortcutAction.openMenu, .moveUp, .moveDown] {
+        for action in [MenuShortcutAction.openMenu, .openQuickTrack, .moveUp, .moveDown] {
             XCTAssertNil(fixture.features.menuBar.menuCopyValue(action, taskID: firstTask.id, connection: .local))
         }
     }

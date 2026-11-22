@@ -13,7 +13,7 @@ extension MenuBarStore {
         case .copyName: return task.name
         case .copyExact: return MenuDurationFormatter.exact(dailyDuration(taskID: taskID))
         case .copyRounded: return MenuDurationFormatter.rounded(dailyDuration(taskID: taskID))
-        case .openMenu, .moveDown, .moveUp: return nil
+        case .openMenu, .openQuickTrack, .moveDown, .moveUp: return nil
         }
     }
 
