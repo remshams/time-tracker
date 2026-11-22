@@ -230,7 +230,7 @@ jobs:
 
   omarchy:
     if: ${{ !inputs.native_benchmark }}
-    name: Omarchy desktop lint, tests, and release build
+    name: Omarchy desktop lint, tests, release build, and E2E
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     container:
@@ -241,7 +241,7 @@ jobs:
       - name: Install the Qt, LLVM, and Rust toolchains
         run: |
           pacman -Syu --noconfirm --needed base-devel git qt6-base qt6-declarative qt6-wayland rustup clang \
-            python python-pip python-gobject
+            python python-pip python-gobject sway wtype at-spi2-core dbus
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -271,6 +271,8 @@ jobs:
         run: apps/omarchy/bin/test --coverage
       - name: Build the release binary
         run: apps/omarchy/bin/build release
+      - name: Run the E2E tests in a headless sway session
+        run: apps/omarchy/bin/e2e
 
   native-scope:
     if: ${{ !inputs.native_benchmark }}
