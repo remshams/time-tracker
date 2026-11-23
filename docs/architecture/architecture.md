@@ -248,7 +248,7 @@ such as `Features/WorklogCorrection` in both targets.
   client's `searchTasks` returns, and starts and stops tracking through
   `TrackingStore`; it reports whether the dialog shows to `TrackerSync` through
   a closure that `TrackerFeatures` sets
-  ([ADR 0042](adr/0042-show-quick-track-in-a-non-activating-panel.md)).
+  ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)).
   `TrackerSync` loads,
   refreshes and polls the stores, handles visibility, sleep
   and wake, switches the connection, and reloads after dialog writes ([ADR 0032](adr/0032-move-the-dialogs-into-feature-stores.md)).
@@ -320,7 +320,7 @@ such as `Features/WorklogCorrection` in both targets.
   one tracker window, Settings, the menu bar item, the Quick Track panel and
   lifecycle handling. The Quick Track panel is a non-activating `NSPanel`, so
   it takes keyboard input without bringing the app or its window forward
-  ([ADR 0042](adr/0042-show-quick-track-in-a-non-activating-panel.md)). The
+  ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)). The
   serial
   [`TrackerWorker`](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift)
   keeps bridge calls and decoding off the UI thread and runs them in order.
