@@ -101,7 +101,7 @@ final class SettingsUITests: TrackerUITestCase {
         dismissStatusMenu()
     }
 
-    func testQuickTrackShortcutRejectsTheOpenMenuShortcut() throws {
+    func testQuickTrackShortcutRejectsTheOpenMenuBinding() throws {
         launch()
         openSettings()
         element("global-shortcut.quick-track").click()
