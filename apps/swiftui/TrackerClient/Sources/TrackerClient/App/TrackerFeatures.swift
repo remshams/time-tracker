@@ -24,7 +24,7 @@ public final class TrackerFeatures {
     /// Views read today's status and task totals here; the store loads them when the sync asks it to.
     public let dailyTotals: DailyTotalsStore
     /// The menu bar and Quick Track read what their copy actions copy here.
-    public let taskCopying: TaskCopying
+    let taskCopying: TaskCopying
     /// The menu bar reads the last tracked task and its copy values here, runs the status item's primary action and
     /// turns the menu bar clock on or off; the sync writes the task.
     public let menuBar: MenuBarStore

@@ -3,21 +3,21 @@ import Foundation
 /// The values the Quick Track dialog shows, read from the stores in one pass.
 ///
 /// It contains only stored values, so `Observations` sees every change that alters what the dialog shows.
-nonisolated public struct QuickTrackInputs: Equatable, Sendable {
-    public var tasks: [TaskItem]
-    public var active: WorklogItem?
-    public var elapsedSeconds: Int?
-    public var isStale: Bool
-    public var connectionStatusText: String
-    public var trackingError: String?
-    public var autoPauseStatusText: String?
-    public var runningTaskName: String
-    public var canStopTracking: Bool
-    public var startableTaskIDs: Set<String>
-    public var dayTotal: TimeInterval?
-    public var dailyTotalsStatus: DailyTotalsStatus
-    public var totalsExplanation: String
-    public var taskDurations: [String: TimeInterval]
+nonisolated struct QuickTrackInputs: Equatable, Sendable {
+    var tasks: [TaskItem]
+    var active: WorklogItem?
+    var elapsedSeconds: Int?
+    var isStale: Bool
+    var connectionStatusText: String
+    var trackingError: String?
+    var autoPauseStatusText: String?
+    var runningTaskName: String
+    var canStopTracking: Bool
+    var startableTaskIDs: Set<String>
+    var dayTotal: TimeInterval?
+    var dailyTotalsStatus: DailyTotalsStatus
+    var totalsExplanation: String
+    var taskDurations: [String: TimeInterval]
 
     // The text helpers are main-actor isolated because `DurationText` is.
     /// The running worklog's time, or "Unavailable" before the tracker state is confirmed.
@@ -40,7 +40,7 @@ nonisolated public struct QuickTrackInputs: Equatable, Sendable {
 /// The stores the Quick Track dialog reads.
 ///
 /// `TrackingAvailability` decides whether tracking can start or stop. The running task's name is computed here.
-public struct QuickTrackSources: Sendable {
+struct QuickTrackSources: Sendable {
     let catalog: TaskCatalogStore
     let connection: ConnectionStore
     let tracking: TrackingStore

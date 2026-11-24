@@ -63,7 +63,7 @@ public struct GlobalShortcut: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-public enum GlobalShortcutAction: String, CaseIterable, Sendable {
+public enum GlobalShortcutAction: CaseIterable, Sendable {
     case openMenu, openQuickTrack
 
     /// Only Quick Track accepts Space.
