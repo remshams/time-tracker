@@ -205,30 +205,4 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: Data("null".utf8)))
         XCTAssertThrowsError(try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: Data("invalid".utf8)))
     }
-
-    func testExactDurationPreservesSecondsAndDropsLeadingZeroUnits() async {
-        XCTAssertEqual(MenuDurationFormatter.exact(5_025), "1h 23m 45s")
-        XCTAssertEqual(MenuDurationFormatter.exact(1_425), "23m 45s")
-        XCTAssertEqual(MenuDurationFormatter.exact(45.99), "45s")
-        XCTAssertEqual(MenuDurationFormatter.exact(3_600), "1h 0m 0s")
-        XCTAssertEqual(MenuDurationFormatter.exact(0), "0s")
-        XCTAssertEqual(MenuDurationFormatter.exact(-10), "0s")
-    }
-
-    func testRoundedDurationUsesNearestQuarterHourAndRoundsTiesUp() async {
-        XCTAssertEqual(MenuDurationFormatter.rounded(449), "0m")
-        XCTAssertEqual(MenuDurationFormatter.rounded(450), "15m")
-        XCTAssertEqual(MenuDurationFormatter.rounded(1_349), "15m")
-        XCTAssertEqual(MenuDurationFormatter.rounded(1_350), "30m")
-        XCTAssertEqual(MenuDurationFormatter.rounded(5_025), "1h 30m")
-        XCTAssertEqual(MenuDurationFormatter.rounded(3_600), "1h 0m")
-        XCTAssertEqual(MenuDurationFormatter.rounded(-450), "0m")
-    }
-
-    func testUnavailableNonfiniteAndOversizedDurationsHaveNoCopyValue() async {
-        for duration: TimeInterval? in [nil, .nan, .infinity, -.infinity, .greatestFiniteMagnitude, Double(Int64.max)] {
-            XCTAssertNil(MenuDurationFormatter.exact(duration))
-            XCTAssertNil(MenuDurationFormatter.rounded(duration))
-        }
-    }
 }

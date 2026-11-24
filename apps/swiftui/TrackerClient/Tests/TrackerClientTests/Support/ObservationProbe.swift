@@ -191,10 +191,10 @@ func assertRefreshed(_ fixture: Fixture, file: StaticString = #filePath, line: U
         file: file, line: line)
     for task in features.taskCatalog.tasks {
         XCTAssertEqual(
-            totals.taskDurations[task.id], features.menuBar.dailyDuration(taskID: task.id), file: file, line: line)
+            totals.taskDurations[task.id], features.taskCopying.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
             totals.taskTotal(taskID: task.id).content?.seconds,
-            features.menuBar.dailyDuration(taskID: task.id).map { Int($0) }, file: file, line: line)
+            features.taskCopying.dailyDuration(taskID: task.id).map { Int($0) }, file: file, line: line)
         XCTAssertEqual(totals.taskTotal(taskID: task.id).content?.explanation, explanation, file: file, line: line)
     }
 }

@@ -19,7 +19,7 @@ public extension ConnectionSettings {
 ///
 /// The menu reads `lastTrackedTaskID`; `TrackerSync` calls `acceptTaskList` after each task list. The task is
 /// remembered per connection and saved to the repository, so switching connections back restores it. The menu's
-/// copy actions, in `MenuTaskClipboard.swift`, read the task and its time today from the stores passed in here.
+/// copy actions read the task and its time today through `TaskCopying`.
 @Observable
 public final class MenuBarStore: ChangeGuardedStore {
     public private(set) var lastTrackedTaskID: String?
@@ -28,7 +28,7 @@ public final class MenuBarStore: ChangeGuardedStore {
     let connection: ConnectionStore
     let catalog: TaskCatalogStore
     let tracking: TrackingStore
-    let dailyTotals: DailyTotalsStore
+    private let taskCopying: TaskCopying
     private let automation: TrackingAutomationStore
     private let displayClock: DisplayClock
     private var availability: TrackingAvailability {
@@ -37,14 +37,14 @@ public final class MenuBarStore: ChangeGuardedStore {
 
     init(
         repository: (any LastTrackedTaskRepository)?, connection: ConnectionStore, catalog: TaskCatalogStore,
-        tracking: TrackingStore, dailyTotals: DailyTotalsStore, automation: TrackingAutomationStore,
+        tracking: TrackingStore, taskCopying: TaskCopying, automation: TrackingAutomationStore,
         displayClock: DisplayClock
     ) {
         self.repository = repository
         self.connection = connection
         self.catalog = catalog
         self.tracking = tracking
-        self.dailyTotals = dailyTotals
+        self.taskCopying = taskCopying
         self.automation = automation
         self.displayClock = displayClock
         let settings = connection.settings
@@ -73,6 +73,15 @@ public final class MenuBarStore: ChangeGuardedStore {
         case .openMenu, .disabled: break
         }
         return action
+    }
+
+    /// The text a copy action copies for `taskID`, or `nil` when there is nothing to copy. A dropdown opened on one
+    /// data source must not copy from another, so `connection` must still be the current one.
+    public func menuCopyValue(
+        _ action: TaskCopyAction, taskID: String, connection: ConnectionSettings
+    ) -> String? {
+        guard self.connection.settings == connection else { return nil }
+        return taskCopying.value(action, taskID: taskID)
     }
 
     /// Refreshes the clock values once a minute while a timer runs, so the menu bar's daily total keeps counting
