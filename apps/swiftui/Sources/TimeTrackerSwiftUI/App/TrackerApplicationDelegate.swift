@@ -30,13 +30,14 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Creates the feature objects, the menu observer, the menu bar settings and the lifecycle observer, and starts
-/// the sync. The scenes, the app menus, the status item and the presentation coordinator get the objects here.
+/// Creates the feature objects, the menu observer, the menu bar settings, the global shortcuts and the lifecycle
+/// observer, and starts the sync. The scenes, the app menus, the status item, the global shortcut handler and the
+/// presentation coordinator get the objects here.
 final class TrackerAppRuntime {
     let features: TrackerFeatures
     /// Settings tests a connection with this client.
     let client: any TrackerClient
-    /// The Settings window reads this store through the SwiftUI environment; the status item gets it through `init`.
+    /// The Settings window reads this store through the SwiftUI environment.
     let menuBarPreferences: MenuBarPreferencesStore
     /// The Settings window reads this store through the SwiftUI environment; `start()` creates the handler that
     /// registers its shortcuts.
