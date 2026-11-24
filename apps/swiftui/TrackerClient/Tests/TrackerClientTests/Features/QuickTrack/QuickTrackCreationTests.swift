@@ -114,6 +114,7 @@ final class QuickTrackCreationTests: XCTestCase {
         XCTAssertEqual(
             fixture.client.operations.count { $0 == .search(query: "") }, 2,
             "One empty search per opening: the failed create of the earlier opening doesn't search in this one.")
+        XCTAssertFalse(store.isSearching, "No search started for the earlier opening's failed create.")
     }
 
     @MainActor
