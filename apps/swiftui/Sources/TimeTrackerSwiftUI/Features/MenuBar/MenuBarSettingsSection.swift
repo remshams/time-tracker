@@ -14,6 +14,11 @@ struct MenuBarSettingsSection: View {
                 )
             )
             .accessibilityIdentifier("menu.show-daily-total")
+            Text(
+                "Task submenus can copy the task name, today's exact time, or today's time rounded to the nearest 15 minutes."
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
