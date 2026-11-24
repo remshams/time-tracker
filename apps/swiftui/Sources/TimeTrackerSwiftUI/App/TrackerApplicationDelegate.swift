@@ -38,11 +38,15 @@ final class TrackerAppRuntime {
     let client: any TrackerClient
     /// The Settings window reads this store through the SwiftUI environment; the status item gets it through `init`.
     let menuBarPreferences: MenuBarPreferencesStore
+    /// The Settings window reads this store through the SwiftUI environment; `start()` creates the handler that
+    /// registers its shortcuts.
+    let globalShortcuts: GlobalShortcutsStore
+    private var globalShortcutHandler: GlobalShortcutHandler?
     private let menu: TrackerMenuPresentationObserver
     private let lifecycle: MacLifecycleObserver
     private lazy var statusItem = TrackerStatusItemController(
         sync: features.sync, tracking: features.tracking, menuBar: features.menuBar,
-        connection: features.connection, menu: menu, preferences: menuBarPreferences)
+        connection: features.connection, menu: menu)
     private lazy var quickTrack = QuickTrackPanelController(store: features.quickTrack)
     private lazy var presentation = TrackerTaskPresentationCoordinator(gate: features.presentationGate) { [weak self] in
         self?.showTracker()
@@ -69,8 +73,8 @@ final class TrackerAppRuntime {
         // The store turns the menu bar clock on or off for the saved setting.
         menuBarPreferences = MenuBarPreferencesStore(
             preferences: savedPreferences,
-            keyboardPreferences: UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults),
             menu: menu, menuBar: features.menuBar)
+        globalShortcuts = GlobalShortcutsStore(preferences: UserDefaultsGlobalShortcutPreferences(defaults: launch.defaults))
         lifecycle = MacLifecycleObserver(sync: features.sync, automation: features.trackingAutomation)
         lifecycle.start()
         features.sync.start()
@@ -80,9 +84,14 @@ final class TrackerAppRuntime {
         guard !isRunning else { return }
         isRunning = true
         presentation.start()
-        statusItem.start(
-            openWindow: { [weak self] in self?.showTracker() },
+        statusItem.start(openWindow: { [weak self] in self?.showTracker() })
+        let handler = GlobalShortcutHandler(
+            store: globalShortcuts,
+            toggleMenu: { [weak self] in self?.statusItem.toggleMenu() },
             openQuickTrack: { [weak self] in self?.quickTrack.toggle() })
+        statusItem.onMenuOpened = { [weak handler] dismiss in handler?.beginMenuTracking(dismiss: dismiss) }
+        statusItem.onMenuClosed = { [weak handler] in handler?.endMenuTracking() }
+        globalShortcutHandler = handler
     }
 
     /// SwiftUI hands `openWindow` only to scene content and commands. They pass it here, so the Dock and

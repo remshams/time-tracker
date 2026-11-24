@@ -9,29 +9,29 @@ final class TrackerStatusItemController: NSObject {
     private let menuBar: MenuBarStore
     private let connection: ConnectionStore
     private let menu: TrackerMenuPresentationObserver
-    private let preferences: MenuBarPreferencesStore
     private var statusItem: NSStatusItem?
     private var appearanceObservation: NSKeyValueObservation?
     private var openWindow: (() -> Void)?
     private var shownMenu: TrackerStatusMenu?
-    private var shortcut: GlobalMenuShortcutHandler?
+    /// Runs when the menu opens, with a closure that closes it.
+    var onMenuOpened: ((_ dismiss: @escaping @MainActor () -> Void) -> Void)?
+    /// Runs when the menu has closed.
+    var onMenuClosed: (() -> Void)?
 
     init(
         sync: TrackerSync, tracking: TrackingStore, menuBar: MenuBarStore, connection: ConnectionStore,
-        menu: TrackerMenuPresentationObserver, preferences: MenuBarPreferencesStore
+        menu: TrackerMenuPresentationObserver
     ) {
         self.sync = sync
         self.tracking = tracking
         self.menuBar = menuBar
         self.connection = connection
         self.menu = menu
-        self.preferences = preferences
         super.init()
     }
 
-    /// Shows the status item. `openWindow` brings the tracker window forward, and `openQuickTrack` runs when the Open
-    /// Quick Track shortcut is pressed.
-    func start(openWindow: @escaping () -> Void, openQuickTrack: @escaping @MainActor () -> Void) {
+    /// Shows the status item. `openWindow` brings the tracker window forward.
+    func start(openWindow: @escaping () -> Void) {
         self.openWindow = openWindow
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -51,10 +51,6 @@ final class TrackerStatusItemController: NSObject {
             guard let self else { return }
             updateMenuValues(menu.values)
         }
-        shortcut = GlobalMenuShortcutHandler(
-            preferences: preferences,
-            toggleMenu: { [weak self] in self?.toggleMenu() },
-            openQuickTrack: openQuickTrack)
         updateLabel()
     }
 
@@ -90,7 +86,8 @@ final class TrackerStatusItemController: NSObject {
         }
     }
 
-    private func toggleMenu() {
+    /// Opens the menu, or closes it when it is open.
+    func toggleMenu() {
         if let shownMenu {
             shownMenu.menu.cancelTracking()
         } else {
@@ -113,7 +110,7 @@ final class TrackerStatusItemController: NSObject {
         shownMenu = built
         updateMenuValues(self.menu.values)
         button.highlight(true)
-        shortcut?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
+        onMenuOpened?({ [weak menu] in menu?.cancelTracking() })
         defer {
             statusItem.menu = nil
             button.target = self
@@ -123,7 +120,7 @@ final class TrackerStatusItemController: NSObject {
             button.highlight(false)
             sync.setMenuVisible(false)
             self.menu.menuClosed()
-            shortcut?.endMenuTracking()
+            onMenuClosed?()
         }
         // AppKit positions status-item menus below the menu bar, including their outer padding.
         statusItem.menu = menu

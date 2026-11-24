@@ -14,7 +14,7 @@ struct SettingsView: View {
             TrackingSettingsSection()
             TaskSettingsSection()
             MenuBarSettingsSection()
-            MenuShortcutSettingsSection()
+            GlobalShortcutSettingsSection()
             ConnectionActionsSection(draft: connectionDraft)
             CurrentConnectionSection()
         }

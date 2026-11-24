@@ -72,20 +72,20 @@ final class UserDefaultsLastTrackedTasks: LastTrackedTaskRepository {
     }
 }
 
-final class UserDefaultsMenuKeyboardPreferences {
+final class UserDefaultsGlobalShortcutPreferences {
     private let defaults: UserDefaults
-    private let key = "tracker.menuKeyboardShortcuts"
+    private let key = "tracker.globalShortcuts"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    func load() -> MenuKeyboardShortcuts {
+    func load() -> GlobalShortcuts {
         guard let data = defaults.data(forKey: key),
-            let shortcuts = try? JSONDecoder().decode(MenuKeyboardShortcuts.self, from: data)
+            let shortcuts = try? JSONDecoder().decode(GlobalShortcuts.self, from: data)
         else { return .defaults }
         return shortcuts
     }
 
-    func save(_ shortcuts: MenuKeyboardShortcuts) {
+    func save(_ shortcuts: GlobalShortcuts) {
         if let data = try? JSONEncoder().encode(shortcuts) { defaults.set(data, forKey: key) }
     }
 }

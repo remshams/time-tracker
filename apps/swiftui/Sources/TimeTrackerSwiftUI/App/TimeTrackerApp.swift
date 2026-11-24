@@ -35,6 +35,7 @@ struct TimeTrackerApp: App {
                 .environment(delegate.runtime.features.trackingAutomation)
                 .environment(delegate.runtime.features.taskCatalog)
                 .environment(delegate.runtime.menuBarPreferences)
+                .environment(delegate.runtime.globalShortcuts)
                 .frame(height: 680)
         }
         .defaultSize(width: 540, height: 680)
