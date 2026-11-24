@@ -74,7 +74,8 @@ final class TrackerAppRuntime {
         menuBarPreferences = MenuBarPreferencesStore(
             preferences: savedPreferences,
             menu: menu, menuBar: features.menuBar)
-        globalShortcuts = GlobalShortcutsStore(preferences: UserDefaultsGlobalShortcutPreferences(defaults: launch.defaults))
+        globalShortcuts = GlobalShortcutsStore(
+            preferences: UserDefaultsGlobalShortcutPreferences(defaults: launch.defaults))
         lifecycle = MacLifecycleObserver(sync: features.sync, automation: features.trackingAutomation)
         lifecycle.start()
         features.sync.start()
