@@ -38,7 +38,7 @@ MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
 MENU_BAR_STORE = "Features/MenuBar/MenuBarStore.swift"
 MENU_SOURCES = "Features/MenuBar/TrackerMenuSources.swift"
-MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
+GLOBAL_SHORTCUTS = "Features/GlobalShortcuts/GlobalShortcuts.swift"
 TASK_COPYING = "Features/TaskCopying/TaskCopying.swift"
 TASK_COPY_ACTION = "Features/TaskCopying/TaskCopyAction.swift"
 TASK_COPY_FORMATTER = "Features/TaskCopying/TaskCopyFormatter.swift"
@@ -99,9 +99,6 @@ TEST_PRODUCTION = {
     "Features/DailyTotals/DailyTotalShareTests.swift": [TOTAL_SHARE, TOTALS, TIME_FORMATTING],
     "Features/DailyTotals/DailyTotalsBarLayoutTests.swift": [BAR_LAYOUT],
     "Features/DailyTotals/TaskHeaderSubtitleTests.swift": [HEADER_SUBTITLE, LAST_TRACKED, TOTALS, TIME_FORMATTING],
-    "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
-        MENU_SHORTCUTS, DEPENDENCIES,
-    ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TOTALS,
         TRACKING, CONNECTION, CONNECTION_TESTING, CATALOG, MENU_BAR_STORE, INDICATOR,
@@ -122,6 +119,9 @@ TEST_PRODUCTION = {
     "Features/MenuBar/StatusItemTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, MENU_BAR_STORE, INDICATOR, MENU_OBSERVER, MENU_SOURCES, MENU,
         MENU_VALUES, TRACKING, CATALOG, CONNECTION, CONNECTION_TESTING, AUTOMATION, TOTALS,
+    ],
+    "Features/GlobalShortcuts/GlobalShortcutsTests.swift": [
+        GLOBAL_SHORTCUTS, DEPENDENCIES,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
@@ -357,6 +357,10 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {
         "Tests/TrackerClientTests/Shared/DurationLineTextTests.swift",
     "Tests/TrackerClientTests/Features/MenuBar/MenuTaskOrderTests.swift":
         "Tests/TrackerClientTests/Features/TaskCatalog/TaskOrderTests.swift",
+    "Sources/TrackerClient/Features/MenuBar/MenuKeyboardShortcuts.swift":
+        "Sources/TrackerClient/Features/GlobalShortcuts/GlobalShortcuts.swift",
+    "Tests/TrackerClientTests/Features/MenuBar/MenuKeyboardShortcutsTests.swift":
+        "Tests/TrackerClientTests/Features/GlobalShortcuts/GlobalShortcutsTests.swift",
 }
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
