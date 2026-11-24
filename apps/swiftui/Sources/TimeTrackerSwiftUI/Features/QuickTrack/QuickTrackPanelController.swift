@@ -72,7 +72,8 @@ final class QuickTrackPanelController: NSObject, NSWindowDelegate {
     /// whether it handled the event. ⌘C with text selected in the search field is left to the field, which copies the
     /// text.
     private func copy(for event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+        // Caps Lock and the function-key flag don't count, so only ⌘ with no other modifier matches.
+        guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
             let key = event.charactersIgnoringModifiers?.lowercased()
         else { return false }
         let action: TaskCopyAction
