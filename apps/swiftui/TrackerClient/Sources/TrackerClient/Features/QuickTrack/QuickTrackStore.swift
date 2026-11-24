@@ -170,11 +170,12 @@ public final class QuickTrackStore: ChangeGuardedStore {
                     }
                 }
             } catch {
-                set(\.isCreating, false)
                 showCreateError(writeFailure(error).localizedDescription, in: session)
                 await reloadAfterWrite({})
                 // An uncertain failure may still have created the task; searching again lists it if it exists.
                 if isPresented && session == self.session { search() }
+                // Return stays blocked until the search runs, so it can't create the same task twice.
+                set(\.isCreating, false)
             }
         }
     }

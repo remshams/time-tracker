@@ -111,6 +111,9 @@ final class QuickTrackCreationTests: XCTestCase {
         }
         XCTAssertTrue(store.isPresented)
         XCTAssertEqual(store.content.statusLines, [], "The error belongs to the earlier opening.")
+        XCTAssertEqual(
+            fixture.client.operations.count { $0 == .search(query: "") }, 2,
+            "One empty search per opening: the failed create of the earlier opening doesn't search in this one.")
     }
 
     @MainActor
@@ -180,6 +183,49 @@ final class QuickTrackCreationTests: XCTestCase {
         XCTAssertTrue(store.isPresented)
         XCTAssertEqual(store.content.tasks.map(\.id), [created.id])
         XCTAssertNil(store.content.createName, "The created task's name is taken now.")
+        XCTAssertEqual(store.content.highlight, .task(created.id), "Return now starts the task instead of creating it.")
+        XCTAssertEqual(store.content.statusLines, ["The connection dropped."])
+    }
+
+    @MainActor
+    func testReturnDuringTheReloadAfterAFailedCreateDoesNotCreateAgain() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        var rejections = 0
+        store.onReject = { rejections += 1 }
+        store.activate()
+        let creation = try await fixture.client.next()
+        creation.fail(BridgeFailure(message: "The connection dropped."))
+        let reload = try await fixture.client.next()
+        XCTAssertTrue(store.isCreating, "The create stays in flight until the reload and the search start.")
+        store.activate()
+        XCTAssertEqual(rejections, 1)
+        reload.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
+        _ = try await skippingHistoryUntilSearch(fixture)
+        XCTAssertEqual(fixture.client.operations.count { if case .create = $0 { true } else { false } }, 1)
+    }
+
+    @MainActor
+    func testFailedCreateAfterTheDialogClosedDoesNotSearch() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        let creation = try await fixture.client.next()
+        store.close()
+        let searchesBefore = fixture.client.operations.count { if case .search = $0 { true } else { false } }
+        creation.fail(BridgeFailure(message: "The connection dropped."))
+        let reload = try await fixture.client.next()
+        try await fixture.update("the reload") {
+            reload.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
+        } until: {
+            !store.isCreating
+        }
+        XCTAssertEqual(
+            fixture.client.operations.count { if case .search = $0 { true } else { false } }, searchesBefore,
+            "A closed dialog doesn't search again.")
+        XCTAssertFalse(store.isSearching)
     }
 
     /// Answers history pages and returns the next search request.
