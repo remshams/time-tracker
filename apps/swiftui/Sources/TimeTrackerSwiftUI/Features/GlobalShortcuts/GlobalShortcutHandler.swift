@@ -57,7 +57,7 @@ final class GlobalShortcutHandler {
     }
 
     /// Registers the saved global shortcuts, even when one fails, and returns the errors, if any.
-    private func registerSavedShortcuts(_ actions: [GlobalShortcutAction] = [.openMenu, .openQuickTrack]) -> String? {
+    private func registerSavedShortcuts(_ actions: [GlobalShortcutAction] = GlobalShortcutAction.allCases) -> String? {
         let errors = actions.compactMap { action -> String? in
             do {
                 try registration.register(action, store.shortcuts[action])
