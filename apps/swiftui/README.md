@@ -180,7 +180,7 @@ The search field has the focus. The header shows the running task with its elaps
 
 - Return starts the highlighted task, switching from the running one, and closes the dialog. With nothing highlighted, Return does nothing.
 - Down and Up move the highlight. Up from the first task highlights the header, and Return there stops tracking.
-- Command plus a copy key copies the highlighted task's value: Command-C its name, Command-T the exact and Command-S the rounded time today, with the default keys. Right-clicking a task offers the same actions. With text selected in the search field, Command-C copies the text.
+- Command-C copies the highlighted task's name, Command-T its exact time today and Command-S its rounded time today. Right-clicking a task offers the same actions. With text selected in the search field, Command-C copies the text.
 - When no active task has the typed name, the last row offers to create a task with that name and start it. A rejected name keeps the dialog open with the error.
 - Escape clears the search, or closes the dialog when the search is empty. Clicking outside, switching apps or pressing the shortcut again also closes it.
 
