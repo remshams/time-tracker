@@ -23,6 +23,8 @@ public final class TrackerFeatures {
     public let tracking: TrackingStore
     /// Views read today's status and task totals here; the store loads them when the sync asks it to.
     public let dailyTotals: DailyTotalsStore
+    /// The menu bar and Quick Track read what their copy actions copy here.
+    public let taskCopying: TaskCopying
     /// The menu bar reads the last tracked task and its copy values here, runs the status item's primary action and
     /// turns the menu bar clock on or off; the sync writes the task.
     public let menuBar: MenuBarStore
@@ -75,9 +77,10 @@ public final class TrackerFeatures {
         trackingAvailability = TrackingAvailability(connection: connection, catalog: taskCatalog, tracking: tracking)
         trackingPill = TrackingPill(
             tracking: tracking, catalog: taskCatalog, connection: connection, availability: trackingAvailability)
+        taskCopying = TaskCopying(catalog: taskCatalog, dailyTotals: dailyTotals, tracking: tracking)
         menuBar = MenuBarStore(
             repository: lastTrackedTasks, connection: connection, catalog: taskCatalog, tracking: tracking,
-            dailyTotals: dailyTotals, automation: trackingAutomation, displayClock: displayClock)
+            taskCopying: taskCopying, automation: trackingAutomation, displayClock: displayClock)
         menuSources = TrackerMenuSources(
             catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
             menuBar: menuBar, automation: trackingAutomation, availability: trackingAvailability)
@@ -103,7 +106,11 @@ public final class TrackerFeatures {
         dailyTotals.recordReadFailure = { [weak sync] failure in sync?.recordReadFailure(failure) }
         dailyTotals.refreshTaskList = { [weak sync] in sync?.refresh() }
         quickTrack = QuickTrackStore(
-            client: client, clock: clock, sources: menuSources, tracking: tracking,
+            client: client, clock: clock,
+            sources: QuickTrackSources(
+                catalog: taskCatalog, connection: connection, tracking: tracking, dailyTotals: dailyTotals,
+                automation: trackingAutomation, availability: trackingAvailability),
+            taskCopying: taskCopying, tracking: tracking,
             reloadAfterWrite: sync.reloadAfterTaskWrite(then:))
         quickTrack.setVisible = sync.setQuickTrackVisible(_:)
         taskRename = TaskRenameStore(

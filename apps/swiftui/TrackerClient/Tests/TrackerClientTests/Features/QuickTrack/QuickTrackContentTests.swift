@@ -7,23 +7,23 @@ final class QuickTrackContentTests: XCTestCase {
     private func inputs(
         active: WorklogItem? = nil, stale: Bool = false, durations: [String: TimeInterval] = [:],
         startable: Set<String>? = nil, autoPause: String? = nil, trackingError: String? = nil
-    ) -> TrackerMenuInputs {
+    ) -> QuickTrackInputs {
         let tasks = [firstTask, secondTask, thirdTask, archivedTask]
-        return TrackerMenuInputs(
-            connectionSettings: .local, connectionStatusText: stale ? "Unavailable" : "Local database",
-            isStale: stale, tasks: tasks, active: active, elapsedSeconds: active == nil ? nil : 65,
-            trackingError: trackingError, runningTaskName: active == nil ? "No timer running" : firstTask.name,
-            autoPauseStatusText: autoPause, canStopTracking: active != nil,
+        return QuickTrackInputs(
+            tasks: tasks, active: active, elapsedSeconds: active == nil ? nil : 65, isStale: stale,
+            connectionStatusText: stale ? "Unavailable" : "Local database", trackingError: trackingError,
+            autoPauseStatusText: autoPause, runningTaskName: active == nil ? "No timer running" : firstTask.name,
+            canStopTracking: active != nil,
             startableTaskIDs: startable ?? Set(tasks.filter { !$0.archived && $0.id != active?.taskId }.map(\.id)),
-            dailyTotalsStatus: .current, dayTotal: durations.values.reduce(0, +),
-            totalsExplanation: "Totals for today", taskDurations: durations, lastTrackedTaskID: nil)
+            dayTotal: durations.values.reduce(0, +), dailyTotalsStatus: .current,
+            totalsExplanation: "Totals for today", taskDurations: durations)
     }
 
     private let allResults = ["task-two", "task-archived", "task-one", "task-three", "missing"]
 
     @MainActor
     private func content(
-        _ inputs: TrackerMenuInputs, query: String = "", results: [String]? = nil,
+        _ inputs: QuickTrackInputs, query: String = "", results: [String]? = nil,
         highlight: QuickTrackHighlight? = nil, messages: [String] = [], isCreating: Bool = false
     ) -> QuickTrackContent {
         QuickTrackContent(
