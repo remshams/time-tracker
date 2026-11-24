@@ -49,7 +49,6 @@ final class QuickTrackCopyTests: XCTestCase {
         defer { fixture.cleanup() }
         let store = fixture.features.quickTrack
         XCTAssertEqual(store.copyValue(.copyName, taskID: secondTask.id), secondTask.name)
-        XCTAssertNil(store.copyValue(.openMenu, taskID: secondTask.id))
         store.close()
         XCTAssertNil(store.copyValue(.copyName, taskID: secondTask.id))
     }

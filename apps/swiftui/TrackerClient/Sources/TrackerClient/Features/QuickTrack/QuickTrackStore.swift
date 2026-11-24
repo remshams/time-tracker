@@ -4,7 +4,7 @@ import Observation
 /// Holds the Quick Track dialog: whether it shows, the search text, the search result and the highlighted row. It
 /// starts and stops tracking from the dialog.
 ///
-/// The dialog reads `content`, which reads the same store values as the menu bar, so its durations keep ticking. Each
+/// The dialog reads `content`, which reads the stores through `QuickTrackSources`, so its durations keep ticking. Each
 /// search runs through the client, which ranks tasks with the application's search rule. A result for an older
 /// query is dropped.
 @Observable
@@ -30,17 +30,20 @@ public final class QuickTrackStore: ChangeGuardedStore {
     @ObservationIgnored public var onReject: @MainActor () -> Void = {}
     private let client: any TrackerClient
     private let clock: any TrackerClock
-    private let sources: TrackerMenuSources
+    private let sources: QuickTrackSources
+    private let taskCopying: TaskCopying
     private let tracking: TrackingStore
     private let reloadAfterWrite: @MainActor (_ then: () -> Void) async -> Void
 
     init(
-        client: any TrackerClient, clock: any TrackerClock, sources: TrackerMenuSources, tracking: TrackingStore,
+        client: any TrackerClient, clock: any TrackerClock, sources: QuickTrackSources, taskCopying: TaskCopying,
+        tracking: TrackingStore,
         reloadAfterWrite: @escaping @MainActor (_ then: () -> Void) async -> Void
     ) {
         self.client = client
         self.clock = clock
         self.sources = sources
+        self.taskCopying = taskCopying
         self.tracking = tracking
         self.reloadAfterWrite = reloadAfterWrite
     }
@@ -183,9 +186,9 @@ public final class QuickTrackStore: ChangeGuardedStore {
     /// The value a copy action copies for `taskID`, or for the highlighted row when `taskID` is `nil`. The header
     /// copies the running task. Returns `nil` when there's nothing to copy, such as a duration of a task without time
     /// today.
-    public func copyValue(_ action: MenuShortcutAction, taskID: String? = nil) -> String? {
+    public func copyValue(_ action: TaskCopyAction, taskID: String? = nil) -> String? {
         guard isPresented, let id = taskID ?? highlightedTaskID else { return nil }
-        return sources.menuBar.menuCopyValue(action, taskID: id, connection: sources.connection.settings)
+        return taskCopying.value(action, taskID: id)
     }
 
     private var highlightedTaskID: String? {

@@ -32,7 +32,7 @@ public struct QuickTrackHeader: Equatable, Sendable {
     public let totalsExplanation: String
 }
 
-/// What the Quick Track dialog shows, computed from the menu bar's store values and the latest search result.
+/// What the Quick Track dialog shows, computed from the store values and the latest search result.
 public struct QuickTrackContent: Equatable, Sendable {
     public let header: QuickTrackHeader
     /// Connection, stale, auto-pause, tracking and search messages, shown under the search field.
@@ -52,7 +52,7 @@ public struct QuickTrackContent: Equatable, Sendable {
     ///   - messages: search and create errors to show under the search field.
     @MainActor
     init(
-        _ inputs: TrackerMenuInputs, query: String, results: [String], highlight: QuickTrackHighlight?,
+        _ inputs: QuickTrackInputs, query: String, results: [String], highlight: QuickTrackHighlight?,
         messages: [String] = [], isCreating: Bool = false
     ) {
         let isRunning = inputs.active != nil
