@@ -23,10 +23,10 @@ final class AppearanceUITests: TrackerUITestCase {
             screenshot.lifetime = .keepAlways
             add(screenshot)
             openSettings()
-            let recorder = element("menu.shortcut.open")
+            let recorder = element("global-shortcut.open-menu")
             recorder.click()
             app.typeKey("x", modifierFlags: [])
-            let error = element("menu.shortcut.error")
+            let error = element("global-shortcut.error")
             XCTAssertTrue(error.waitForExistence(timeout: timeout))
             // The Settings form scrolls on small screens; hovering scrolls the error into view like a user would.
             error.hover()
