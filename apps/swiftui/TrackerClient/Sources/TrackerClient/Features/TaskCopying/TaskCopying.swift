@@ -8,12 +8,6 @@ public struct TaskCopying: Sendable {
     let dailyTotals: DailyTotalsStore
     let tracking: TrackingStore
 
-    init(catalog: TaskCatalogStore, dailyTotals: DailyTotalsStore, tracking: TrackingStore) {
-        self.catalog = catalog
-        self.dailyTotals = dailyTotals
-        self.tracking = tracking
-    }
-
     /// The text `action` copies for `taskID`, or `nil` when the task is unknown or its time today isn't known.
     public func value(_ action: TaskCopyAction, taskID: String) -> String? {
         guard let task = catalog.tasks.first(where: { $0.id == taskID }) else { return nil }
