@@ -10,16 +10,13 @@ import TrackerClient
 /// example after a click into another app.
 final class QuickTrackPanelController: NSObject, NSWindowDelegate {
     private let store: QuickTrackStore
-    /// The configured menu shortcuts. The dialog runs the copy actions on the copy keys plus ⌘.
-    private let shortcuts: () -> MenuKeyboardShortcuts
     private let panel: QuickTrackPanel
     private let hostingView: QuickTrackHostingView
     /// The top edge of the panel while it shows. The panel grows and shrinks downward from here.
     private var top: CGFloat = 0
 
-    init(store: QuickTrackStore, shortcuts: @escaping () -> MenuKeyboardShortcuts) {
+    init(store: QuickTrackStore) {
         self.store = store
-        self.shortcuts = shortcuts
         panel = QuickTrackPanel()
         hostingView = QuickTrackHostingView(rootView: QuickTrackView(store: store))
         super.init()
@@ -71,19 +68,23 @@ final class QuickTrackPanelController: NSObject, NSWindowDelegate {
             ?? NSScreen.screens[0]
     }
 
-    /// Runs a copy action when `event` is a copy key plus ⌘, and reports whether it handled the event. ⌘C with text
-    /// selected in the search field is left to the field, which copies the text.
+    /// Runs a copy action when `event` is ⌘C (task name), ⌘T (exact duration) or ⌘S (rounded duration), and reports
+    /// whether it handled the event. ⌘C with text selected in the search field is left to the field, which copies the
+    /// text.
     private func copy(for event: NSEvent) -> Bool {
-        guard let pressed = MenuShortcut(event: event) else { return false }
-        let configured = shortcuts()
-        let copyActions: [MenuShortcutAction] = [.copyName, .copyExact, .copyRounded]
-        let action = copyActions.first { action in
-            let shortcut = configured[action]
-            return MenuShortcut(key: shortcut.key, modifiers: shortcut.modifiers.union(.command)) == pressed
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+            let key = event.charactersIgnoringModifiers?.lowercased()
+        else { return false }
+        let action: TaskCopyAction
+        switch key {
+        case "c":
+            guard !hasSelectedSearchText else { return false }
+            action = .copyName
+        case "t": action = .copyExact
+        case "s": action = .copyRounded
+        default: return false
         }
-        guard let action else { return false }
-        if pressed == MenuShortcut(key: "c", modifiers: .command), hasSelectedSearchText { return false }
-        if let value = store.copyValue(action) { QuickTrackPasteboard.copy(value) } else { NSSound.beep() }
+        if let value = store.copyValue(action) { TaskPasteboard.copy(value) } else { NSSound.beep() }
         return true
     }
 

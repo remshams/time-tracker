@@ -43,9 +43,7 @@ final class TrackerAppRuntime {
     private lazy var statusItem = TrackerStatusItemController(
         sync: features.sync, tracking: features.tracking, menuBar: features.menuBar,
         connection: features.connection, menu: menu, preferences: menuBarPreferences)
-    private lazy var quickTrack = QuickTrackPanelController(store: features.quickTrack) { [weak self] in
-        self?.menuBarPreferences.menuShortcuts ?? .defaults
-    }
+    private lazy var quickTrack = QuickTrackPanelController(store: features.quickTrack)
     private lazy var presentation = TrackerTaskPresentationCoordinator(gate: features.presentationGate) { [weak self] in
         self?.showTracker()
     }

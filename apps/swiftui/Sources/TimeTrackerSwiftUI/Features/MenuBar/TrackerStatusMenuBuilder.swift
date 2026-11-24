@@ -4,7 +4,7 @@ import TrackerClient
 /// A command a menu item runs, with the connection the menu showed when it opened.
 struct TrackerMenuCommand {
     enum Action {
-        case start(String), stop(String), copy(MenuShortcutAction, String), openWindow, quit
+        case start(String), stop(String), copy(TaskCopyAction, String), openWindow, quit
     }
 
     let action: Action
@@ -106,7 +106,7 @@ struct TrackerStatusMenuBuilder {
             entry.isRunning ? "Stop tracking" : "Start tracking",
             action: trackingAction, enabled: trackingAction != nil, to: submenu)
         submenu.addItem(.separator())
-        for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
+        for action in TaskCopyAction.allCases {
             let available =
                 menuBar.menuCopyValue(
                     action, taskID: entry.id,
