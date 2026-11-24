@@ -329,7 +329,8 @@ such as `Features/WorklogCorrection` in both targets.
   application runtime connects them: Open menu toggles the status item's menu,
   Open Quick Track toggles the panel, and the status item tells the shortcuts
   when its menu opens and closes. The Quick Track panel is a non-activating
-  `NSPanel`, so it takes keyboard input without bringing the app or its window forward
+  `NSPanel`, so it takes keyboard input without bringing the app or its window
+  forward
   ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)). The
   serial
   [`TrackerWorker`](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift)
