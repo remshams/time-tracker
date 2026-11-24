@@ -142,6 +142,13 @@ final class QuickTrackCreationTests: XCTestCase {
         } until: {
             !store.isCreating
         }
+        let search = try await fixture.client.next()
+        XCTAssertEqual(search.operation, .search(query: "New task"))
+        try await fixture.update("the search after the failed create") {
+            search.found([])
+        } until: {
+            !store.isSearching
+        }
         XCTAssertTrue(store.isPresented)
         XCTAssertEqual(store.query, "New task")
         XCTAssertEqual(store.content.statusLines, ["Task names must be at most 200 characters."])
@@ -150,6 +157,38 @@ final class QuickTrackCreationTests: XCTestCase {
         XCTAssertTrue(store.isCreating)
         XCTAssertEqual(store.content.statusLines, [], "Trying again hides the earlier error while the request runs.")
         _ = try await fixture.client.next()
+    }
+
+    @MainActor
+    func testFailedCreateSearchesAgainSoATaskItCreatedAnywayIsListed() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        let creation = try await fixture.client.next()
+        // The write committed, but its response was lost.
+        creation.fail(BridgeFailure(message: "The connection dropped."))
+        let reload = try await fixture.client.next()
+        reload.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
+        let search = try await skippingHistoryUntilSearch(fixture)
+        XCTAssertEqual(search.operation, .search(query: "New task"))
+        try await fixture.update("the search after the failed create") {
+            search.found([created.id])
+        } until: {
+            !store.isSearching
+        }
+        XCTAssertTrue(store.isPresented)
+        XCTAssertEqual(store.content.tasks.map(\.id), [created.id])
+        XCTAssertNil(store.content.createName, "The created task's name is taken now.")
+    }
+
+    /// Answers history pages and returns the next search request.
+    @MainActor
+    private func skippingHistoryUntilSearch(_ fixture: Fixture) async throws -> FakeClient.Request {
+        while true {
+            let request = try await fixture.client.next()
+            if case .history = request.operation { request.succeed(emptyPage) } else { return request }
+        }
     }
 
     @MainActor
