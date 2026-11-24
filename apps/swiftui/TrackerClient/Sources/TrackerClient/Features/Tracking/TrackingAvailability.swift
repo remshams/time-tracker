@@ -18,10 +18,8 @@ public struct TrackingAvailability: Sendable {
         return !task.archived && tracking.active?.taskId != task.id
     }
 
-    /// The IDs of the tasks in `tasks` that `canStart` accepts.
-    func startableTaskIDs(in tasks: [TaskItem]) -> Set<String> {
-        Set(tasks.map(\.id).filter { canStart(taskID: $0) })
-    }
+    /// The IDs of the catalog's tasks that `canStart` accepts.
+    var startableTaskIDs: Set<String> { Set(catalog.tasks.map(\.id).filter { canStart(taskID: $0) }) }
 
     public var canStop: Bool { canSend && tracking.active != nil }
 

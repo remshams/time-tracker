@@ -60,7 +60,7 @@ struct QuickTrackSources: Sendable {
             autoPauseStatusText: automation.statusText,
             runningTaskName: runningTaskName,
             canStopTracking: availability.canStop,
-            startableTaskIDs: availability.startableTaskIDs(in: catalog.tasks),
+            startableTaskIDs: availability.startableTaskIDs,
             dayTotal: dailyTotals.dayTotal,
             dailyTotalsStatus: dailyTotals.status,
             totalsExplanation: dailyTotals.totalsExplanation,
