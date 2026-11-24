@@ -132,7 +132,7 @@ final class TrackerStatusItemController: NSObject {
 
     private func updateMenuValues(_ values: TrackerMenuValues) {
         guard let shownMenu else { return }
-        shownMenu.elapsedField?.update(values.elapsedText ?? MenuDurationText(placeholder: "Unavailable"))
+        shownMenu.elapsedField?.update(values.elapsedText ?? DurationLineText(placeholder: "Unavailable"))
         shownMenu.totalField?.update(values.totalText, help: values.totalsExplanation)
         for (taskID, row) in shownMenu.taskRows {
             guard let duration = values.taskDurationTexts[taskID] else { continue }

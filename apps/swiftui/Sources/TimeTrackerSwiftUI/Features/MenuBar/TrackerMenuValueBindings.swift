@@ -7,14 +7,14 @@ struct MenuValueField {
     let titleLabel: NSTextField
     let title: String
 
-    func update(_ value: MenuDurationText, help: String? = nil) {
+    func update(_ value: DurationLineText, help: String? = nil) {
         if label.stringValue != value.text { show(value) }
         if let help, label.toolTip != help { label.toolTip = help }
         if let help, titleLabel.toolTip != help { titleLabel.toolTip = help }
     }
 
     /// Shows the duration with its seconds dimmed. VoiceOver reads its spoken form.
-    func show(_ value: MenuDurationText) {
+    func show(_ value: DurationLineText) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = label.alignment
         paragraph.lineBreakMode = label.lineBreakMode
@@ -38,11 +38,11 @@ struct MenuTaskRow {
     let isStale: Bool
 
     var reservedWidth: CGFloat {
-        let widest = MenuDurationText(placeholder: "000000:00:00")
+        let widest = DurationLineText(placeholder: "000000:00:00")
         return styledTitle(Self.title(entry, duration: widest.text), duration: widest).size().width + 70
     }
 
-    func update(duration: MenuDurationText, help: String) {
+    func update(duration: DurationLineText, help: String) {
         let nextTitle = Self.title(entry, duration: duration.text)
         if item.title != nextTitle {
             item.title = nextTitle
@@ -53,7 +53,7 @@ struct MenuTaskRow {
         if item.representedObject != nil, item.toolTip != help { item.toolTip = help }
     }
 
-    func setDurationFont(_ duration: MenuDurationText) {
+    func setDurationFont(_ duration: DurationLineText) {
         item.attributedTitle = styledTitle(item.title, duration: duration)
     }
 
@@ -72,7 +72,7 @@ struct MenuTaskRow {
         }
     }
 
-    private func styledTitle(_ title: String, duration: MenuDurationText) -> NSAttributedString {
+    private func styledTitle(_ title: String, duration: DurationLineText) -> NSAttributedString {
         let running = entry.isRunning && !isStale
         let menuFont = NSFont.menuFont(ofSize: 0)
         let font = running ? NSFont.boldSystemFont(ofSize: menuFont.pointSize) : menuFont
@@ -89,7 +89,7 @@ struct MenuTaskRow {
 
 extension NSMutableAttributedString {
     /// Dims the seconds of `duration`, whose text ends at `end`, as the main window does.
-    func dimSeconds(of duration: MenuDurationText, endingAt end: Int) {
+    func dimSeconds(of duration: DurationLineText, endingAt end: Int) {
         let length = (duration.seconds as NSString).length
         guard length > 0 else { return }
         addAttribute(
