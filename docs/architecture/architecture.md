@@ -244,9 +244,12 @@ such as `Features/WorklogCorrection` in both targets.
   the start and stop checks from `TrackingAvailability` through one
   `Observations` loop, and `TrackerMenuSources` computes the running task's name
   from the connection, tracking and catalog stores. `QuickTrackStore` builds
-  the Quick Track dialog from the same inputs and the task IDs that the
-  client's `searchTasks` returns, and starts and stops tracking through
-  `TrackingStore`; it reports whether the dialog shows to `TrackerSync` through
+  the Quick Track dialog from `QuickTrackInputs`, which `QuickTrackSources`
+  reads from the stores, and the task IDs that the client's `searchTasks`
+  returns, and starts and stops tracking through `TrackingStore`. Quick Track
+  and the menu bar share `TrackingAvailability`, `TaskCopying` (the values the
+  copy actions copy) and `DurationLineText`, and neither depends on the other's
+  folder. `QuickTrackStore` reports whether the dialog shows to `TrackerSync` through
   a closure that `TrackerFeatures` sets
   ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)).
   `TrackerSync` loads,
