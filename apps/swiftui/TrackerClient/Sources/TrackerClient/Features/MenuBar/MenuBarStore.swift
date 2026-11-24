@@ -25,9 +25,9 @@ public final class MenuBarStore: ChangeGuardedStore {
     public private(set) var lastTrackedTaskID: String?
     private let repository: (any LastTrackedTaskRepository)?
     @ObservationIgnored private var remembered: [String: String] = [:]
-    let connection: ConnectionStore
-    let catalog: TaskCatalogStore
-    let tracking: TrackingStore
+    private let connection: ConnectionStore
+    private let catalog: TaskCatalogStore
+    private let tracking: TrackingStore
     private let taskCopying: TaskCopying
     private let automation: TrackingAutomationStore
     private let displayClock: DisplayClock

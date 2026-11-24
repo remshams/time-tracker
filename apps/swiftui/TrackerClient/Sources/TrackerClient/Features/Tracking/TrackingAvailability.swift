@@ -19,7 +19,7 @@ public struct TrackingAvailability: Sendable {
     }
 
     /// The IDs of the tasks in `tasks` that `canStart` accepts.
-    public func startableTaskIDs(in tasks: [TaskItem]) -> Set<String> {
+    func startableTaskIDs(in tasks: [TaskItem]) -> Set<String> {
         Set(tasks.map(\.id).filter { canStart(taskID: $0) })
     }
 
