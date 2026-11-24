@@ -87,7 +87,7 @@ struct TrackerStatusMenuBuilder {
 
     @discardableResult
     private func addTask(
-        _ entry: TrackerMenuTask, duration: MenuDurationText?, help: String?,
+        _ entry: TrackerMenuTask, duration: DurationLineText?, help: String?,
         content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu
     ) -> NSMenuItem {
         let title = duration.map { MenuTaskRow.title(entry, duration: $0.text) } ?? entry.task.name
