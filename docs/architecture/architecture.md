@@ -249,7 +249,8 @@ such as `Features/WorklogCorrection` in both targets.
   returns, and starts and stops tracking through `TrackingStore`. Quick Track
   and the menu bar share `TrackingAvailability`, `TaskCopying` (the values the
   copy actions copy) and `DurationLineText`, and neither depends on the other's
-  folder. `QuickTrackStore` reports whether the dialog shows to `TrackerSync` through
+  folder. `GlobalShortcuts` holds the Open menu and Open Quick Track
+  shortcuts and depends on neither feature. `QuickTrackStore` reports whether the dialog shows to `TrackerSync` through
   a closure that `TrackerFeatures` sets
   ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)).
   `TrackerSync` loads,
@@ -320,8 +321,12 @@ such as `Features/WorklogCorrection` in both targets.
   only through a closure that `TrackerFeatures` passes
   ([ADR 0035](adr/0035-put-user-actions-on-feature-stores.md)).
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
-  one tracker window, Settings, the menu bar item, the Quick Track panel and
-  lifecycle handling. The Quick Track panel is a non-activating `NSPanel`, so
+  one tracker window, Settings, the menu bar item, the Quick Track panel, the
+  two global shortcuts and lifecycle handling. The `GlobalShortcuts` folder
+  registers Open menu and Open Quick Track with macOS and saves them. The
+  application runtime connects them: Open menu toggles the status item's menu,
+  Open Quick Track toggles the panel, and the status item tells the shortcuts
+  when its menu opens and closes. The Quick Track panel is a non-activating `NSPanel`, so
   it takes keyboard input without bringing the app or its window forward
   ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)). The
   serial
