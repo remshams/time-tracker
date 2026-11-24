@@ -65,7 +65,7 @@ public struct TrackerMenuSources: Sendable {
             runningTaskName: runningTaskName,
             autoPauseStatusText: automation.statusText,
             canStopTracking: availability.canStop,
-            startableTaskIDs: availability.startableTaskIDs(in: catalog.tasks),
+            startableTaskIDs: availability.startableTaskIDs,
             dailyTotalsStatus: dailyTotals.status,
             dayTotal: dailyTotals.dayTotal,
             totalsExplanation: dailyTotals.totalsExplanation,
