@@ -43,6 +43,16 @@ final class QuickTrackStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testHeaderNamesTheRunningTaskFromTheStores() async throws {
+        let fixture = try await started(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        try await open(fixture, results: [secondTask.id])
+        XCTAssertEqual(store.content.header.title, firstTask.name)
+        XCTAssertEqual(store.content.header.taskID, firstTask.id)
+    }
+
+    @MainActor
     func testOpeningCountsAsVisibleUIForTheSync() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
