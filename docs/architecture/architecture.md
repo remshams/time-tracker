@@ -250,8 +250,8 @@ such as `Features/WorklogCorrection` in both targets.
   and the menu bar share `TrackingAvailability`, `TaskCopying` (the values the
   copy actions copy) and `DurationLineText`, and neither depends on the other's
   folder. `GlobalShortcuts` holds the Open menu and Open Quick Track
-  shortcuts and depends on neither feature. `QuickTrackStore` reports whether the dialog shows to `TrackerSync` through
-  a closure that `TrackerFeatures` sets
+  shortcuts and depends on neither feature. `QuickTrackStore` reports whether
+  the dialog shows to `TrackerSync` through a closure that `TrackerFeatures` sets
   ([ADR 0044](adr/0044-show-quick-track-in-a-non-activating-panel.md)).
   `TrackerSync` loads,
   refreshes and polls the stores, handles visibility, sleep
