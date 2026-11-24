@@ -1,6 +1,6 @@
 import Foundation
 
-public struct MenuShortcut: Codable, Equatable, Hashable, Sendable {
+public struct GlobalShortcut: Codable, Equatable, Hashable, Sendable {
     public struct Modifiers: OptionSet, Codable, Hashable, Sendable {
         public let rawValue: UInt8
 
@@ -63,78 +63,45 @@ public struct MenuShortcut: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-public enum MenuShortcutAction: String, CaseIterable, Codable, Sendable {
-    case openMenu, openQuickTrack, moveDown, moveUp, copyName, copyExact, copyRounded
+public enum GlobalShortcutAction: String, CaseIterable, Codable, Sendable {
+    case openMenu, openQuickTrack
 
-    /// Global actions work in any app. They need a Command, Control or Option modifier.
-    public var isGlobal: Bool { self == .openMenu || self == .openQuickTrack }
-
-    /// Only Quick Track accepts Space, which the menu bindings reserve for the native menu.
+    /// Only Quick Track accepts Space.
     var allowsSpace: Bool { self == .openQuickTrack }
 
     public var title: String {
         switch self {
         case .openMenu: return "Open menu"
         case .openQuickTrack: return "Open Quick Track"
-        case .moveDown: return "Move down"
-        case .moveUp: return "Move up"
-        case .copyName: return "Copy task name"
-        case .copyExact: return "Copy exact duration"
-        case .copyRounded: return "Copy rounded duration"
         }
     }
 }
 
-public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
-    public var openMenu: MenuShortcut
-    public var openQuickTrack: MenuShortcut
-    public var moveDown: MenuShortcut
-    public var moveUp: MenuShortcut
-    public var copyName: MenuShortcut
-    public var copyExact: MenuShortcut
-    public var copyRounded: MenuShortcut
+public struct GlobalShortcuts: Codable, Equatable, Sendable {
+    public var openMenu: GlobalShortcut
+    public var openQuickTrack: GlobalShortcut
 
     public static let defaults = Self()
 
     public init(
-        openMenu: MenuShortcut = MenuShortcut(key: "t", modifiers: [.control, .option]),
-        openQuickTrack: MenuShortcut = MenuShortcut(key: " ", modifiers: [.control, .option]),
-        moveDown: MenuShortcut = MenuShortcut(key: "j"),
-        moveUp: MenuShortcut = MenuShortcut(key: "k"),
-        copyName: MenuShortcut = MenuShortcut(key: "c"),
-        copyExact: MenuShortcut = MenuShortcut(key: "t"),
-        copyRounded: MenuShortcut = MenuShortcut(key: "s")
+        openMenu: GlobalShortcut = GlobalShortcut(key: "t", modifiers: [.control, .option]),
+        openQuickTrack: GlobalShortcut = GlobalShortcut(key: " ", modifiers: [.control, .option])
     ) {
         self.openMenu = openMenu
         self.openQuickTrack = openQuickTrack
-        self.moveDown = moveDown
-        self.moveUp = moveUp
-        self.copyName = copyName
-        self.copyExact = copyExact
-        self.copyRounded = copyRounded
     }
 
-    public subscript(action: MenuShortcutAction) -> MenuShortcut {
+    public subscript(action: GlobalShortcutAction) -> GlobalShortcut {
         get {
             switch action {
             case .openMenu: return openMenu
             case .openQuickTrack: return openQuickTrack
-            case .moveDown: return moveDown
-            case .moveUp: return moveUp
-            case .copyName: return copyName
-            case .copyExact: return copyExact
-            case .copyRounded: return copyRounded
             }
         }
         set {
             switch action {
             case .openMenu: openMenu = newValue
             case .openQuickTrack: openQuickTrack = newValue
-            case .moveDown: moveDown = newValue
-            case .moveUp: moveUp = newValue
-            case .copyName: copyName = newValue
-            case .copyExact: copyExact = newValue
-            case .copyRounded: copyRounded = newValue
             }
         }
     }
@@ -143,8 +110,8 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
 
     public func validationErrors() -> [String] {
         var errors: [String] = []
-        var bindings: [MenuShortcut: MenuShortcutAction] = [:]
-        for action in MenuShortcutAction.allCases {
+        var bindings: [GlobalShortcut: GlobalShortcutAction] = [:]
+        for action in GlobalShortcutAction.allCases {
             let shortcut = self[action].normalized
             if !(shortcut.hasSupportedKey || (action.allowsSpace && shortcut.isSpace)) {
                 errors.append(
@@ -156,7 +123,7 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
             if !shortcut.modifiers.subtracting(.allowed).isEmpty {
                 errors.append("\(action.title) only supports Command, Control, Option and Shift modifiers.")
             }
-            if action.isGlobal && shortcut.modifiers.intersection([.command, .control, .option]).isEmpty {
+            if shortcut.modifiers.intersection([.command, .control, .option]).isEmpty {
                 errors.append("\(action.title) needs Command, Control or Option to avoid capturing normal typing.")
             }
             if let previous = bindings[shortcut] {
@@ -168,32 +135,11 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         return errors
     }
 
-    public func action(
-        forKey key: String, modifiers: MenuShortcut.Modifiers,
-        includingGlobal: Bool = false
-    ) -> MenuShortcutAction? {
-        let shortcut = MenuShortcut(key: key, modifiers: modifiers)
-        guard shortcut.hasSupportedKey, modifiers.subtracting(.allowed).isEmpty else { return nil }
-        return MenuShortcutAction.allCases.first {
-            (includingGlobal || !$0.isGlobal) && self[$0].normalized == shortcut
-        }
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case openMenu, openQuickTrack, moveDown, moveUp, copyName, copyExact, copyRounded
-    }
-
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            openMenu: try container.decode(MenuShortcut.self, forKey: .openMenu),
-            openQuickTrack: try container.decodeIfPresent(MenuShortcut.self, forKey: .openQuickTrack)
-                ?? Self.defaults.openQuickTrack,
-            moveDown: try container.decode(MenuShortcut.self, forKey: .moveDown),
-            moveUp: try container.decode(MenuShortcut.self, forKey: .moveUp),
-            copyName: try container.decode(MenuShortcut.self, forKey: .copyName),
-            copyExact: try container.decode(MenuShortcut.self, forKey: .copyExact),
-            copyRounded: try container.decode(MenuShortcut.self, forKey: .copyRounded))
+            openMenu: try container.decode(GlobalShortcut.self, forKey: .openMenu),
+            openQuickTrack: try container.decode(GlobalShortcut.self, forKey: .openQuickTrack))
         let errors = validationErrors()
         guard errors.isEmpty else {
             throw DecodingError.dataCorrupted(
@@ -202,4 +148,6 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
                     debugDescription: errors.joined(separator: " ")))
         }
     }
+
+    private enum CodingKeys: String, CodingKey { case openMenu, openQuickTrack }
 }
