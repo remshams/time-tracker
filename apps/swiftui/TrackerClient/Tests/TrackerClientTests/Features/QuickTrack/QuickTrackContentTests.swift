@@ -35,7 +35,7 @@ final class QuickTrackContentTests: XCTestCase {
     func testEmptyQueryListsTodaysTasksFirstAndLeavesOutTheRunningArchivedAndUnknownTasks() async {
         let content = content(inputs(active: activeWorklog, durations: ["task-three": 600, "task-one": 60]))
         XCTAssertEqual(content.tasks.map(\.id), ["task-three", "task-two"])
-        XCTAssertEqual(content.tasks[0].durationText, MenuDurationText(seconds: 600))
+        XCTAssertEqual(content.tasks[0].durationText, DurationLineText(seconds: 600))
         XCTAssertNil(content.tasks[1].durationText)
         XCTAssertEqual(content.tasks.map(\.canStart), [true, true])
         XCTAssertNil(content.highlight)
@@ -45,7 +45,7 @@ final class QuickTrackContentTests: XCTestCase {
     func testQueryKeepsTheSearchOrderAndHighlightsTheFirstMatch() async {
         let content = content(inputs(durations: ["task-three": 600]), query: "task")
         XCTAssertEqual(content.tasks.map(\.id), ["task-two", "task-one", "task-three"])
-        XCTAssertEqual(content.tasks.map(\.durationText), [nil, nil, MenuDurationText(seconds: 600)])
+        XCTAssertEqual(content.tasks.map(\.durationText), [nil, nil, DurationLineText(seconds: 600)])
         XCTAssertEqual(content.highlight, .task("task-two"))
     }
 
@@ -61,10 +61,10 @@ final class QuickTrackContentTests: XCTestCase {
         let running = content(inputs(active: activeWorklog, durations: ["task-one": 65])).header
         XCTAssertEqual(running.taskID, firstTask.id)
         XCTAssertEqual(running.title, firstTask.name)
-        XCTAssertEqual(running.elapsedText, MenuDurationText(seconds: 65))
+        XCTAssertEqual(running.elapsedText, DurationLineText(seconds: 65))
         XCTAssertTrue(running.isRunning)
         XCTAssertTrue(running.canStop)
-        XCTAssertEqual(running.totalText, MenuDurationText(seconds: 65))
+        XCTAssertEqual(running.totalText, DurationLineText(seconds: 65))
         XCTAssertEqual(running.totalsExplanation, "Totals for today")
 
         let idle = content(inputs()).header

@@ -1,9 +1,9 @@
 import Foundation
 
 public struct TrackerMenuValues: Equatable, Sendable {
-    public let elapsedText: MenuDurationText?
-    public let totalText: MenuDurationText
-    public let taskDurationTexts: [String: MenuDurationText]
+    public let elapsedText: DurationLineText?
+    public let totalText: DurationLineText
+    public let taskDurationTexts: [String: DurationLineText]
     public let totalsExplanation: String
 
     init(_ inputs: TrackerMenuInputs, content: TrackerMenuContent) {
@@ -13,7 +13,7 @@ public struct TrackerMenuValues: Equatable, Sendable {
         } else {
             elapsedText = nil
         }
-        totalText = sameConnection ? inputs.dayTotalText : MenuDurationText(placeholder: "Unavailable")
+        totalText = sameConnection ? inputs.dayTotalText : DurationLineText(placeholder: "Unavailable")
         taskDurationTexts = Dictionary(
             uniqueKeysWithValues: content.todayTasks.map {
                 ($0.id, Self.taskDurationText(inputs, taskID: $0.id, sameConnection: sameConnection))
@@ -26,7 +26,7 @@ public struct TrackerMenuValues: Equatable, Sendable {
 
     private static func taskDurationText(
         _ inputs: TrackerMenuInputs, taskID: String, sameConnection: Bool
-    ) -> MenuDurationText {
-        sameConnection ? inputs.durationText(taskID: taskID) : MenuDurationText(placeholder: "-")
+    ) -> DurationLineText {
+        sameConnection ? inputs.durationText(taskID: taskID) : DurationLineText(placeholder: "-")
     }
 }

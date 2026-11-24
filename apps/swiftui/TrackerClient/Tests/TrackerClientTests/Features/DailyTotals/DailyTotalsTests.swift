@@ -1113,7 +1113,7 @@ private extension Fixture {
         features.dailyTotals.totalDuration(active: features.tracking.active)
     }
     var totalDurationText: String {
-        totalDuration.map { MenuDurationText(seconds: wholeSeconds($0)).text } ?? "Unavailable"
+        totalDuration.map { DurationLineText(seconds: wholeSeconds($0)).text } ?? "Unavailable"
     }
     /// Tasks with time logged today, in task list order.
     var todayTasks: [TaskItem] {
@@ -1121,7 +1121,7 @@ private extension Fixture {
     }
 
     func durationText(taskID: String) -> String {
-        features.menuBar.dailyDuration(taskID: taskID).map { MenuDurationText(seconds: wholeSeconds($0)).text }
+        features.menuBar.dailyDuration(taskID: taskID).map { DurationLineText(seconds: wholeSeconds($0)).text }
             ?? "Unavailable"
     }
 }
