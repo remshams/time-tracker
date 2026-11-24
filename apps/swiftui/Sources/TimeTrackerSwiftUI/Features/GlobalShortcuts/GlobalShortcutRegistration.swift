@@ -13,7 +13,7 @@ final class GlobalShortcutRegistration {
     }
 
     private let actions: [GlobalShortcutAction: @MainActor () -> Void]
-    private var slots: [GlobalShortcutAction: Slot] = [.openMenu: Slot(), .openQuickTrack: Slot()]
+    private var slots: [GlobalShortcutAction: Slot] = [:]
     private var lastIdentifier: UInt32 = 0
     private var handler: EventHandlerRef?
     private var menuEventMonitor: Any?
