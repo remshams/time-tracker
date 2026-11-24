@@ -140,14 +140,12 @@ final class TrackerStatusItemController: NSObject {
         }
     }
 
-    private func copyValue(_ action: MenuShortcutAction, taskID: String, connection: ConnectionSettings) {
+    private func copyValue(_ action: TaskCopyAction, taskID: String, connection: ConnectionSettings) {
         guard let value = menuBar.menuCopyValue(action, taskID: taskID, connection: connection) else {
             NSSound.beep()
             return
         }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        if !pasteboard.setString(value, forType: .string) { NSSound.beep() }
+        TaskPasteboard.copy(value)
     }
 
     @objc private func selected(_ item: NSMenuItem) {

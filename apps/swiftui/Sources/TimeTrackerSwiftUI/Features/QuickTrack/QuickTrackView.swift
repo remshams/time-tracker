@@ -228,7 +228,7 @@ private struct QuickTrackTaskRow: View {
     let task: QuickTrackTask
     let isHighlighted: Bool
     let start: () -> Void
-    let copyValue: (MenuShortcutAction) -> String?
+    let copyValue: (TaskCopyAction) -> String?
     @State private var isHovered = false
 
     var body: some View {
@@ -252,9 +252,9 @@ private struct QuickTrackTaskRow: View {
         .onHover { isHovered = $0 }
         .onTapGesture(perform: start)
         .contextMenu {
-            ForEach([MenuShortcutAction.copyName, .copyExact, .copyRounded], id: \.self) { action in
+            ForEach(TaskCopyAction.allCases, id: \.self) { action in
                 let value = copyValue(action)
-                Button(action.title) { if let value { QuickTrackPasteboard.copy(value) } }
+                Button(action.title) { if let value { TaskPasteboard.copy(value) } }
                     .disabled(value == nil)
                     .accessibilityIdentifier("quick-track.copy.\(task.id).\(action.rawValue)")
             }
@@ -307,15 +307,6 @@ private struct QuickTrackCreateRow: View {
         .accessibilityValue(isHighlighted ? "Highlighted" : "")
         .accessibilityIdentifier(QuickTrackLayout.createRowID)
         .accessibilityAction(.default, create)
-    }
-}
-
-/// Writes a copied value to the general pasteboard, or beeps when that fails.
-enum QuickTrackPasteboard {
-    static func copy(_ value: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        if !pasteboard.setString(value, forType: .string) { NSSound.beep() }
     }
 }
 

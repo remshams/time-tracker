@@ -102,6 +102,7 @@
 		000987FB1764E22ABAD0069E /* QuickTrackPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */; };
 		687268B1AB9067BF07B092E5 /* QuickTrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */; };
 		4D50977E08157471786035FA /* QuickTrackUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EE6E540A78BCF6AF143CD6 /* QuickTrackUITests.swift */; };
+		A1C0DE0000000000000000A1 /* TaskPasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000A2 /* TaskPasteboard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -215,6 +216,7 @@
 		0BA625FA8C96FB30D6FA14CA /* QuickTrackPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackPanelController.swift; sourceTree = "<group>"; };
 		0929D1921BFC2DEDF29FD74F /* QuickTrackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackView.swift; sourceTree = "<group>"; };
 		35EE6E540A78BCF6AF143CD6 /* QuickTrackUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTrackUITests.swift; sourceTree = "<group>"; };
+		A1C0DE0000000000000000A2 /* TaskPasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskPasteboard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -379,6 +381,7 @@
 				2644D45AE1FF02C7DD9E6EDC /* WorklogDeletion */,
 				DC27D51D3BAB4404B6E435C9 /* Settings */,
 				EA3138C5593D2DCAFEBE7DF2 /* QuickTrack */,
+				A1C0DE0000000000000000A3 /* TaskCopying */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -763,6 +766,14 @@
 			path = QuickTrack;
 			sourceTree = "<group>";
 		};
+		A1C0DE0000000000000000A3 /* TaskCopying */ = {
+			isa = PBXGroup;
+			children = (
+				A1C0DE0000000000000000A2 /* TaskPasteboard.swift */,
+			);
+			path = TaskCopying;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -883,6 +894,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				687268B1AB9067BF07B092E5 /* QuickTrackView.swift in Sources */,
+				A1C0DE0000000000000000A1 /* TaskPasteboard.swift in Sources */,
 				000987FB1764E22ABAD0069E /* QuickTrackPanelController.swift in Sources */,
 				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */,
