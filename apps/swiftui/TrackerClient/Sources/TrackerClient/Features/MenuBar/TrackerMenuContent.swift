@@ -2,7 +2,7 @@ import Foundation
 
 public struct TrackerMenuTask: Identifiable, Equatable {
     public let task: TaskItem
-    public let durationText: MenuDurationText
+    public let durationText: DurationLineText
     public let isRunning: Bool
     public let canStart: Bool
     public var id: String { task.id }
@@ -16,10 +16,10 @@ public struct TrackerMenuContent: Equatable {
     public let autoPauseStatusText: String?
     public let trackingError: String?
     public let activeWorklogID: String?
-    public let elapsedText: MenuDurationText?
+    public let elapsedText: DurationLineText?
     public let canStopTracking: Bool
     public let dailyTotalsStatus: DailyTotalsStatus
-    public let totalText: MenuDurationText
+    public let totalText: DurationLineText
     public let totalsExplanation: String
     public let todayTasks: [TrackerMenuTask]
     public let otherTasks: [TrackerMenuTask]

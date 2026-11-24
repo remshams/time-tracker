@@ -60,12 +60,12 @@ final class MenuPresentationTests: XCTestCase {
             let totals = fixture.features.dailyTotals
             XCTAssertEqual(
                 observer.values.elapsedText,
-                fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) })
+                fixture.features.tracking.elapsedSeconds.map { DurationLineText(seconds: $0) })
             XCTAssertEqual(
-                observer.values.totalText, totals.dayTotal.map { MenuDurationText(seconds: wholeSeconds($0)) })
+                observer.values.totalText, totals.dayTotal.map { DurationLineText(seconds: wholeSeconds($0)) })
             XCTAssertEqual(
                 observer.values.taskDurationTexts[firstTask.id],
-                totals.taskDurations[firstTask.id].map { MenuDurationText(seconds: wholeSeconds($0)) })
+                totals.taskDurations[firstTask.id].map { DurationLineText(seconds: wholeSeconds($0)) })
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
             XCTAssertEqual(observer.content, originalContent)
@@ -87,7 +87,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertNotEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 1)
         XCTAssertEqual(
-            observer.content.elapsedText, fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) }
+            observer.content.elapsedText, fixture.features.tracking.elapsedSeconds.map { DurationLineText(seconds: $0) }
         )
         XCTAssertTrue(observer.content.canStopTracking)
     }

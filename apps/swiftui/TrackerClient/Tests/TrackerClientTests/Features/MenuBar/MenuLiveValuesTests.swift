@@ -102,7 +102,7 @@ final class MenuLiveValuesTests: XCTestCase {
             XCTAssertEqual(observer.content.activeWorklogID, active?.id)
             XCTAssertEqual(
                 observer.values.elapsedText,
-                active == nil ? nil : fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) })
+                active == nil ? nil : fixture.features.tracking.elapsedSeconds.map { DurationLineText(seconds: $0) })
         }
     }
 
@@ -150,7 +150,7 @@ final class MenuLiveValuesTests: XCTestCase {
         observer.menuClosed()
         XCTAssertEqual(observer.content.connectionSettings, serverSettings)
         XCTAssertEqual(
-            observer.values.elapsedText, fixture.features.tracking.elapsedSeconds.map { MenuDurationText(seconds: $0) })
+            observer.values.elapsedText, fixture.features.tracking.elapsedSeconds.map { DurationLineText(seconds: $0) })
     }
 
     @MainActor

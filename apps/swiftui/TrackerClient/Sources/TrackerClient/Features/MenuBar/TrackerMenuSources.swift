@@ -24,19 +24,19 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
 
     // The text helpers are main-actor isolated because `DurationText` is.
     /// The running worklog's time as the menu shows it, or "Unavailable" before the tracker state is confirmed.
-    @MainActor var elapsedText: MenuDurationText {
-        elapsedSeconds.map { MenuDurationText(seconds: $0) } ?? MenuDurationText(placeholder: "Unavailable")
+    @MainActor var elapsedText: DurationLineText {
+        elapsedSeconds.map { DurationLineText(seconds: $0) } ?? DurationLineText(placeholder: "Unavailable")
     }
 
     /// The day's total as the menu shows it, marked while it's cached, or "Unavailable" while no total is known.
-    @MainActor var dayTotalText: MenuDurationText {
-        dayTotal.map { MenuDurationText(seconds: wholeSeconds($0), cached: dailyTotalsStatus == .cached) }
-            ?? MenuDurationText(placeholder: "Unavailable")
+    @MainActor var dayTotalText: DurationLineText {
+        dayTotal.map { DurationLineText(seconds: wholeSeconds($0), cached: dailyTotalsStatus == .cached) }
+            ?? DurationLineText(placeholder: "Unavailable")
     }
 
     /// The task's time today as the menu shows it, or "-" while no duration is known.
-    @MainActor func durationText(taskID: String) -> MenuDurationText {
-        taskDurations[taskID].map { MenuDurationText(seconds: wholeSeconds($0)) } ?? MenuDurationText(placeholder: "-")
+    @MainActor func durationText(taskID: String) -> DurationLineText {
+        taskDurations[taskID].map { DurationLineText(seconds: wholeSeconds($0)) } ?? DurationLineText(placeholder: "-")
     }
 }
 

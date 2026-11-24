@@ -14,7 +14,7 @@ public enum QuickTrackHighlight: Equatable, Sendable {
 public struct QuickTrackTask: Identifiable, Equatable, Sendable {
     public let task: TaskItem
     /// The task's time today, or `nil` when it has none.
-    public let durationText: MenuDurationText?
+    public let durationText: DurationLineText?
     public let canStart: Bool
     public var id: String { task.id }
 }
@@ -25,10 +25,10 @@ public struct QuickTrackHeader: Equatable, Sendable {
     public let taskID: String?
     public let title: String
     /// The running worklog's time, or `nil` while nothing runs.
-    public let elapsedText: MenuDurationText?
+    public let elapsedText: DurationLineText?
     public let isRunning: Bool
     public let canStop: Bool
-    public let totalText: MenuDurationText
+    public let totalText: DurationLineText
     public let totalsExplanation: String
 }
 
