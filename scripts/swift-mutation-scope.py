@@ -39,8 +39,10 @@ MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
 MENU_BAR_STORE = "Features/MenuBar/MenuBarStore.swift"
 MENU_SOURCES = "Features/MenuBar/TrackerMenuSources.swift"
 MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
-MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
-MENU_DURATION = "Features/MenuBar/MenuDurationText.swift"
+TASK_COPYING = "Features/TaskCopying/TaskCopying.swift"
+TASK_COPY_ACTION = "Features/TaskCopying/TaskCopyAction.swift"
+TASK_COPY_FORMATTER = "Features/TaskCopying/TaskCopyFormatter.swift"
+DURATION_LINE = "Shared/DurationLineText.swift"
 CONNECTION = "Features/Connection/ConnectionStore.swift"
 CONNECTION_TESTING = "Features/Connection/ConnectionTesting.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationStore.swift"
@@ -60,6 +62,7 @@ PRESENTATION_GATE = "Shared/PresentationGate.swift"
 DISPLAY_CLOCK = "Shared/DisplayClock.swift"
 QUICK_TRACK_STORE = "Features/QuickTrack/QuickTrackStore.swift"
 QUICK_TRACK_CONTENT = "Features/QuickTrack/QuickTrackContent.swift"
+QUICK_TRACK_SOURCES = "Features/QuickTrack/QuickTrackSources.swift"
 
 # Map each suite's assertions to complete files, including the code that creates and syncs its stores.
 # Update this map when a suite gains assertions about another production component.
@@ -91,12 +94,11 @@ TEST_PRODUCTION = {
     ],
     "Features/DailyTotals/DailyTotalsTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, TOTALS, TRACKING, MODELS, CONNECTION, CONNECTION_TESTING, CATALOG,
-        HISTORY, MENU_BAR_STORE, MENU_CLIPBOARD,
+        HISTORY, TASK_COPYING,
     ],
     "Features/DailyTotals/DailyTotalShareTests.swift": [TOTAL_SHARE, TOTALS, TIME_FORMATTING],
     "Features/DailyTotals/DailyTotalsBarLayoutTests.swift": [BAR_LAYOUT],
     "Features/DailyTotals/TaskHeaderSubtitleTests.swift": [HEADER_SUBTITLE, LAST_TRACKED, TOTALS, TIME_FORMATTING],
-    "Features/MenuBar/MenuDurationTextTests.swift": [MENU_DURATION, TIME_FORMATTING],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
@@ -108,13 +110,13 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_OBSERVER, MENU_SOURCES, MENU, TASK_ORDER, MENU_VALUES,
         TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
-    "Features/MenuBar/MenuTaskClipboardTests.swift": [
-        FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MENU_CLIPBOARD, MENU_SHORTCUTS, MENU_OBSERVER, MENU_SOURCES,
-        MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
+    "Features/MenuBar/MenuBarCopyTests.swift": [
+        FEATURES, SYNC, TRACKING_AVAILABILITY, MENU_BAR_STORE, TASK_COPYING, TASK_COPY_ACTION, TASK_COPY_FORMATTER,
+        TOTALS, TRACKING, CATALOG, CONNECTION,
     ],
     "Features/MenuBar/MenuTaskTrackingActionTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, "Features/MenuBar/MenuTaskTrackingAction.swift",
-        MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TRACKING, MENU_CLIPBOARD, MENU_SHORTCUTS, TOTALS, CATALOG,
+        MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, TRACKING, TASK_COPYING, TASK_COPY_FORMATTER, TOTALS, CATALOG,
         CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
@@ -134,9 +136,15 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, AUTOMATION, MODELS, TASK_ORDER, MENU_OBSERVER, MENU_SOURCES, MENU,
         MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, MENU_BAR_STORE, INDICATOR,
     ],
+    "Features/TaskCopying/TaskCopyFormatterTests.swift": [TASK_COPY_FORMATTER],
+    "Features/TaskCopying/TaskCopyingTests.swift": [
+        FEATURES, SYNC, TRACKING_AVAILABILITY, TASK_COPYING, TASK_COPY_ACTION, TASK_COPY_FORMATTER, TOTALS, TRACKING,
+        CATALOG, CONNECTION, HISTORY, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, MENU_BAR_STORE, AUTOMATION,
+        INDICATOR,
+    ],
     "Features/TaskCreation/TaskCreationTests.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION,
-        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION, MENU_BAR_STORE, MENU_CLIPBOARD,
+        CONNECTION_TESTING, AUTOMATION, RENAME, NAME_POLICY, DELETION, MOVE, CORRECTION, MENU_BAR_STORE, TASK_COPYING,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         FEATURES, SYNC, NAME_POLICY, CREATION, RENAME, CATALOG,
@@ -167,17 +175,17 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, HISTORY, TRACKING, CATALOG, CONNECTION,
     ],
     "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY, CATALOG, CONNECTION],
-    "Features/QuickTrack/QuickTrackContentTests.swift": [QUICK_TRACK_CONTENT, MENU_SOURCES, MENU_DURATION, NAME_POLICY],
+    "Features/QuickTrack/QuickTrackContentTests.swift": [QUICK_TRACK_CONTENT, QUICK_TRACK_SOURCES, DURATION_LINE, NAME_POLICY],
     "Features/QuickTrack/QuickTrackStoreTests.swift": [
-        FEATURES, SYNC, TRACKING_AVAILABILITY, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, MENU_SOURCES, TRACKING,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, QUICK_TRACK_SOURCES, TRACKING,
         CATALOG, CONNECTION, TOTALS, NAME_POLICY,
     ],
     "Features/QuickTrack/QuickTrackCopyTests.swift": [
-        FEATURES, SYNC, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, MENU_SOURCES, MENU_CLIPBOARD, MENU_BAR_STORE,
-        TRACKING, CATALOG, CONNECTION, TOTALS,
+        FEATURES, SYNC, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, QUICK_TRACK_SOURCES, TASK_COPYING,
+        TASK_COPY_FORMATTER, TRACKING, CATALOG, CONNECTION, TOTALS,
     ],
     "Features/QuickTrack/QuickTrackCreationTests.swift": [
-        FEATURES, SYNC, TRACKING_AVAILABILITY, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, MENU_SOURCES, NAME_POLICY,
+        FEATURES, SYNC, TRACKING_AVAILABILITY, QUICK_TRACK_STORE, QUICK_TRACK_CONTENT, QUICK_TRACK_SOURCES, NAME_POLICY,
         WRITE_FAILURE, TRACKING, CATALOG, CONNECTION,
     ],
     "Features/WorklogHistory/WorklogDaysTests.swift": [
@@ -192,6 +200,7 @@ TEST_PRODUCTION = {
         FEATURES, SYNC, TRACKING_AVAILABILITY, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, RENAME,
         CORRECTION, ARCHIVING, MOVE,
     ],
+    "Shared/DurationLineTextTests.swift": [DURATION_LINE, TIME_FORMATTING],
     "Shared/PresentationGateTests.swift": [
         PRESENTATION_GATE, FEATURES, SYNC, TRACKING_AVAILABILITY, CREATION, RENAME, ARCHIVING, BULK_ARCHIVING,
         CORRECTION, MOVE, DELETION, TRACKING, CATALOG, HISTORY, CONNECTION,
@@ -215,7 +224,8 @@ TEST_PRODUCTION_COMPANIONS = {
     **{store: (CHANGE_GUARD,) for store in (CATALOG, HISTORY, CONNECTION, AUTOMATION)},
     TOTALS: (CHANGE_GUARD, DISPLAY_CLOCK, TOTAL_SHARE, LAST_TRACKED),
     MENU_BAR_STORE: (CHANGE_GUARD, DISPLAY_CLOCK),
-    MENU_SOURCES: (MENU_DURATION,),
+    MENU_SOURCES: (DURATION_LINE,),
+    QUICK_TRACK_SOURCES: (DURATION_LINE,),
     # The dialog flows and the tracking failures explain uncertain writes the same way. The sync's suites cover
     # the tracking failures, which TrackingStore records for the requests and the auto-pause.
     SYNC: (WRITE_FAILURE,),
@@ -327,7 +337,7 @@ SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS,
         AUTOMATION, RENAME, ARCHIVING, CREATION, DELETION, MOVE, BULK_ARCHIVING, CORRECTION, MENU_BAR_STORE,
-        MENU_CLIPBOARD, TRACKING_PILL, PRESENTATION_GATE,
+        TASK_COPYING, TRACKING_PILL, PRESENTATION_GATE,
     ],
     "Support/MenuHarness.swift": [
         FEATURES, SYNC, TRACKING_AVAILABILITY, MENU_OBSERVER, MENU_SOURCES, MENU, MENU_VALUES, CATALOG, CONNECTION,
@@ -339,6 +349,12 @@ SUPPORT_PRODUCTION = {
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
 REVIEWED_REPLACEMENTS: dict[str, str] = {
+    "Sources/TrackerClient/Features/MenuBar/MenuTaskClipboard.swift":
+        "Sources/TrackerClient/Features/TaskCopying/TaskCopying.swift",
+    "Tests/TrackerClientTests/Features/MenuBar/MenuTaskClipboardTests.swift":
+        "Tests/TrackerClientTests/Features/TaskCopying/TaskCopyingTests.swift",
+    "Tests/TrackerClientTests/Features/MenuBar/MenuDurationTextTests.swift":
+        "Tests/TrackerClientTests/Shared/DurationLineTextTests.swift",
     "Tests/TrackerClientTests/Features/MenuBar/MenuTaskOrderTests.swift":
         "Tests/TrackerClientTests/Features/TaskCatalog/TaskOrderTests.swift",
 }
