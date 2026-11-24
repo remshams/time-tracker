@@ -419,8 +419,8 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.features.menuBar.dailyDuration(taskID: firstTask.id), 60)
-        XCTAssertEqual(fixture.features.menuBar.dailyDuration(taskID: secondTask.id), 0)
+        XCTAssertEqual(fixture.features.taskCopying.dailyDuration(taskID: firstTask.id), 60)
+        XCTAssertEqual(fixture.features.taskCopying.dailyDuration(taskID: secondTask.id), 0)
         XCTAssertEqual(fixture.features.taskCatalog.selectedTaskID, secondTask.id)
         XCTAssertEqual(fixture.features.tracking.active, activeWorklog)
     }

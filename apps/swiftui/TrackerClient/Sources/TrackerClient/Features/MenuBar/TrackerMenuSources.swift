@@ -42,8 +42,7 @@ nonisolated public struct TrackerMenuInputs: Equatable, Sendable {
 
 /// The stores the menu bar reads.
 ///
-/// `TrackingAvailability` decides whether tracking can start or stop. The running task's name is computed here,
-/// because only the menu shows it.
+/// `TrackingAvailability` decides whether tracking can start or stop. The running task's name is computed here.
 public struct TrackerMenuSources: Sendable {
     let catalog: TaskCatalogStore
     let connection: ConnectionStore
@@ -66,7 +65,7 @@ public struct TrackerMenuSources: Sendable {
             runningTaskName: runningTaskName,
             autoPauseStatusText: automation.statusText,
             canStopTracking: availability.canStop,
-            startableTaskIDs: Set(catalog.tasks.map(\.id).filter { availability.canStart(taskID: $0) }),
+            startableTaskIDs: availability.startableTaskIDs(in: catalog.tasks),
             dailyTotalsStatus: dailyTotals.status,
             dayTotal: dailyTotals.dayTotal,
             totalsExplanation: dailyTotals.totalsExplanation,

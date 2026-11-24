@@ -18,6 +18,11 @@ public struct TrackingAvailability: Sendable {
         return !task.archived && tracking.active?.taskId != task.id
     }
 
+    /// The IDs of the tasks in `tasks` that `canStart` accepts.
+    public func startableTaskIDs(in tasks: [TaskItem]) -> Set<String> {
+        Set(tasks.map(\.id).filter { canStart(taskID: $0) })
+    }
+
     public var canStop: Bool { canSend && tracking.active != nil }
 
     /// Whether the tracker state is confirmed and current, and no tracking request is in flight.

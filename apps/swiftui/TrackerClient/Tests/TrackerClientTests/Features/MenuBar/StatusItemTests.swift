@@ -332,9 +332,13 @@ private extension MenuBarStore {
         self.init(
             repository: repository, connection: ConnectionStore(settings: settings), catalog: catalog,
             tracking: tracking,
-            dailyTotals: DailyTotalsStore(
-                reports: nil, connection: ConnectionStore(settings: settings), catalog: catalog, tracking: tracking,
-                clock: FakeClock(), scheduler: scheduler, displayClock: displayClock, calendar: .autoupdatingCurrent),
+            taskCopying: TaskCopying(
+                catalog: catalog,
+                dailyTotals: DailyTotalsStore(
+                    reports: nil, connection: ConnectionStore(settings: settings), catalog: catalog,
+                    tracking: tracking, clock: FakeClock(), scheduler: scheduler, displayClock: displayClock,
+                    calendar: .autoupdatingCurrent),
+                tracking: tracking),
             automation: automation, displayClock: displayClock)
     }
 }
