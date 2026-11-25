@@ -2,10 +2,12 @@ import importlib.util
 import io
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location("crate_dependencies", Path(__file__).parents[1] / "crate-dependencies.py")
@@ -15,6 +17,9 @@ SPEC.loader.exec_module(CRATES)
 DOC = """\
 <!-- crate-dependencies: core -->
 ```mermaid
+---
+title: Rust core crates
+---
 flowchart TD
     client["tracker-client<br>crates/tracker-client<br>Selects the backend"]:::module
     storage["tracker-storage<br>crates/tracker-storage<br>SQLite"]:::module
@@ -95,6 +100,15 @@ class CheckTests(unittest.TestCase):
         doc = DOC.replace("<!-- crate-dependencies: applications -->", "")
         self.assertIn("Missing `<!-- crate-dependencies: applications -->`", problems(doc)[0])
 
+    def test_arrow_the_check_cannot_read_fails(self):
+        for arrow in ("storage -->|uses| domain", "storage -.-> domain", "client --> storage --> domain"):
+            with self.subTest(arrow=arrow):
+                doc = DOC.replace("    storage --> domain\n", f"    storage --> domain\n    {arrow}\n")
+                self.assertEqual(
+                    problems(doc),
+                    [f"The core block has an edge the check can't read: `{arrow}`. Write it as `a --> b & c`."],
+                )
+
     def test_unknown_alias(self):
         doc = DOC.replace("storage --> domain", "storage --> domain & ghost")
         self.assertIn("alias `ghost`", problems(doc)[0])
@@ -130,6 +144,14 @@ class MainTests(unittest.TestCase):
         code, output = self.run_main(DOC.replace("client --> storage & domain", "client --> domain"), metadata())
         self.assertEqual(code, 1)
         self.assertIn("Add `storage` to the `client -->` line", output)
+
+    def test_cargo_failure_prints_its_error(self):
+        failed = subprocess.CompletedProcess([], 101, stdout="", stderr="error: the lock file needs to be updated\n")
+        stderr = io.StringIO()
+        with mock.patch.object(CRATES.subprocess, "run", return_value=failed), redirect_stderr(stderr):
+            code = CRATES.main([])
+        self.assertEqual(code, 1)
+        self.assertIn("cargo metadata: error: the lock file needs to be updated", stderr.getvalue())
 
     @unittest.skipUnless(shutil.which("cargo"), "cargo is not installed")
     def test_real_repository_doc_matches_cargo(self):
