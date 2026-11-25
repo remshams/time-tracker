@@ -101,7 +101,13 @@ class CheckTests(unittest.TestCase):
         self.assertIn("Missing `<!-- crate-dependencies: applications -->`", problems(doc)[0])
 
     def test_arrow_the_check_cannot_read_fails(self):
-        for arrow in ("storage -->|uses| domain", "storage -.-> domain", "client --> storage --> domain"):
+        arrows = (
+            "storage -->|uses| domain",
+            "storage -.-> domain",
+            "client --> storage --> domain",
+            'storage["tracker-storage"] --> domain["tracker-domain"]',
+        )
+        for arrow in arrows:
             with self.subTest(arrow=arrow):
                 doc = DOC.replace("    storage --> domain\n", f"    storage --> domain\n    {arrow}\n")
                 self.assertEqual(
