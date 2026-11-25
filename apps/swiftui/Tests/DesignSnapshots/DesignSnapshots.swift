@@ -40,7 +40,8 @@ private let fixtureHistory: [WorklogItem] = [
     WorklogItem(id: "w6", taskId: "t1", start: stamp(-2 * day - 1 * hour), end: stamp(-2 * day + 1.75 * hour)),
     WorklogItem(id: "w7", taskId: "t1", start: stamp(-4 * day - 3 * hour), end: stamp(-4 * day - 2.5 * hour)),
     WorklogItem(id: "w8", taskId: "t1", start: stamp(-5 * day - 6 * hour), end: stamp(-5 * day - 1 * hour)),
-    // Late yesterday into early today, for the dialogs' overnight span.
+    // 22:42 to 01:42 UTC, for the dialogs' overnight span. Its scenario opens it in UTC, so it crosses midnight in
+    // every host time zone.
     WorklogItem(id: "w9", taskId: "t3", start: stamp(-1 * day + 7 * hour), end: stamp(-1 * day + 10 * hour)),
 ]
 
@@ -107,7 +108,7 @@ private let scenarios: [Scenario] = [
         sheet: { $0.worklogCorrection.open(worklogID: "w-run") }),
     Scenario(
         name: "sheet-worklog-edit-overnight", tasks: fixtureTasks, active: fixtureActive, select: "t3",
-        sheet: { $0.worklogCorrection.open(worklogID: "w9") }),
+        sheet: { $0.worklogCorrection.open(worklogID: "w9", timezone: TimeZone(identifier: "UTC")!) }),
     Scenario(
         name: "sheet-worklog-delete", tasks: fixtureTasks, active: fixtureActive, select: "t1",
         sheet: { $0.worklogDeletion.open(worklogID: "w2") }),
@@ -276,10 +277,10 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
 
     // The check after the capture catches a screen that locked during it, which leaves the image blank.
     let lockedBefore = isScreenLocked()
-    let image = lockedBefore ? nil : windowServerImage(of: window).flatMap { base in
-        window.attachedSheet.map { sheet in
-            windowServerImage(of: sheet).map { composite($0, from: sheet, over: base, of: window) } ?? base
-        } ?? base
+    // A sheet that the window server doesn't return fails the whole capture, so no PNG shows the window without it.
+    let image = lockedBefore ? nil : windowServerImage(of: window).flatMap { base -> CGImage? in
+        guard let sheet = window.attachedSheet else { return base }
+        return windowServerImage(of: sheet).map { composite($0, from: sheet, over: base, of: window) }
     }
     let lockedAfter = isScreenLocked()
     let flat: Bool
