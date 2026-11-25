@@ -63,8 +63,8 @@ enum TextRole {
     /// The selected task's name at the top of the detail.
     static let display = Font.system(size: 26, weight: .semibold)
     static let sheetTitle = Font.title2.bold()
-    /// The Quick Track dialog's search field, which is its main control.
-    static let quickTrackSearch = Font.title2
+    /// A text field that is a view's main control, such as Quick Track's search.
+    static let prominentInput = Font.title2
     static let sectionTitle = Font.title3.weight(.semibold)
     /// A short line that stands in for missing content, such as "Select a task".
     static let placeholder = Font.title3
