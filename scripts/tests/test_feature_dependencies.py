@@ -111,6 +111,15 @@ class OmarchyExtractorTests(unittest.TestCase):
         self.assertEqual(set(edges), {("App", "Shared"), ("Features/Catalog", "Features/Tracking")})
         self.assertEqual(edges[("Features/Catalog", "Features/Tracking")][0].line, 2)
 
+    def test_example_line_is_the_include_not_the_blank_line_above(self):
+        found, _ = self.extract({
+            "Features/Catalog/Store.h": '#pragma once\n\n\n#include "Shared/Theme.h"\n',
+            "Features/Catalog/View.qml": 'import QtQuick\n\nimport "../../Shared"\n',
+            "Shared/Theme.h": "",
+        })
+        lines = sorted(location.line for location in found.edges[("Features/Catalog", "Shared")])
+        self.assertEqual(lines, [3, 4])
+
     def test_commented_include_does_not_count(self):
         edges = self.edges({
             "Features/Catalog/Store.cpp": '// #include "Shared/Theme.h"\n/* #include "Shared/Format.h" */',
@@ -155,11 +164,13 @@ class OmarchyExtractorTests(unittest.TestCase):
             "Features/Rename/Dialog.qml": "Item { Component.onCompleted: load(catalog) }",
             # A line that starts with the name is a use when the colon belongs to a ternary below it.
             "Features/Delete/Dialog.qml": "Item {\n    property var store: shown ?\n        catalog\n        : null\n}",
+            "Features/Archive/Dialog.qml": "Item {\n    property var store: shown ?\n        catalog : null\n}",
         })
         self.assertEqual(edges, {
             ("Features/Move", "Features/Catalog"),
             ("Features/Rename", "Features/Catalog"),
             ("Features/Delete", "Features/Catalog"),
+            ("Features/Archive", "Features/Catalog"),
         })
 
     def test_properties_named_like_a_context_property_are_not_uses(self):
