@@ -1,0 +1,69 @@
+# The folders under src/ and the folders each one uses. bin/lint runs
+# scripts/feature-dependencies.py, which fails when the code and this file disagree or the
+# folders form a cycle. See ADR 0045.
+
+# Every folder may use these without listing them.
+implicit = ["Shared", "Contracts"]
+
+[nodes."App"]
+# Creates the gateway and every feature store, and composes the views.
+uses = [
+    "Bridge",
+    "Features/BulkTaskArchiving",
+    "Features/Connection",
+    "Features/DailyTotals",
+    "Features/TaskArchiving",
+    "Features/TaskCatalog",
+    "Features/TaskCreation",
+    "Features/TaskRename",
+    "Features/Tracking",
+    "Features/WorklogCorrection",
+    "Features/WorklogDeletion",
+    "Features/WorklogHistory",
+    "Features/WorklogMove",
+]
+
+[nodes."Bridge"]
+uses = []
+
+[nodes."Contracts"]
+uses = []
+
+[nodes."Shared"]
+uses = []
+
+[nodes."Features/BulkTaskArchiving"]
+uses = []
+
+[nodes."Features/Connection"]
+uses = []
+
+[nodes."Features/DailyTotals"]
+uses = ["Features/TaskCatalog", "Features/Tracking"]
+
+[nodes."Features/TaskArchiving"]
+uses = ["Features/TaskCatalog"]
+
+[nodes."Features/TaskCatalog"]
+uses = []
+
+[nodes."Features/TaskCreation"]
+uses = ["Features/TaskCatalog"]
+
+[nodes."Features/TaskRename"]
+uses = ["Features/TaskCatalog"]
+
+[nodes."Features/Tracking"]
+uses = []
+
+[nodes."Features/WorklogCorrection"]
+uses = ["Features/TaskCatalog", "Features/WorklogHistory"]
+
+[nodes."Features/WorklogDeletion"]
+uses = ["Features/TaskCatalog", "Features/WorklogHistory"]
+
+[nodes."Features/WorklogHistory"]
+uses = ["Features/DailyTotals", "Features/TaskCatalog", "Features/Tracking"]
+
+[nodes."Features/WorklogMove"]
+uses = ["Features/TaskCatalog", "Features/WorklogHistory"]
