@@ -139,6 +139,13 @@ def omarchy_context_properties(source: Path, target: Target) -> dict[str, str]:
     header_text = strip_comments_and_strings(header.read_text())
     controller_text = controller.read_text()
     properties: dict[str, str] = {}
+    matched = {match.start() for match in CONTEXT_PROPERTY.finditer(controller_text)}
+    for call in re.finditer(r"setContextProperty\(", strip_comments_and_strings(controller_text)):
+        if call.start() not in matched:
+            location = Location(controller, line_of(controller_text, call.start()))
+            target.problems.append(
+                f'{location}: can\'t read this context property. Write it as setContextProperty(QStringLiteral("name"), member_).'
+            )
     for match in CONTEXT_PROPERTY.finditer(controller_text):
         name, member = match.group("name"), match.group("member")
         declaration = re.search(rf"(?P<type>\w+)\s*\*\s*{re.escape(member)}\s*;", header_text)
@@ -170,6 +177,24 @@ def omarchy_resolve(source: Path, path: Path, relative: str) -> str | None:
     return None
 
 
+def context_property_uses(name: str, code: str) -> list[re.Match[str]]:
+    """The uses of a context property in QML code, such as `catalog.tasks` or `target: catalog`.
+
+    A member access (`model.catalog`), a property declaration (`property var catalog`) and a
+    binding to a property of that name (`catalog: value` at the start of a line) aren't uses.
+    """
+    uses = []
+    for match in re.finditer(rf"(?<![\w.]){re.escape(name)}(?!\w)", code):
+        before = code[code.rfind("\n", 0, match.start()) + 1 : match.start()]
+        after = code[match.end() :]
+        if re.search(r"\bproperty\s+[\w<>.]+\s+$", before):
+            continue
+        if re.fullmatch(r"\s*(?:readonly\s+|required\s+)*", before) and re.match(r"\s*:", after):
+            continue
+        uses.append(match)
+    return uses
+
+
 def extract_omarchy(source: Path) -> list[Target]:
     target = Target(None)
     files = sorted(path for path in source.rglob("*") if path.suffix in {".cpp", ".h", ".qml"})
@@ -190,7 +215,7 @@ def extract_omarchy(source: Path) -> list[Target]:
                 target.add(node, used, Location(path, line_of(text, match.start())))
         if path.suffix == ".qml":
             for name, used in properties.items():
-                for match in re.finditer(rf"(?<![\w.]){re.escape(name)}\s*\.", code):
+                for match in context_property_uses(name, code):
                     target.add(node, used, Location(path, line_of(text, match.start())))
     return [target]
 
@@ -450,7 +475,11 @@ def check(target: Target, config: Config, config_path: Path) -> list[str]:
     for node in sorted(set(config.implicit) - target.nodes):
         problems.append(f"{name} makes {node!r} implicit, but no folder has that name. Remove it from implicit.")
     for node in sorted(target.nodes - config.uses.keys()):
-        problems.append(f"{name} has no {section_name(target.name, node)} section for the folder {node}. Add one.")
+        uses = ", ".join(f'"{used}"' for source, used in sorted(target.edges) if source == node and used not in config.implicit)
+        problems.append(
+            f"{name} has no section for the folder {node}. Add one:\n"
+            f"    {section_name(target.name, node)}\n    uses = [{uses}]"
+        )
     for node in sorted(config.uses.keys() - target.nodes):
         problems.append(f"{name} has {section_name(target.name, node)}, but no folder has that name. Remove the section.")
 
@@ -472,10 +501,15 @@ def check(target: Target, config: Config, config_path: Path) -> list[str]:
             elif (source, used) not in found and source in target.nodes:
                 problems.append(f'{section} lists "{used}", but no file in {source} uses it. Remove it.')
 
-    for cycle in cycles(set(target.edges)):
+    # Every other node may use an implicit node at any time, so those edges count for cycles too.
+    implicit = set(config.implicit) & target.nodes
+    graph = set(target.edges) | {(node, used) for node in target.nodes - implicit for used in implicit}
+    for cycle in cycles(graph):
         edges = list(zip(cycle, cycle[1:]))
         lines = [f"The folders form a cycle: {' -> '.join(cycle)}. Remove one of these dependencies:"]
-        lines.extend(f"    {source} -> {used}: {min(target.edges[(source, used)])}" for source, used in edges)
+        for source, used in edges:
+            where = min(target.edges[(source, used)]) if (source, used) in target.edges else f"{used} is implicit"
+            lines.append(f"    {source} -> {used}: {where}")
         problems.append("\n".join(lines))
     return problems
 
