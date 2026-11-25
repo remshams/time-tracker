@@ -23,8 +23,10 @@ public struct WorklogSpan: Equatable, Sendable {
         }
         day = start.formatted(dayStyle)
         if let end {
-            let endDay = end.formatted(format.style.weekday(.abbreviated).day().month(.abbreviated))
-            let endText = calendar.isDate(end, inSameDayAs: start) ? format.time(end) : "\(endDay), \(format.time(end))"
+            let endText =
+                calendar.isDate(end, inSameDayAs: start)
+                ? format.time(end)
+                : "\(end.formatted(format.style.weekday(.abbreviated).day().month(.abbreviated))), \(format.time(end))"
             range = "\(format.time(start)) – \(endText)"
         } else {
             range = "\(format.time(start)) – now"
