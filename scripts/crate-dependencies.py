@@ -65,8 +65,8 @@ def parse_core(block: str) -> tuple[set[str], set[Edge], list[str]]:
     return set(aliases.values()), edges, sorted(set(problems))
 
 
-def parse_applications(block: str) -> tuple[set[str], set[Edge], list[str]]:
-    """Return the application names, the edges and the problems of the applications table."""
+def parse_applications(block: str) -> tuple[set[str], set[Edge]]:
+    """Return the application names and the edges of the applications table."""
     crates: set[str] = set()
     edges: set[Edge] = set()
     for line in block.splitlines():
@@ -76,7 +76,7 @@ def parse_applications(block: str) -> tuple[set[str], set[Edge], list[str]]:
         crates.add(row["crate"])
         for short in filter(None, (part.strip() for part in row["uses"].split(","))):
             edges.add((row["crate"], PREFIX + short))
-    return crates, edges, []
+    return crates, edges
 
 
 def cargo_graph(metadata: dict) -> tuple[set[str], set[Edge]]:
@@ -99,17 +99,11 @@ def describe(edge: Edge, adding: bool) -> str:
     source, target = edge
     if source in APPLICATIONS:
         where = f"the `{source}` row of the applications table"
-        return (
-            f"Cargo has {source} -> {target}. Add `{short(target)}` to {where}."
-            if adding
-            else f"The doc has {source} -> {target}, which Cargo does not declare. Remove `{short(target)}` from {where}."
-        )
-    where = f"the `{short(source)} -->` line of the core block"
-    return (
-        f"Cargo has {source} -> {target}. Add `{short(target)}` to {where}."
-        if adding
-        else f"The doc has {source} -> {target}, which Cargo does not declare. Remove `{short(target)}` from {where}."
-    )
+    else:
+        where = f"the `{short(source)} -->` line of the core block"
+    if adding:
+        return f"Cargo has {source} -> {target}. Add `{short(target)}` to {where}."
+    return f"The doc has {source} -> {target}, which Cargo does not declare. Remove `{short(target)}` from {where}."
 
 
 def check(text: str, metadata: dict) -> list[str]:
@@ -126,8 +120,8 @@ def check(text: str, metadata: dict) -> list[str]:
 
     packages, cargo_edges = cargo_graph(metadata)
     core_names, core_edges, core_problems = parse_core(core)
-    table_names, table_edges, table_problems = parse_applications(table)
-    problems += core_problems + table_problems
+    table_names, table_edges = parse_applications(table)
+    problems += core_problems
 
     for name in sorted((core_names | table_names) - packages):
         problems.append(f"`{name}` is in the doc but is not a workspace package. Remove it or fix the name.")
@@ -142,7 +136,7 @@ def check(text: str, metadata: dict) -> list[str]:
 
     documented = core_edges | table_edges
     problems += [describe(edge, True) for edge in sorted(cargo_edges - documented)]
-    problems += [describe(edge, False) for edge in sorted(documented - cargo_edges) if edge[0] in packages | table_names | core_names]
+    problems += [describe(edge, False) for edge in sorted(documented - cargo_edges)]
     return problems
 
 
