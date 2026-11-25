@@ -115,6 +115,10 @@ class CheckTests(unittest.TestCase):
                     [f"The core block has an edge the check can't read: `{arrow}`. Write it as `a --> b & c`."],
                 )
 
+    def test_application_without_core_crates(self):
+        doc = DOC.replace("| `tracker-tui` | client, domain |", "| `tracker-tui` | client, domain |\n| `tracker-cli` | - |")
+        self.assertEqual(problems(doc, metadata({**EDGES, "tracker-cli": []})), [])
+
     def test_unknown_alias(self):
         doc = DOC.replace("storage --> domain", "storage --> domain & ghost")
         self.assertIn("alias `ghost`", problems(doc)[0])

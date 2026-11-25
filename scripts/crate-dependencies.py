@@ -76,9 +76,12 @@ def parse_applications(block: str) -> tuple[set[str], set[Edge]]:
     edges: set[Edge] = set()
     for line in block.splitlines():
         row = ROW.match(line)
-        if not row or set(row["uses"]) <= set("- "):
+        if not row:
             continue
         crates.add(row["crate"])
+        # An application without core crates has an empty or `-` cell.
+        if set(row["uses"]) <= set("- "):
+            continue
         for short in filter(None, (part.strip() for part in row["uses"].split(","))):
             edges.add((row["crate"], PREFIX + short))
     return crates, edges
