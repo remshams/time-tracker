@@ -195,7 +195,7 @@ def context_property_uses(name: str, code: str) -> list[re.Match[str]]:
         after = code[match.end() :]
         if re.search(r"\bproperty\s+[\w<>.]+\s+$", before):
             continue
-        continues = code[:line_start].rstrip()[-1:] in tuple("?:(,[=+-*/%&|!<>")
+        continues = code[:line_start].rstrip()[-1:] in tuple("?:([=+-*/%&|!<>")
         if not continues and re.fullmatch(r"\s*(?:readonly\s+|required\s+)*", before) and re.match(r"[ \t]*:", after):
             continue
         uses.append(match)
