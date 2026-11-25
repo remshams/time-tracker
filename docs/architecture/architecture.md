@@ -495,15 +495,18 @@ also apply to local clients that never reach the server.
 Unit tests sit next to the code. Black-box E2E tests drive the clients and the
 HTTP API through their public interfaces. Before handoff, run
 `cargo fmt --all --check`, Clippy with warnings as errors, the Python script
-tests, `cargo llvm-cov` for the full test suite with coverage and `cargo crap`.
-Swift changes also run `scripts/swift-style.py`. Changes to `tt-desktop` or
-`tracker-bridge` also run `apps/omarchy/bin/lint` (clang-format and clang-tidy)
+tests, the crate graph check, `cargo llvm-cov` for the full test suite with
+coverage and `cargo crap`. Swift changes also run `scripts/swift-style.py` and the
+Swift feature dependency check. Changes to `tt-desktop` or `tracker-bridge` also
+run `apps/omarchy/bin/lint` (clang-format, the QML design tokens, the feature
+dependency check and clang-tidy)
 and `apps/omarchy/bin/test --coverage` (Qt Test). Mutation checks with
 cargo-mutants and `scripts/swift-mutations.py` cover the files a task changed
 ([ADR 0014](adr/0014-scope-mutation-checks-to-task-changes.md)).
 
-CI runs formatting, lint and Python tests, Rust tests with coverage and CRAP,
-Swift style, tests and coverage on Linux, a focused Swift mutation check on pull
+CI runs formatting, lint, the crate graph check and Python tests, Rust tests with
+coverage and CRAP, the Swift feature dependency check, Swift style, tests and
+coverage on Linux, a focused Swift mutation check on pull
 requests, native macOS UI tests, and the `tt-desktop` lint, tests and release
 build in an Arch Linux container
 ([ADR 0015](adr/0015-use-github-hosted-runners-for-ci.md),
