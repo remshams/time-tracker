@@ -112,8 +112,8 @@ def strip_comments_and_strings(text: str) -> str:
 
 OMARCHY_CONFIG = ROOT / "apps" / "omarchy" / "feature-dependencies.toml"
 OMARCHY_SOURCE = ROOT / "apps" / "omarchy" / "src"
-INCLUDE = re.compile(r'^\s*#\s*include\s+"(?P<path>[^"]+)"', re.MULTILINE)
-QML_IMPORT = re.compile(r'^\s*import\s+"(?P<path>[^"]+)"', re.MULTILINE)
+INCLUDE = re.compile(r'^[ \t]*#\s*include\s+"(?P<path>[^"]+)"', re.MULTILINE)
+QML_IMPORT = re.compile(r'^[ \t]*import\s+"(?P<path>[^"]+)"', re.MULTILINE)
 CONTEXT_PROPERTY = re.compile(r'setContextProperty\(\s*QStringLiteral\("(?P<name>\w+)"\)\s*,\s*(?P<member>\w+)\s*\)')
 CLASS = re.compile(r"^\s*class\s+(?P<name>\w+)\s*(?::|\{)", re.MULTILINE)
 
@@ -186,14 +186,17 @@ def context_property_uses(name: str, code: str) -> list[re.Match[str]]:
 
     A member access (`model.catalog`), a property declaration (`property var catalog`) and a
     binding to a property of that name (`catalog: value` at the start of a line) aren't uses.
+    A line that continues an expression, such as the branch after `ready ?`, is never a binding.
     """
     uses = []
     for match in re.finditer(rf"(?<![\w.]){re.escape(name)}(?!\w)", code):
-        before = code[code.rfind("\n", 0, match.start()) + 1 : match.start()]
+        line_start = code.rfind("\n", 0, match.start()) + 1
+        before = code[line_start : match.start()]
         after = code[match.end() :]
         if re.search(r"\bproperty\s+[\w<>.]+\s+$", before):
             continue
-        if re.fullmatch(r"\s*(?:readonly\s+|required\s+)*", before) and re.match(r"[ \t]*:", after):
+        continues = code[:line_start].rstrip()[-1:] in tuple("?:(,[=+-*/%&|!<>")
+        if not continues and re.fullmatch(r"\s*(?:readonly\s+|required\s+)*", before) and re.match(r"[ \t]*:", after):
             continue
         uses.append(match)
     return uses
