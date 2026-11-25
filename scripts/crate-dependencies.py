@@ -26,7 +26,7 @@ DOC = Path("docs") / "architecture" / "architecture.md"
 APPLICATIONS = ("tracker-tui", "tracker-cli", "tracker-bridge", "tracker-server-app")
 PREFIX = "tracker-"
 
-NODE = re.compile(r'^\s*(?P<alias>\w+)\["(?P<label>[^"]*)"\]')
+NODE = re.compile(r'^\s*(?P<alias>\w+)\["(?P<label>[^"]*)"\](?::::\w+)?\s*$')
 EDGE = re.compile(r"^\s*(?P<sources>\w+(?:\s*&\s*\w+)*)\s*-->\s*(?P<targets>\w+(?:\s*&\s*\w+)*)\s*$")
 ARROW = re.compile(r"--|==|-\.")
 ROW = re.compile(r"^\|\s*`(?P<crate>[^`]+)`\s*\|\s*(?P<uses>[^|]*?)\s*\|\s*$")
