@@ -26,6 +26,7 @@ Instructions to agents can be ignored, so the check has to come from scripts tha
 - The check fails when:
   - the code has an edge the config doesn't list;
   - the config lists an edge the code no longer has, or lists an implicit node;
+  - `implicit` names a folder that doesn't exist;
   - a folder has no section, or a section names a folder that doesn't exist;
   - the folders form a cycle. Every node may use an implicit node at any time, so the cycle search adds an edge from every other node to each implicit node. A dependency from `Shared/` onto any feature therefore fails, and so does a dependency onto `App/` from a feature that `App/` uses.
 - The config always matches the code. Every added or removed dependency shows up as a diff in the config, where review sees it.
@@ -35,7 +36,7 @@ Instructions to agents can be ignored, so the check has to come from scripts tha
 ### What counts as a use
 
 - **Omarchy:** a C++ `#include "…"` of a file in another folder, and a QML `import "…"` of another folder. QML also reaches the stores through the context properties that `App/AppController.cpp` sets. The check follows each property to the member it names, then to the member's type in `AppController.h`, then to the folder of that type's header. A QML file that writes `catalog.tasks`, `target: catalog` or `load(catalog)` uses `Features/TaskCatalog`. A `setContextProperty` call the check can't read, or a property whose type it can't find, fails the check. A member access such as `model.catalog`, a declaration such as `property var catalog`, and a binding such as `catalog: value` aren't uses. Any other identifier with a context property's name, such as a QML `id`, a JavaScript variable or a function parameter, counts as a use. Rename it.
-- The Omarchy check doesn't see a forward declaration (`class TaskCatalogStore;`) without an include, an `#include <…>` of a project file, or a QML import by module name. The code doesn't use these forms for project files today.
+- The Omarchy check doesn't see a forward declaration (`class TaskCatalogStore;`) without an include, an `#include <…>` of a project file, a QML import by module name, or a use inside a JavaScript template literal (`` `${catalog.count}` ``). The code doesn't use these forms for project files today.
 - **Swift:** a use of a top-level type, protocol, type alias, function or constant declared in another folder of the same target, outside comments and strings. `extension X` counts as a use of X. Names are unique within a target, so matching by name is reliable. A member that one folder adds to another folder's type through an extension counts only as a use of the type's folder. The index skips the second name in `let a = 1, b = 2`, tuple bindings, operators and macros, and the code uses none of these at the top level today.
 
 ### Crate graph for Rust
