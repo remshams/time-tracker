@@ -1,0 +1,203 @@
+# The folders of each Swift target and the folders each one uses. The Swift quality job runs
+# scripts/feature-dependencies.py, which fails when the code and this file disagree or the
+# folders in a target form a cycle. The targets are checked separately. See ADR 0045.
+
+[targets.TimeTrackerSwiftUI]
+# Every folder may use these without listing them.
+implicit = ["Shared"]
+
+[targets.TimeTrackerSwiftUI.nodes."App"]
+uses = [
+    "Features/BulkTaskArchiving",
+    "Features/MenuBar",
+    "Features/Settings",
+    "Features/TaskArchiving",
+    "Features/TaskCatalog",
+    "Features/TaskCreation",
+    "Features/TaskRename",
+    "Features/Tracking",
+    "Features/WorklogCorrection",
+    "Features/WorklogDeletion",
+    "Features/WorklogMove",
+    "Infrastructure/MacLifecycle",
+    "Infrastructure/Preferences",
+    "Infrastructure/RustBridge",
+    "Infrastructure/System",
+]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/BulkTaskArchiving"]
+uses = ["Features/ProgressPresentation"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/Connection"]
+uses = ["Features/ProgressPresentation"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/DailyTotals"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Features/MenuBar"]
+uses = ["Infrastructure/Preferences", "Infrastructure/System"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/ProgressPresentation"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Features/Settings"]
+uses = [
+    "Features/Connection",
+    "Features/MenuBar",
+    "Features/TaskCatalog",
+    "Features/Tracking",
+]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskArchiving"]
+uses = ["Features/ProgressPresentation"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskCatalog"]
+uses = [
+    "Features/Connection",
+    "Features/DailyTotals",
+    "Features/TaskIndicators",
+    "Features/WorklogHistory",
+]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskCreation"]
+uses = ["Features/TaskEditing"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskEditing"]
+uses = ["Features/ProgressPresentation"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskIndicators"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskRename"]
+uses = ["Features/TaskEditing"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/Tracking"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Features/WorklogCorrection"]
+uses = ["Features/ProgressPresentation"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/WorklogDeletion"]
+uses = ["Features/ProgressPresentation", "Features/WorklogHistory"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/WorklogHistory"]
+uses = ["Features/ProgressPresentation"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/WorklogMove"]
+uses = ["Features/ProgressPresentation", "Features/WorklogHistory"]
+
+[targets.TimeTrackerSwiftUI.nodes."Infrastructure/MacLifecycle"]
+uses = ["Infrastructure/System"]
+
+[targets.TimeTrackerSwiftUI.nodes."Infrastructure/Preferences"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Infrastructure/RustBridge"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Infrastructure/System"]
+uses = []
+
+[targets.TimeTrackerSwiftUI.nodes."Shared"]
+uses = []
+
+[targets.TrackerClient]
+# Every folder may use these without listing them.
+implicit = ["Shared", "Contracts"]
+
+[targets.TrackerClient.nodes."App"]
+uses = [
+    "Features/BulkTaskArchiving",
+    "Features/Connection",
+    "Features/DailyTotals",
+    "Features/MenuBar",
+    "Features/TaskArchiving",
+    "Features/TaskCatalog",
+    "Features/TaskCreation",
+    "Features/TaskRename",
+    "Features/Tracking",
+    "Features/TrackingAutomation",
+    "Features/WorklogCorrection",
+    "Features/WorklogDeletion",
+    "Features/WorklogHistory",
+    "Features/WorklogMove",
+]
+
+[targets.TrackerClient.nodes."Contracts"]
+uses = []
+
+[targets.TrackerClient.nodes."Features/BulkTaskArchiving"]
+uses = ["Features/Connection"]
+
+[targets.TrackerClient.nodes."Features/Connection"]
+uses = []
+
+[targets.TrackerClient.nodes."Features/DailyTotals"]
+uses = ["Features/Connection", "Features/TaskCatalog", "Features/Tracking"]
+
+[targets.TrackerClient.nodes."Features/MenuBar"]
+uses = [
+    "Features/Connection",
+    "Features/DailyTotals",
+    "Features/TaskCatalog",
+    "Features/TaskIndicators",
+    "Features/Tracking",
+    "Features/TrackingAutomation",
+]
+
+[targets.TrackerClient.nodes."Features/ProgressPresentation"]
+uses = []
+
+[targets.TrackerClient.nodes."Features/TaskArchiving"]
+uses = ["Features/Connection", "Features/TaskCatalog", "Features/Tracking"]
+
+[targets.TrackerClient.nodes."Features/TaskCatalog"]
+uses = []
+
+[targets.TrackerClient.nodes."Features/TaskCreation"]
+uses = ["Features/Connection", "Features/TaskEditing"]
+
+[targets.TrackerClient.nodes."Features/TaskEditing"]
+uses = []
+
+[targets.TrackerClient.nodes."Features/TaskIndicators"]
+uses = []
+
+[targets.TrackerClient.nodes."Features/TaskRename"]
+uses = ["Features/Connection", "Features/TaskCatalog", "Features/TaskEditing"]
+
+[targets.TrackerClient.nodes."Features/Tracking"]
+uses = ["Features/Connection", "Features/TaskCatalog"]
+
+[targets.TrackerClient.nodes."Features/TrackingAutomation"]
+uses = ["Features/Tracking"]
+
+[targets.TrackerClient.nodes."Features/WorklogCorrection"]
+uses = [
+    "Features/Connection",
+    "Features/TaskCatalog",
+    "Features/Tracking",
+    "Features/WorklogHistory",
+]
+
+[targets.TrackerClient.nodes."Features/WorklogDeletion"]
+uses = ["Features/Connection", "Features/TaskCatalog", "Features/WorklogHistory"]
+
+[targets.TrackerClient.nodes."Features/WorklogHistory"]
+uses = [
+    "Features/Connection",
+    "Features/DailyTotals",
+    "Features/TaskCatalog",
+    "Features/Tracking",
+]
+
+[targets.TrackerClient.nodes."Features/WorklogMove"]
+uses = [
+    "Features/Connection",
+    "Features/TaskCatalog",
+    "Features/Tracking",
+    "Features/WorklogHistory",
+]
+
+[targets.TrackerClient.nodes."Shared"]
+uses = []
