@@ -116,9 +116,12 @@ rolled out.
 ## Modules and dependencies
 
 Arrows show permitted dependencies. For Rust crates, the Cargo manifests are the
-rule: a crate can only use the workspace crates it declares. The `TrackerClient`
+rule: a crate can only use the workspace crates it declares. CI runs
+`scripts/crate-dependencies.py`, which checks that the core crate diagram and the
+application table below match the Cargo manifests. The `TrackerClient`
 Swift package declares no Rust, network or UI dependency.
 
+<!-- crate-dependencies: core -->
 ```mermaid
 ---
 title: Rust core crates
@@ -138,6 +141,7 @@ flowchart TD
     protocol --> application & domain
     application --> domain
 ```
+<!-- /crate-dependencies: core -->
 
 ```mermaid
 ---
@@ -159,19 +163,24 @@ flowchart TD
 
 Which core crates each application may use:
 
+<!-- crate-dependencies: applications -->
 | Application | Rust core crates |
 | --- | --- |
 | `tracker-tui` | client, application, domain, remote, storage |
 | `tracker-cli` | client, application, domain, protocol, remote, storage |
 | `tracker-bridge` | client, application, domain, protocol, remote, storage |
 | `tracker-server-app` | server, storage |
+<!-- /crate-dependencies: applications -->
 
 Inside a crate or app, code is split by feature. Features may depend on other
-features but not in a cycle; the compiler doesn't catch cycles between folders,
-so review does.
+features but not in a cycle. The compiler doesn't catch dependencies between
+folders, so in the Omarchy and Swift apps `scripts/feature-dependencies.py`
+checks them against `feature-dependencies.toml` next to each app. Review still
+checks the modules inside a Rust crate
+([ADR 0045](adr/0045-enforce-feature-dependencies-with-a-checked-graph.md)).
 
 In the Swift app and package, folders in a target must not form a cycle, and
-`App/` counts as an ordinary folder. Review checks each target separately, and
+`App/` counts as an ordinary folder. The check covers each target separately, and
 same-named feature folders in the two targets are separate nodes
 ([ADR 0034](adr/0034-allow-no-cycles-between-folders-in-a-target.md)). `Shared/` holds
 helpers no feature owns and `Contracts/` holds protocols and wire models
