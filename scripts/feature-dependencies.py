@@ -399,7 +399,7 @@ def with_examples(message: str, locations: list[Location]) -> str:
     return "\n".join(lines)
 
 
-def cycles(nodes: set[str], edges: set[tuple[str, str]]) -> list[list[str]]:
+def cycles(edges: set[tuple[str, str]]) -> list[list[str]]:
     """One cycle per strongly connected component with more than one node, as a closed path."""
     successors: dict[str, list[str]] = defaultdict(list)
     for source, target in sorted(edges):
@@ -431,7 +431,7 @@ def cycles(nodes: set[str], edges: set[tuple[str, str]]) -> list[list[str]]:
             if len(component) > 1:
                 components.append(component)
 
-    for node in sorted(nodes | {node for edge in edges for node in edge}):
+    for node in sorted({node for edge in edges for node in edge}):
         if node not in index:
             visit(node)
 
@@ -482,11 +482,10 @@ def check(target: Target, config: Config, config_path: Path) -> list[str]:
             elif (source, used) not in found and source in target.nodes:
                 problems.append(f'{section} lists "{used}", but no file in {source} uses it. Remove it.')
 
-    for cycle in cycles(target.nodes, set(target.edges)):
+    for cycle in cycles(set(target.edges)):
         edges = list(zip(cycle, cycle[1:]))
-        examples = [min(target.edges[edge]) for edge in edges]
         lines = [f"The folders form a cycle: {' -> '.join(cycle)}. Remove one of these dependencies:"]
-        lines.extend(f"    {source} -> {used}: {example}" for (source, used), example in zip(edges, examples))
+        lines.extend(f"    {source} -> {used}: {min(target.edges[(source, used)])}" for source, used in edges)
         problems.append("\n".join(lines))
     return problems
 

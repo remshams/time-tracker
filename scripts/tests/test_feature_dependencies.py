@@ -268,11 +268,11 @@ class TargetTests(unittest.TestCase):
 
 class CycleTests(unittest.TestCase):
     def test_acyclic_graph_has_no_cycles(self):
-        self.assertEqual(DEPENDENCIES.cycles({"A", "B", "C"}, {("A", "B"), ("B", "C"), ("A", "C")}), [])
+        self.assertEqual(DEPENDENCIES.cycles({("A", "B"), ("B", "C"), ("A", "C")}), [])
 
     def test_one_shortest_cycle_per_component(self):
         edges = {("A", "B"), ("B", "C"), ("C", "A"), ("B", "A"), ("D", "E"), ("E", "D")}
-        self.assertEqual(DEPENDENCIES.cycles(set(), edges), [["A", "B", "A"], ["D", "E", "D"]])
+        self.assertEqual(DEPENDENCIES.cycles(edges), [["A", "B", "A"], ["D", "E", "D"]])
 
 
 class MainTests(unittest.TestCase):
