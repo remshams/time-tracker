@@ -5,18 +5,14 @@ import TrackerClient
 /// removes something, and the accent color otherwise.
 enum DialogTint {
     case accent
-    case task(TaskColor)
+    /// The color of the task with this ID, or the accent color while the dialog has no task.
+    case task(id: String?)
     case destructive
-
-    /// The task's color for `taskID`, or the accent color while the dialog has no task.
-    static func task(id taskID: String?) -> DialogTint {
-        taskID.map { .task(TaskColor.forTaskID($0)) } ?? .accent
-    }
 
     fileprivate func color(in scheme: ColorScheme) -> Color {
         switch self {
         case .accent: .accentColor
-        case .task(let color): ColorRole.actionDisc(color, in: scheme)
+        case .task(let id): id.map { ColorRole.actionDisc(TaskColor.forTaskID($0), in: scheme) } ?? .accentColor
         case .destructive: ColorRole.error
         }
     }
