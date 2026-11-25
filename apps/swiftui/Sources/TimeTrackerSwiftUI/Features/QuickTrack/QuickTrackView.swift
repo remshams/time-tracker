@@ -56,12 +56,12 @@ struct QuickTrackView: View {
     private var searchField: some View {
         HStack(spacing: Spacing.small) {
             Image(systemName: "magnifyingglass")
-                .font(TextRole.quickTrackSearch)
+                .font(TextRole.prominentInput)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             TextField("Start tracking a task", text: Binding(get: { store.query }, set: { store.setQuery($0) }))
                 .textFieldStyle(.plain)
-                .font(TextRole.quickTrackSearch)
+                .font(TextRole.prominentInput)
                 .focused($searchFocused)
                 .accessibilityIdentifier("quick-track.search")
                 .accessibilityLabel("Search tasks")
