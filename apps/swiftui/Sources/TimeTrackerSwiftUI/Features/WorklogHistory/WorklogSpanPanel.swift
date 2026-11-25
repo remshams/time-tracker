@@ -19,8 +19,9 @@ struct WorklogSpanPanel: View {
     @State private var opened: WorklogSpan?
 
     var body: some View {
-        // Reading the running end only for a running worklog keeps a finished one from redrawing every second.
-        let now = end == nil ? tracking.runningEnd ?? .now : .now
+        // Reading the running end only for a running worklog keeps a finished one from redrawing every second. While
+        // the elapsed time is unknown, a running worklog is a moment at its start and its duration is a dash.
+        let now = end == nil ? tracking.runningEnd ?? start : .now
         let span = WorklogSpan(start: start, end: end, now: now, calendar: calendar)
         let axis = WorklogHourAxis(covering: [span, opened ?? span])
         let color = ColorRole.task(TaskColor.forTaskID(taskID))
@@ -45,7 +46,8 @@ struct WorklogSpanPanel: View {
                     color: color, highlighted: true)
                 WorklogHourScale(axis: axis)
             }
-            .animation(Motion.standard, value: span)
+            // A running bar grows every second, which needs no animation. An edited time animates.
+            .animation(end == nil ? nil : Motion.standard, value: span)
         }
         .onAppear {
             if opened == nil { opened = span }
@@ -56,9 +58,8 @@ struct WorklogSpanPanel: View {
     @ViewBuilder
     private func duration(until end: Date) -> some View {
         if end > start {
-            let seconds = end.timeIntervalSince(start)
-            DurationLabel(duration: DurationText(duration: seconds))
-                .accessibilityLabel("Duration \(spokenDuration(Int(seconds)))")
+            // No accessibility label: the UI tests read the shown duration as the element's value.
+            DurationLabel(duration: DurationText(duration: end.timeIntervalSince(start)))
                 .accessibilityIdentifier(durationIdentifier)
         } else {
             Text("–").foregroundStyle(.secondary)

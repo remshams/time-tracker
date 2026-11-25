@@ -38,20 +38,6 @@ enum IconSize {
     static let dialogBadge: CGFloat = 44
 }
 
-/// The fixed sizes of a dialog sheet, in points.
-enum DialogSize {
-    /// A dialog about one task.
-    static let width: CGFloat = 440
-    /// A dialog that shows a worklog or a list of tasks.
-    static let wideWidth: CGFloat = 480
-    /// The least height of a row in a grouped section, so text rows line up with rows that hold a control.
-    static let row: CGFloat = 40
-    /// The least width of a footer button, so a short title such as "Save" still reads as a capsule.
-    static let buttonMinWidth: CGFloat = 84
-    /// A list of tasks. It keeps its height while it loads or shows a message, so the sheet doesn't resize.
-    static let listHeight: CGFloat = 220
-}
-
 enum BorderWidth {
     /// The outline of a card.
     static let hairline: CGFloat = 1

@@ -10,14 +10,14 @@ struct WorklogDeletionSheet: View {
             width: DialogSize.wideWidth, error: deletion.error, errorIdentifier: "worklog-deletion.error",
             isBusy: deletion.isSubmitting
         ) {
-            DialogSection {
-                if let original = deletion.original, let start = parseTimestamp(original.start) {
+            if let original = deletion.original, let start = parseTimestamp(original.start) {
+                DialogSection {
                     WorklogSpanPanel(start: start, end: parseTimestamp(original.end), taskID: original.taskId)
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("worklog-deletion.summary")
+                } footer: {
+                    Text("The time is removed from this task and its totals. This can't be undone.")
                 }
-            } footer: {
-                Text("The time is removed from this task and its totals. This can't be undone.")
             }
         } status: {
             DelayedProgressIndicator(

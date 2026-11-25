@@ -18,6 +18,21 @@ enum DialogTint {
     }
 }
 
+/// The fixed sizes of a dialog sheet, in points. They are layout sizes, not design tokens, like the history's
+/// columns.
+enum DialogSize {
+    /// A dialog about one task.
+    static let width: CGFloat = 440
+    /// A dialog that shows a worklog or a list of tasks.
+    static let wideWidth: CGFloat = 480
+    /// The least height of a row in a grouped section, so text rows line up with rows that hold a control.
+    static let row: CGFloat = 40
+    /// The least width of a footer button, so a short title such as "Save" still reads as a capsule.
+    static let buttonMinWidth: CGFloat = 84
+    /// A list of tasks. It keeps its height while it loads or shows a message, so the sheet doesn't resize.
+    static let listHeight: CGFloat = 220
+}
+
 /// The frame of every dialog sheet, in the macOS settings-sheet style: a header with a glyph badge, the title and a
 /// one-line message, then the grouped content and an optional error, then a footer with the progress at the leading
 /// edge and large capsule buttons at the trailing edge.
