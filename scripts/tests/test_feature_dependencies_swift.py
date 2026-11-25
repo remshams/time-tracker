@@ -112,7 +112,7 @@ nonisolated(unsafe) var k = 3
 
 class NodeTests(unittest.TestCase):
     def test_node_layout(self):
-        node = DEPENDENCIES.swift_node
+        node = DEPENDENCIES.node_of
         self.assertEqual(node(Path("Features/Tracking/View.swift")), "Features/Tracking")
         self.assertEqual(node(Path("Features/Tracking/Deep/More/View.swift")), "Features/Tracking")
         self.assertEqual(node(Path("Infrastructure/System/Clock.swift")), "Infrastructure/System")

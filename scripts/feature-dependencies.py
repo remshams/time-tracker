@@ -56,6 +56,20 @@ class Config:
     uses: dict[str, tuple[str, ...]]
 
 
+def node_of(relative: Path) -> str:
+    """The node of a path under a target's source folder (ADR 0034).
+
+    Each folder under Features or Infrastructure is a node, every other top-level folder is
+    one node, and a file at the top, such as main.cpp, belongs to App.
+    """
+    parts = relative.parts
+    if len(parts) == 1:
+        return "App"
+    if parts[0] in {"Features", "Infrastructure"} and len(parts) > 2:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]
+
+
 # Source text without comments and string contents, so names inside them don't count.
 
 
@@ -104,16 +118,6 @@ CONTEXT_PROPERTY = re.compile(r'setContextProperty\(\s*QStringLiteral\("(?P<name
 CLASS = re.compile(r"^\s*class\s+(?P<name>\w+)\s*(?::|\{)", re.MULTILINE)
 
 
-def omarchy_node(relative: Path) -> str:
-    """The node of a path under src: a feature folder, another top-level folder, or App for main.cpp."""
-    parts = relative.parts
-    if len(parts) == 1:
-        return "App"
-    if parts[0] == "Features" and len(parts) > 2:
-        return f"Features/{parts[1]}"
-    return parts[0]
-
-
 def line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
@@ -131,7 +135,7 @@ def omarchy_context_properties(source: Path, target: Target) -> dict[str, str]:
     classes: dict[str, str] = {}
     for path in sorted(source.rglob("*.h")):
         for match in CLASS.finditer(strip_comments_and_strings(path.read_text())):
-            classes[match.group("name")] = omarchy_node(path.relative_to(source))
+            classes[match.group("name")] = node_of(path.relative_to(source))
     header_text = strip_comments_and_strings(header.read_text())
     controller_text = controller.read_text()
     properties: dict[str, str] = {}
@@ -162,7 +166,7 @@ def omarchy_resolve(source: Path, path: Path, relative: str) -> str | None:
         if resolved.exists() and resolved.is_relative_to(root):
             inside = resolved.relative_to(root)
             # An imported folder, such as "../../Shared", belongs to its own node.
-            return omarchy_node(inside / "qmldir" if resolved.is_dir() else inside)
+            return node_of(inside / "qmldir" if resolved.is_dir() else inside)
     return None
 
 
@@ -170,10 +174,10 @@ def extract_omarchy(source: Path) -> list[Target]:
     target = Target(None)
     files = sorted(path for path in source.rglob("*") if path.suffix in {".cpp", ".h", ".qml"})
     for path in files:
-        target.nodes.add(omarchy_node(path.relative_to(source)))
+        target.nodes.add(node_of(path.relative_to(source)))
     properties = omarchy_context_properties(source, target)
     for path in files:
-        node = omarchy_node(path.relative_to(source))
+        node = node_of(path.relative_to(source))
         text = path.read_text()
         code = strip_comments_and_strings(text)
         pattern = QML_IMPORT if path.suffix == ".qml" else INCLUDE
@@ -199,7 +203,6 @@ SWIFT_TARGETS = {
     "TimeTrackerSwiftUI": Path("Sources") / "TimeTrackerSwiftUI",
     "TrackerClient": Path("TrackerClient") / "Sources" / "TrackerClient",
 }
-SWIFT_FEATURE_FOLDERS = {"Features", "Infrastructure"}
 SWIFT_MODIFIERS = (
     "public|internal|open|final|indirect|nonisolated|distributed|package|static|lazy|dynamic|override"
     "|required|convenience|mutating|nonmutating|weak|unowned"
@@ -298,19 +301,6 @@ def strip_swift(text: str) -> str:
     return "".join(result)
 
 
-def swift_node(relative: Path) -> str:
-    """The node of a path under a target: a Features or Infrastructure subfolder, else the top folder.
-
-    A file directly in the target root belongs to App.
-    """
-    parts = relative.parts
-    if len(parts) == 1:
-        return "App"
-    if parts[0] in SWIFT_FEATURE_FOLDERS and len(parts) > 2:
-        return f"{parts[0]}/{parts[1]}"
-    return parts[0]
-
-
 def swift_top_level_names(code: str) -> list[tuple[str, int]]:
     """Names and offsets of the non-private declarations at brace depth 0."""
     depths = []
@@ -336,7 +326,7 @@ def extract_swift_target(name: str, root: Path) -> Target:
     declared: dict[str, dict[str, Location]] = defaultdict(dict)
     stripped = {}
     for path in files:
-        node = swift_node(path.relative_to(root))
+        node = node_of(path.relative_to(root))
         target.nodes.add(node)
         text = path.read_text()
         code = strip_swift(text)
