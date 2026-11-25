@@ -52,6 +52,7 @@ final class QuickTrackCreationTests: XCTestCase {
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(.local))
         XCTAssertTrue(store.isPresented, "The dialog stays open until the task starts.")
+        let searchesBefore = fixture.client.operations.count { if case .search = $0 { true } else { false } }
         reload.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
         let start = try await skippingHistory(fixture)
         guard case .start(let taskID, nil, _) = start.operation else {
@@ -59,6 +60,11 @@ final class QuickTrackCreationTests: XCTestCase {
         }
         XCTAssertEqual(taskID, created.id)
         XCTAssertTrue(store.isPresented, "The dialog waits until the new task runs.")
+        XCTAssertEqual(store.content.createName, "New task", "The create row stays although the task is listed now.")
+        XCTAssertEqual(store.content.highlight, .create, "No other row gets the highlight before the dialog closes.")
+        XCTAssertEqual(
+            fixture.client.operations.count { if case .search = $0 { true } else { false } }, searchesBefore,
+            "A create that starts doesn't search again.")
         let running = WorklogItem(id: "worklog-new", taskId: created.id, start: activeWorklog.start, end: nil)
         try await fixture.update("the started task") {
             start.succeed(TaskListResources(tasks: [firstTask, created], active: running))
@@ -84,6 +90,13 @@ final class QuickTrackCreationTests: XCTestCase {
             reloadAfterStart.succeed(TaskListResources(tasks: [firstTask, created], active: nil))
         } until: {
             !store.isCreating
+        }
+        let search = try await skippingHistoryUntilSearch(fixture)
+        XCTAssertEqual(search.operation, .search(query: "New task"), "The failed start searches again.")
+        try await fixture.update("the search after the failed start") {
+            search.found([created.id])
+        } until: {
+            !store.isSearching
         }
         XCTAssertTrue(store.isPresented)
         XCTAssertEqual(store.content.statusLines.last, "Created New task, but tracking couldn't start.")
@@ -275,6 +288,8 @@ final class QuickTrackCreationTests: XCTestCase {
         XCTAssertTrue(store.isPresented)
         XCTAssertEqual(store.content.statusLines, ["Created New task, but tracking couldn't start."])
         XCTAssertFalse(fixture.client.operations.contains { if case .start = $0 { true } else { false } })
+        let search = try await skippingHistoryUntilSearch(fixture)
+        XCTAssertEqual(search.operation, .search(query: "New task"), "A task that can't start is searched for again.")
     }
 
     @MainActor

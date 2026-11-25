@@ -154,19 +154,16 @@ public final class QuickTrackStore: ChangeGuardedStore {
             do {
                 let created = try await client.createTask(name: name, occurredAt: occurredAt).task
                 await reloadAfterWrite({})
-                // The search ran before the task existed; searching again lists it if tracking doesn't start.
-                if isPresented && session == self.session { search() }
                 guard sources.availability.canStart(taskID: created.id) else {
-                    set(\.isCreating, false)
-                    return showCreateError("Created \(created.name), but tracking couldn't start.", in: session)
+                    return keepOpenAfterFailedStart(of: created, in: session)
                 }
                 tracking.startTracking(taskID: created.id) { [weak self] in
                     guard let self else { return }
-                    set(\.isCreating, false)
                     if tracking.active?.taskId == created.id {
+                        set(\.isCreating, false)
                         if session == self.session { close() }
                     } else {
-                        showCreateError("Created \(created.name), but tracking couldn't start.", in: session)
+                        keepOpenAfterFailedStart(of: created, in: session)
                     }
                 }
             } catch {
@@ -178,6 +175,15 @@ public final class QuickTrackStore: ChangeGuardedStore {
                 set(\.isCreating, false)
             }
         }
+    }
+
+    /// Ends a create whose new task didn't start: searches again, because the last search ran before the task
+    /// existed, and shows the error. A successful start closes the dialog without searching, so the new task never
+    /// shows as a highlighted row before the dialog closes.
+    private func keepOpenAfterFailedStart(of created: TaskItem, in session: Int) {
+        set(\.isCreating, false)
+        if isPresented && session == self.session { search() }
+        showCreateError("Created \(created.name), but tracking couldn't start.", in: session)
     }
 
     /// Shows a create error only in the opening that sent the request.

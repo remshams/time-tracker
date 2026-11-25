@@ -39,7 +39,9 @@ public struct QuickTrackContent: Equatable, Sendable {
     public let statusLines: [String]
     public let tasks: [QuickTrackTask]
     /// The name the "Create and start" row creates, or `nil` when the row doesn't show: the search text is blank, or
-    /// an active task already has this name, ignoring case.
+    /// an active task already has this name, ignoring case. While a create request runs, the row stays even though
+    /// the reloaded list already contains the new task, so the highlight doesn't jump to another row before the dialog
+    /// closes.
     public let createName: String?
     /// Whether the create row can run now. It can't while the state is stale or a create request runs.
     public let canCreate: Bool
@@ -84,7 +86,7 @@ public struct QuickTrackContent: Equatable, Sendable {
         }
         let name = TaskNameEditingPolicy.normalized(query)
         let taken = inputs.tasks.contains { !$0.archived && $0.name.lowercased() == name.lowercased() }
-        createName = name.isEmpty || taken ? nil : name
+        createName = name.isEmpty || (taken && !isCreating) ? nil : name
         canCreate = !inputs.isStale && !isCreating
         self.highlight = QuickTrackContent.resolve(
             highlight, query: query, tasks: tasks, createName: createName, headerSelectable: header.isRunning)

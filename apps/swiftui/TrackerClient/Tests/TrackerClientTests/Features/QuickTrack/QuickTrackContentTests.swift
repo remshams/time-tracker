@@ -165,6 +165,17 @@ final class QuickTrackContentTests: XCTestCase {
     }
 
     @MainActor
+    func testCreateRowKeepsTheHighlightWhileTheCreatedTaskIsListed() async {
+        let creating = content(
+            inputs(), query: "second task", results: ["task-two"], highlight: .create, isCreating: true)
+        XCTAssertEqual(creating.createName, "second task", "The row stays until the dialog closes.")
+        XCTAssertEqual(creating.highlight, .create, "The highlight doesn't move to the created task.")
+        XCTAssertNil(
+            content(inputs(), query: "second task", results: ["task-two"], highlight: .create).createName,
+            "Once the request ends, the name counts as taken.")
+    }
+
+    @MainActor
     func testArrowsReachTheCreateRowAfterTheTasks() async {
         let typed = content(inputs(), query: "New", results: ["task-two"], highlight: .task("task-two"))
         XCTAssertEqual(typed.movingHighlight(down: true), .create)
