@@ -22,7 +22,7 @@ struct WorklogSpanPanel: View {
         // Reading the running end only for a running worklog keeps a finished one from redrawing every second.
         let now = end == nil ? tracking.runningEnd ?? .now : .now
         let span = WorklogSpan(start: start, end: end, now: now, calendar: calendar)
-        let axis = WorklogHourAxis(covering: [span] + (opened.map { [$0] } ?? []))
+        let axis = WorklogHourAxis(covering: [span, opened ?? span])
         let color = ColorRole.task(TaskColor.forTaskID(taskID))
         VStack(alignment: .leading, spacing: Spacing.small) {
             // The last baselines line up, so the large duration sits level with the time range.
@@ -46,13 +46,11 @@ struct WorklogSpanPanel: View {
                 WorklogHourScale(axis: axis)
             }
             .animation(Motion.standard, value: span)
-            .animation(Motion.standard, value: axis)
         }
         .onAppear {
             if opened == nil { opened = span }
         }
         .padding(.vertical, Spacing.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
