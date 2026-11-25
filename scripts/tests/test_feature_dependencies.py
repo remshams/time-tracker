@@ -137,6 +137,44 @@ class OmarchyExtractorTests(unittest.TestCase):
         })
         self.assertEqual(edges, {("Features/History", "Features/Catalog"), ("Features/History", "Shared")})
 
+    def test_context_property_uses_without_a_dot_count(self):
+        edges = self.edges({
+            "App/AppController.h": CONTROLLER_HEADER,
+            "App/AppController.cpp": CONTROLLER,
+            "Features/Catalog/CatalogStore.h": "class CatalogStore : public QObject {};",
+            "Shared/Theme.h": "class Theme : public QObject {};",
+            "Features/Move/Dialog.qml": "Connections {\n    target: catalog\n}",
+            "Features/Rename/Dialog.qml": "Item { Component.onCompleted: load(catalog) }",
+        })
+        self.assertEqual(edges, {("Features/Move", "Features/Catalog"), ("Features/Rename", "Features/Catalog")})
+
+    def test_properties_named_like_a_context_property_are_not_uses(self):
+        edges = self.edges({
+            "App/AppController.h": CONTROLLER_HEADER,
+            "App/AppController.cpp": CONTROLLER,
+            "Features/Catalog/CatalogStore.h": "class CatalogStore : public QObject {};",
+            "Shared/Theme.h": "class Theme : public QObject {};",
+            "Features/Move/Dialog.qml": "\n".join([
+                "Item {",
+                "    property var catalog",
+                "    required property string catalog",
+                "    catalog: null",
+                "    readonly property bool shown: model.catalog",
+                "}",
+            ]),
+        })
+        self.assertEqual(edges, set())
+
+    def test_unreadable_context_property_call_is_a_problem(self):
+        found, _ = self.extract({
+            "App/AppController.h": CONTROLLER_HEADER,
+            "App/AppController.cpp": CONTROLLER + 'void f(QQmlContext *c) {\n    c->setContextProperty("other", other_);\n    // c->setContextProperty("old", old_);\n}\n',
+            "Features/Catalog/CatalogStore.h": "class CatalogStore : public QObject {};",
+            "Shared/Theme.h": "class Theme : public QObject {};",
+        })
+        self.assertEqual(len(found.problems), 1)
+        self.assertIn("AppController.cpp:7: can't read this context property", found.problems[0])
+
     def test_unresolved_context_property_is_a_problem(self):
         found, _ = self.extract({
             "App/AppController.h": "class AppController { Missing *catalog_; Theme *theme_; };",
@@ -203,11 +241,12 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(check(target(self.EDGES), text), ['[nodes."Features/A"] lists "Shared", which is implicit. Remove it.'])
 
     def test_missing_and_unknown_sections_fail(self):
-        found = target(self.EDGES, nodes={"App", "Shared", "Features/A", "Features/B", "Features/New"})
+        found = target(self.EDGES + [("Features/New", "Features/A"), ("Features/New", "Shared")])
         text = self.CONFIG + '\n[nodes."Features/Gone"]\nuses = []\n'
         problems = check(found, text)
         self.assertEqual(len(problems), 2)
-        self.assertIn('no [nodes."Features/New"] section', problems[0])
+        # The section to add already lists the new folder's edges, so one fix is enough.
+        self.assertIn('no section for the folder Features/New. Add one:\n    [nodes."Features/New"]\n    uses = ["Features/A"]', problems[0])
         self.assertIn('has [nodes."Features/Gone"], but no folder has that name', problems[1])
 
     def test_unknown_implicit_node_fails(self):
@@ -223,6 +262,20 @@ class CheckTests(unittest.TestCase):
         [problem] = check(found, text)
         self.assertIn("The folders form a cycle: App -> Features/B -> App. Remove one of these dependencies:", problem)
         self.assertIn("    Features/B -> App: Features/B.cpp:1", problem)
+
+    def test_dependency_onto_a_feature_that_does_not_use_the_implicit_node_is_a_cycle(self):
+        # Features/B never uses Shared, but it may at any time, so Shared -> Features/B is a cycle.
+        found = target(self.EDGES + [("Shared", "Features/B")])
+        text = self.CONFIG.replace('[nodes."Shared"]\n        uses = []', '[nodes."Shared"]\n        uses = ["Features/B"]')
+        [problem] = check(found, text)
+        self.assertIn("The folders form a cycle: Features/B -> Shared -> Features/B.", problem)
+        self.assertIn("    Features/B -> Shared: Shared is implicit", problem)
+        self.assertIn("    Shared -> Features/B: Shared.cpp:1", problem)
+
+    def test_implicit_nodes_do_not_form_a_cycle_with_each_other(self):
+        found = target([("Shared", "Contracts")], nodes={"App", "Shared", "Contracts"})
+        text = 'implicit = ["Shared", "Contracts"]\n[nodes."App"]\nuses = []\n[nodes."Shared"]\nuses = []\n[nodes."Contracts"]\nuses = []'
+        self.assertEqual(check(found, text), [])
 
     def test_cycle_through_an_implicit_node_fails(self):
         found = target(self.EDGES + [("Shared", "Features/A")])
@@ -251,7 +304,7 @@ class TargetTests(unittest.TestCase):
         targets[1].add("Features/A", "Features/B", DEPENDENCIES.Location(Path("a.swift"), 1))
         targets[1].nodes.add("Features/B")
         problems = DEPENDENCIES.check_all(targets, config(text), Path("deps.toml"))
-        self.assertIn('no [targets.Package.nodes."Features/B"] section', problems[0])
+        self.assertIn('[targets.Package.nodes."Features/B"]\n    uses = []', problems[0])
 
     def test_missing_and_unknown_targets_fail(self):
         problems = DEPENDENCIES.check_all(
