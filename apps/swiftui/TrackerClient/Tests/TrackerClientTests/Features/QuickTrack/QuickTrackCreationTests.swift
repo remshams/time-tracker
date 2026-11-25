@@ -293,6 +293,29 @@ final class QuickTrackCreationTests: XCTestCase {
     }
 
     @MainActor
+    func testCreatedTaskThatCannotStartAfterTheDialogClosedDoesNotSearch() async throws {
+        let fixture = try await typed("New task")
+        defer { fixture.cleanup() }
+        let store = fixture.features.quickTrack
+        store.activate()
+        let creation = try await fixture.client.next()
+        store.close()
+        creation.created(task: created)
+        let reload = try await fixture.client.next()
+        let searchesBefore = fixture.client.operations.count { if case .search = $0 { true } else { false } }
+        // The reloaded list doesn't contain the task yet, so it can't start.
+        try await fixture.update("the reload") {
+            reload.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        } until: {
+            !store.isCreating
+        }
+        XCTAssertEqual(
+            fixture.client.operations.count { if case .search = $0 { true } else { false } }, searchesBefore,
+            "A closed dialog doesn't search again.")
+        XCTAssertFalse(store.isSearching)
+    }
+
+    @MainActor
     func testNullCharacterIsRejectedWithoutARequest() async throws {
         let fixture = try await typed("New\u{0}task")
         defer { fixture.cleanup() }
