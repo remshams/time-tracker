@@ -9,7 +9,9 @@ implicit = ["Shared"]
 [targets.TimeTrackerSwiftUI.nodes."App"]
 uses = [
     "Features/BulkTaskArchiving",
+    "Features/GlobalShortcuts",
     "Features/MenuBar",
+    "Features/QuickTrack",
     "Features/Settings",
     "Features/TaskArchiving",
     "Features/TaskCatalog",
@@ -34,15 +36,22 @@ uses = ["Features/ProgressPresentation"]
 [targets.TimeTrackerSwiftUI.nodes."Features/DailyTotals"]
 uses = []
 
-[targets.TimeTrackerSwiftUI.nodes."Features/MenuBar"]
+[targets.TimeTrackerSwiftUI.nodes."Features/GlobalShortcuts"]
 uses = ["Infrastructure/Preferences", "Infrastructure/System"]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/MenuBar"]
+uses = ["Features/TaskCopying", "Infrastructure/Preferences"]
 
 [targets.TimeTrackerSwiftUI.nodes."Features/ProgressPresentation"]
 uses = []
 
+[targets.TimeTrackerSwiftUI.nodes."Features/QuickTrack"]
+uses = ["Features/TaskCopying", "Features/TaskIndicators"]
+
 [targets.TimeTrackerSwiftUI.nodes."Features/Settings"]
 uses = [
     "Features/Connection",
+    "Features/GlobalShortcuts",
     "Features/MenuBar",
     "Features/TaskCatalog",
     "Features/Tracking",
@@ -58,6 +67,9 @@ uses = [
     "Features/TaskIndicators",
     "Features/WorklogHistory",
 ]
+
+[targets.TimeTrackerSwiftUI.nodes."Features/TaskCopying"]
+uses = []
 
 [targets.TimeTrackerSwiftUI.nodes."Features/TaskCreation"]
 uses = ["Features/TaskEditing"]
@@ -111,8 +123,10 @@ uses = [
     "Features/Connection",
     "Features/DailyTotals",
     "Features/MenuBar",
+    "Features/QuickTrack",
     "Features/TaskArchiving",
     "Features/TaskCatalog",
+    "Features/TaskCopying",
     "Features/TaskCreation",
     "Features/TaskRename",
     "Features/Tracking",
@@ -135,11 +149,15 @@ uses = []
 [targets.TrackerClient.nodes."Features/DailyTotals"]
 uses = ["Features/Connection", "Features/TaskCatalog", "Features/Tracking"]
 
+[targets.TrackerClient.nodes."Features/GlobalShortcuts"]
+uses = []
+
 [targets.TrackerClient.nodes."Features/MenuBar"]
 uses = [
     "Features/Connection",
     "Features/DailyTotals",
     "Features/TaskCatalog",
+    "Features/TaskCopying",
     "Features/TaskIndicators",
     "Features/Tracking",
     "Features/TrackingAutomation",
@@ -148,11 +166,25 @@ uses = [
 [targets.TrackerClient.nodes."Features/ProgressPresentation"]
 uses = []
 
+[targets.TrackerClient.nodes."Features/QuickTrack"]
+uses = [
+    "Features/Connection",
+    "Features/DailyTotals",
+    "Features/TaskCatalog",
+    "Features/TaskCopying",
+    "Features/TaskEditing",
+    "Features/Tracking",
+    "Features/TrackingAutomation",
+]
+
 [targets.TrackerClient.nodes."Features/TaskArchiving"]
 uses = ["Features/Connection", "Features/TaskCatalog", "Features/Tracking"]
 
 [targets.TrackerClient.nodes."Features/TaskCatalog"]
 uses = []
+
+[targets.TrackerClient.nodes."Features/TaskCopying"]
+uses = ["Features/DailyTotals", "Features/TaskCatalog", "Features/Tracking"]
 
 [targets.TrackerClient.nodes."Features/TaskCreation"]
 uses = ["Features/Connection", "Features/TaskEditing"]
