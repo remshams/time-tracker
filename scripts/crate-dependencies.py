@@ -71,7 +71,7 @@ def parse_applications(block: str) -> tuple[set[str], set[Edge]]:
     edges: set[Edge] = set()
     for line in block.splitlines():
         row = ROW.match(line)
-        if not row or row["crate"] == "Application" or set(row["uses"]) <= set("- "):
+        if not row or set(row["uses"]) <= set("- "):
             continue
         crates.add(row["crate"])
         for short in filter(None, (part.strip() for part in row["uses"].split(","))):
