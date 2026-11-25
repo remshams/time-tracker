@@ -46,14 +46,10 @@ extension WorklogDays {
     public init(
         history: WorklogHistoryStore, tracking: TrackingStore, dailyTotals: DailyTotalsStore, taskID: String
     ) {
-        let runningEnd = tracking.active.flatMap { active in
-            parseTimestamp(active.start).flatMap { start in
-                tracking.elapsedSeconds.map { start.addingTimeInterval(Double($0)) }
-            }
-        }
         let isRunning = tracking.active?.taskId == taskID
         self.init(
-            worklogs: history.worklogs, runningEnd: runningEnd, hasOlder: history.hasMore, today: dailyTotals.today(),
+            worklogs: history.worklogs, runningEnd: tracking.runningEnd, hasOlder: history.hasMore,
+            today: dailyTotals.today(),
             todaySeconds: dailyTotals.taskTotal(taskID: taskID).content?.shownSeconds(isRunning: isRunning),
             calendar: dailyTotals.calendar)
     }

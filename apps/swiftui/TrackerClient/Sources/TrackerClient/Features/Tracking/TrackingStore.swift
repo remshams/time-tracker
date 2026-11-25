@@ -16,6 +16,16 @@ public final class TrackingStore: ChangeGuardedStore {
     public private(set) var isSubmitting = false
     /// The whole seconds of the running worklog, or `nil` while nothing runs or before the tracker state is confirmed.
     private(set) var elapsedSeconds: Int?
+
+    /// Where the running worklog has reached: its start plus the elapsed seconds, or `nil` while nothing runs or the
+    /// elapsed time is unknown. A view that reads it redraws every second while a worklog runs.
+    public var runningEnd: Date? {
+        active.flatMap { active in
+            parseTimestamp(active.start).flatMap { start in
+                elapsedSeconds.map { start.addingTimeInterval(Double($0)) }
+            }
+        }
+    }
     // A failed tracking request, auto-pause or auto-resume records its error here. The flow that sent the request
     // shows it once its reload returns, so the alert appears over the reloaded state.
     @ObservationIgnored private(set) var recordedError: String?

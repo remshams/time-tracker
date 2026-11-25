@@ -262,6 +262,19 @@ final class TrackingTests: XCTestCase {
     }
 
     @MainActor
+    func testRunningEndIsTheStartPlusTheElapsedSeconds() async throws {
+        let idle = Fixture()
+        defer { idle.cleanup() }
+        try await idle.start(TaskListResources(tasks: [firstTask], active: nil))
+        XCTAssertNil(idle.features.tracking.runningEnd, "Nothing runs.")
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        let start = try XCTUnwrap(parseTimestamp(activeWorklog.start))
+        XCTAssertEqual(fixture.features.tracking.runningEnd, start.addingTimeInterval(30))
+    }
+
+    @MainActor
     func testStartingTrackingNotifiesSubmittingThenActiveAndTimerReaders() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
