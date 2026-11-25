@@ -27,15 +27,16 @@ Instructions to agents can be ignored, so the check has to come from scripts tha
   - the code has an edge the config doesn't list;
   - the config lists an edge the code no longer has, or lists an implicit node;
   - a folder has no section, or a section names a folder that doesn't exist;
-  - the folders form a cycle. The edges to implicit nodes count here, so a dependency from `Shared/` onto a feature that uses `Shared/` fails, and so does any dependency onto `App/` from a feature that `App/` uses.
+  - the folders form a cycle. Every node may use an implicit node at any time, so the cycle search adds an edge from every other node to each implicit node. A dependency from `Shared/` onto any feature therefore fails, and so does a dependency onto `App/` from a feature that `App/` uses.
 - The config always matches the code. Every added or removed dependency shows up as a diff in the config, where review sees it.
 - The scripts only check. On a failure they print the edge, up to three `file:line` examples and the line to add or remove. Nothing rewrites the config, so each new edge is a deliberate edit.
 - Test sources aren't scanned. Tests may use any feature.
 
 ### What counts as a use
 
-- **Omarchy:** a C++ `#include` of a file in another folder, and a QML `import` of another folder. QML also reaches the stores through the context properties that `App/AppController.cpp` sets. The check follows each property to the member it names, then to the member's type in `AppController.h`, then to the folder of that type's header. A QML file that writes `catalog.` uses `Features/TaskCatalog`. A property whose type the check can't find fails the check. A QML `id` or property that shares a context property's name counts as a use too. Rename it.
-- **Swift:** a use of a top-level type, protocol, type alias, function or constant declared in another folder of the same target, outside comments and strings. `extension X` counts as a use of X. Names are unique within a target, so matching by name is reliable. A member that one folder adds to another folder's type through an extension counts only as a use of the type's folder.
+- **Omarchy:** a C++ `#include "…"` of a file in another folder, and a QML `import "…"` of another folder. QML also reaches the stores through the context properties that `App/AppController.cpp` sets. The check follows each property to the member it names, then to the member's type in `AppController.h`, then to the folder of that type's header. A QML file that writes `catalog.tasks`, `target: catalog` or `load(catalog)` uses `Features/TaskCatalog`. A `setContextProperty` call the check can't read, or a property whose type it can't find, fails the check. A member access such as `model.catalog`, a declaration such as `property var catalog`, and a binding such as `catalog: value` aren't uses. A QML `id` with a context property's name counts as a use. Rename it.
+- The Omarchy check doesn't see a forward declaration (`class TaskCatalogStore;`) without an include, an `#include <…>` of a project file, or a QML import by module name. The code doesn't use these forms for project files today.
+- **Swift:** a use of a top-level type, protocol, type alias, function or constant declared in another folder of the same target, outside comments and strings. `extension X` counts as a use of X. Names are unique within a target, so matching by name is reliable. A member that one folder adds to another folder's type through an extension counts only as a use of the type's folder. The index skips the second name in `let a = 1, b = 2`, tuple bindings, operators and macros, and the code uses none of these at the top level today.
 
 ### Crate graph for Rust
 
