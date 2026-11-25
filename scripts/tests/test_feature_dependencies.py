@@ -91,6 +91,14 @@ class OmarchyExtractorTests(unittest.TestCase):
         })
         self.assertEqual(found.nodes, {"App", "Shared", "Features/Catalog"})
 
+    def test_include_prefers_the_file_folder_like_the_compiler(self):
+        edges = self.edges({
+            "Features/Catalog/Store.cpp": '#include "Shared/Format.h"',
+            "Features/Catalog/Shared/Format.h": "",
+            "Shared/Format.h": "",
+        })
+        self.assertEqual(edges, set())
+
     def test_includes_resolve_against_src_and_the_file_folder(self):
         edges = self.extract({
             "main.cpp": '#include "App/AppController.h"\n#include <QObject>\n#include "Shared/Theme.h"',
@@ -145,8 +153,14 @@ class OmarchyExtractorTests(unittest.TestCase):
             "Shared/Theme.h": "class Theme : public QObject {};",
             "Features/Move/Dialog.qml": "Connections {\n    target: catalog\n}",
             "Features/Rename/Dialog.qml": "Item { Component.onCompleted: load(catalog) }",
+            # A line that starts with the name is a use when the colon belongs to a ternary below it.
+            "Features/Delete/Dialog.qml": "Item {\n    property var store: shown ?\n        catalog\n        : null\n}",
         })
-        self.assertEqual(edges, {("Features/Move", "Features/Catalog"), ("Features/Rename", "Features/Catalog")})
+        self.assertEqual(edges, {
+            ("Features/Move", "Features/Catalog"),
+            ("Features/Rename", "Features/Catalog"),
+            ("Features/Delete", "Features/Catalog"),
+        })
 
     def test_properties_named_like_a_context_property_are_not_uses(self):
         edges = self.edges({
@@ -162,6 +176,16 @@ class OmarchyExtractorTests(unittest.TestCase):
                 "    readonly property bool shown: model.catalog",
                 "}",
             ]),
+        })
+        self.assertEqual(edges, set())
+
+    def test_commented_out_context_property_is_not_a_property(self):
+        edges = self.edges({
+            "App/AppController.h": CONTROLLER_HEADER,
+            "App/AppController.cpp": CONTROLLER.replace("    context->setContextProperty(QStringLiteral(\"catalog\")", "    // context->setContextProperty(QStringLiteral(\"catalog\")"),
+            "Features/Catalog/CatalogStore.h": "class CatalogStore : public QObject {};",
+            "Shared/Theme.h": "class Theme : public QObject {};",
+            "Features/Move/Dialog.qml": "Text { text: catalog.name }",
         })
         self.assertEqual(edges, set())
 
