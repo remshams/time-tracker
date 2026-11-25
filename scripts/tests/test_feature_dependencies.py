@@ -185,6 +185,12 @@ class OmarchyExtractorTests(unittest.TestCase):
                 "    required property string catalog",
                 "    catalog: null",
                 "    readonly property bool shown: model.catalog",
+                "    function options() {",
+                "        return {",
+                "            catalog: 1,",
+                "            catalog: 2",
+                "        }",
+                "    }",
                 "}",
             ]),
         })
