@@ -46,7 +46,7 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0031](0031-remove-server-revisions-from-writes-and-reads.md) | Remove server revisions from writes and reads | Accepted |
 | [0032](0032-move-the-dialogs-into-feature-stores.md) | Move the dialogs into feature stores | Partially superseded by ADR 0033, ADR 0034, ADR 0035, ADR 0038 and ADR 0039; all other decisions remain accepted. |
 | [0033](0033-report-bulk-archive-preview-failures-through-a-closure.md) | Report bulk archive preview failures through a closure | Partially superseded by ADR 0034; all other decisions remain accepted. |
-| [0034](0034-allow-no-cycles-between-folders-in-a-target.md) | Allow no cycles between folders in a target | Partially superseded by ADR 0035; all other decisions remain accepted. |
+| [0034](0034-allow-no-cycles-between-folders-in-a-target.md) | Allow no cycles between folders in a target | Partially superseded by ADR 0035 and ADR 0045; all other decisions remain accepted. |
 | [0035](0035-put-user-actions-on-feature-stores.md) | Put user actions on feature stores | Accepted; partially superseded by ADR 0037, ADR 0038 and ADR 0039. |
 | [0036](0036-let-dialog-stores-claim-a-presentation-gate.md) | Let dialog stores claim a presentation gate | Accepted |
 | [0037](0037-let-daily-totals-load-and-roll-over-in-their-store.md) | Let daily totals load and roll over in their store | Accepted; partially superseded by ADR 0039. |
@@ -57,3 +57,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0042](0042-build-the-omarchy-client-with-qt-quick-on-the-shared-c-bridge.md) | Build the Omarchy client with Qt Quick on the shared C bridge | Proposed |
 | [0043](0043-use-design-tokens-for-spacing-type-and-opacity-in-the-omarchy-app.md) | Use design tokens for spacing, type and opacity in the Omarchy app | Proposed |
 | [0044](0044-show-quick-track-in-a-non-activating-panel.md) | Show Quick Track in a non-activating panel | Accepted |
+| [0045](0045-enforce-feature-dependencies-with-a-checked-graph.md) | Enforce feature dependencies with a checked graph | Proposed |
