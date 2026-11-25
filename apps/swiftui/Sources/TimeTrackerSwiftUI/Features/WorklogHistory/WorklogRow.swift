@@ -20,7 +20,9 @@ struct WorklogRow: View {
                     .fontWeight(row.isRunning ? .semibold : .regular)
                     .foregroundStyle(row.isRunning ? color : Color.primary)
                     .frame(width: HistoryColumns.range, alignment: .leading)
-                WorklogBar(row: row, axis: axis, color: color, highlighted: isHovered || row.isRunning)
+                WorklogBar(
+                    startHour: row.startHour, endHour: row.endHour, isRunning: row.isRunning, axis: axis, color: color,
+                    highlighted: isHovered || row.isRunning)
                 Group {
                     if let duration = row.duration {
                         DurationLabel(duration: duration)

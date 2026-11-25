@@ -26,9 +26,12 @@ extension View {
 
 /// A worklog's part of a day on the shared hour axis, as a segment in a hairline track. The running part is hatched
 /// and ends at a "now" needle. Every row draws its own bar, so the row reads as one unit and the bars line up from one
-/// day to the next.
+/// day to the next. The dialogs that change a worklog show it with the same bar.
 struct WorklogBar: View {
-    let row: WorklogDayRow
+    /// Where the part starts and ends on its day, in wall-clock hours from 0 to 24.
+    let startHour: Double
+    let endHour: Double
+    let isRunning: Bool
     let axis: WorklogHourAxis
     let color: Color
     let highlighted: Bool
@@ -41,8 +44,8 @@ struct WorklogBar: View {
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
-            let from = axis.position(row.startHour)
-            let to = axis.position(row.endHour)
+            let from = axis.position(startHour)
+            let to = axis.position(endHour)
             let segmentWidth = max(minimumWidth, width * (to - from))
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
@@ -54,10 +57,10 @@ struct WorklogBar: View {
                         .frame(width: BorderWidth.hairline, height: trackHeight)
                         .offset(x: width * axis.position(Double(hour)))
                 }
-                WorklogSegment(color: color, hatched: row.isRunning, highlighted: highlighted)
+                WorklogSegment(color: color, hatched: isRunning, highlighted: highlighted)
                     .frame(width: segmentWidth, height: trackHeight)
                     .offset(x: min(width * from, max(0, width - segmentWidth)))
-                if row.isRunning {
+                if isRunning {
                     Capsule()
                         .fill(color)
                         .frame(width: BorderWidth.needle, height: trackHeight + needleOverhang)
@@ -102,36 +105,45 @@ private struct WorklogSegment: View {
     }
 }
 
-/// The hour labels above the rows' bars. They span the bar column, so each label sits over its hairline. The first
-/// and last label mark the ends of the axis and stay inside it. A narrow column keeps only the ends.
+/// The hour labels above the rows' bars. They span the bar column, so each label sits over its hairline.
 struct WorklogHourLabels: View {
     let axis: WorklogHourAxis
 
     var body: some View {
         HStack(spacing: HistoryColumns.spacing) {
             Color.clear.frame(width: HistoryColumns.range, height: 1)
-            GeometryReader { proxy in
-                let hours = axis.labeledHours
-                // A bare hour needs about 20 points, "12pm" a few more.
-                let shown = proxy.size.width / CGFloat(hours.count) < 22 ? [axis.startHour, axis.endHour] : hours
-                ZStack {
-                    ForEach(shown, id: \.self) { hour in
-                        let text = Text(WorklogHourAxis.label(hour))
-                            .font(TextRole.duration(.caption2))
-                            .foregroundStyle(.tertiary)
-                            .fixedSize()
-                        if hour == axis.startHour {
-                            text.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        } else if hour == axis.endHour {
-                            text.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        } else {
-                            text.position(
-                                x: proxy.size.width * axis.position(Double(hour)), y: proxy.size.height / 2)
-                        }
+            WorklogHourScale(axis: axis)
+            Color.clear.frame(width: HistoryColumns.duration, height: 1)
+        }
+    }
+}
+
+/// The axis's hour labels across the full width, each over its hairline. The first and last label mark the ends of
+/// the axis and stay inside it. A narrow width keeps only the ends.
+struct WorklogHourScale: View {
+    let axis: WorklogHourAxis
+
+    var body: some View {
+        GeometryReader { proxy in
+            let hours = axis.labeledHours
+            // A bare hour needs about 20 points, "12pm" a few more.
+            let shown = proxy.size.width / CGFloat(hours.count) < 22 ? [axis.startHour, axis.endHour] : hours
+            ZStack {
+                ForEach(shown, id: \.self) { hour in
+                    let text = Text(WorklogHourAxis.label(hour))
+                        .font(TextRole.duration(.caption2))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
+                    if hour == axis.startHour {
+                        text.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    } else if hour == axis.endHour {
+                        text.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    } else {
+                        text.position(
+                            x: proxy.size.width * axis.position(Double(hour)), y: proxy.size.height / 2)
                     }
                 }
             }
-            Color.clear.frame(width: HistoryColumns.duration, height: 1)
         }
         .frame(height: 14)
         .accessibilityHidden(true)

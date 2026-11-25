@@ -5,17 +5,22 @@ struct WorklogCorrectionSheet: View {
     @Environment(WorklogCorrectionStore.self) private var correction
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.large) {
-            Text("Edit worklog").font(TextRole.sheetTitle)
-            Text(correction.taskName)
-                .font(TextRole.detail)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
-                .help(correction.taskName)
+        let taskID = correction.original?.taskId
+        DialogSheet(
+            title: "Edit worklog", message: correction.taskName, systemImage: "clock", tint: .task(id: taskID),
+            width: DialogSize.wideWidth, error: correction.error, errorIdentifier: "worklog-correction.error",
+            isBusy: correction.isSubmitting
+        ) {
+            if let taskID {
+                DialogSection {
+                    WorklogSpanPanel(
+                        start: correction.start, end: correction.end, taskID: taskID,
+                        durationIdentifier: "worklog-correction.duration")
+                }
+            }
 
-            Grid(alignment: .leading, horizontalSpacing: Spacing.medium, verticalSpacing: Spacing.large) {
-                GridRow {
-                    Text("Start")
+            DialogSection {
+                LabeledContent("Start") {
                     DatePicker(
                         "Start",
                         selection: Binding(
@@ -25,10 +30,8 @@ struct WorklogCorrectionSheet: View {
                     .labelsHidden()
                     .accessibilityIdentifier("worklog-correction.start")
                 }
-
-                if correction.end != nil {
-                    GridRow {
-                        Text("End")
+                LabeledContent("End") {
+                    if correction.end != nil {
                         DatePicker(
                             "End",
                             selection: Binding(
@@ -38,66 +41,31 @@ struct WorklogCorrectionSheet: View {
                         )
                         .labelsHidden()
                         .accessibilityIdentifier("worklog-correction.end")
+                    } else {
+                        Label("Still running", systemImage: "timer")
+                            .foregroundStyle(.secondary)
                     }
                 }
+            } footer: {
+                Text("Times are in \(correction.timezone.identifier).")
+                    .accessibilityIdentifier("worklog-correction.timezone")
             }
             .disabled(!correction.canEdit)
-
-            if correction.end == nil {
-                Label("This worklog is still running.", systemImage: "timer")
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Time zone: \(correction.timezone.identifier)")
-                .accessibilityIdentifier("worklog-correction.timezone")
-                .font(TextRole.caption)
-                .foregroundStyle(.secondary)
-
-            if let end = correction.end, end > correction.start {
-                LabeledContent("Duration") {
-                    DurationLabel(duration: DurationText(duration: end.timeIntervalSince(correction.start)))
-                        .accessibilityIdentifier("worklog-correction.duration")
-                        .font(TextRole.duration(.body))
-                }
-            } else if correction.end == nil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    LabeledContent("Elapsed after save") {
-                        DurationLabel(
-                            duration: DurationText(duration: context.date.timeIntervalSince(correction.start)))
-                    }
-                    .font(TextRole.duration(.body))
-                }
-            }
-
-            if let error = correction.error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .accessibilityIdentifier("worklog-correction.error")
-                    .foregroundStyle(ColorRole.error)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
-
-            HStack(spacing: Spacing.medium) {
-                DelayedProgressIndicator(
-                    isBusy: correction.isSubmitting, title: "Saving worklog...",
-                    identifier: "worklog-correction.progress")
-                Spacer()
-                Button("Cancel") { correction.cancel() }
-                    .accessibilityIdentifier("worklog-correction.cancel")
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(correction.isSubmitting)
-                Button("Save") {
-                    correction.submit()
-                }
+        } status: {
+            DelayedProgressIndicator(
+                isBusy: correction.isSubmitting, title: "Saving worklog...",
+                identifier: "worklog-correction.progress")
+        } actions: {
+            Button("Cancel") { correction.cancel() }
+                .accessibilityIdentifier("worklog-correction.cancel")
+                .keyboardShortcut(.cancelAction)
+                .disabled(correction.isSubmitting)
+            Button("Save") { correction.submit() }
                 .accessibilityIdentifier("worklog-correction.save")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .disabled(!correction.canSubmit)
-            }
         }
-        .padding(Spacing.xLarge)
-        .frame(width: 480)
         .environment(\.timeZone, correction.timezone)
-        .interactiveDismissDisabled(correction.isSubmitting)
     }
 }
