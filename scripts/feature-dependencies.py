@@ -139,14 +139,18 @@ def omarchy_context_properties(source: Path, target: Target) -> dict[str, str]:
     header_text = strip_comments_and_strings(header.read_text())
     controller_text = controller.read_text()
     properties: dict[str, str] = {}
-    matched = {match.start() for match in CONTEXT_PROPERTY.finditer(controller_text)}
-    for call in re.finditer(r"setContextProperty\(", strip_comments_and_strings(controller_text)):
+    controller_code = strip_comments_and_strings(controller_text)
+    # The property name is a string, so the calls are read from the raw text; a call that is
+    # commented out is blank in the stripped text.
+    calls = [match for match in CONTEXT_PROPERTY.finditer(controller_text) if controller_code[match.start()] != " "]
+    matched = {match.start() for match in calls}
+    for call in re.finditer(r"setContextProperty\(", controller_code):
         if call.start() not in matched:
             location = Location(controller, line_of(controller_text, call.start()))
             target.problems.append(
                 f'{location}: can\'t read this context property. Write it as setContextProperty(QStringLiteral("name"), member_).'
             )
-    for match in CONTEXT_PROPERTY.finditer(controller_text):
+    for match in calls:
         name, member = match.group("name"), match.group("member")
         declaration = re.search(rf"(?P<type>\w+)\s*\*\s*{re.escape(member)}\s*;", header_text)
         node = classes.get(declaration.group("type")) if declaration else None
@@ -164,10 +168,10 @@ def omarchy_context_properties(source: Path, target: Target) -> dict[str, str]:
 def omarchy_resolve(source: Path, path: Path, relative: str) -> str | None:
     """The node an include or import points to, or None for a file outside src, such as a Qt header.
 
-    QML imports are relative to the file. C++ includes are relative to src, or to the file's folder.
+    QML imports are relative to the file. C++ includes are relative to the file's folder, then to src.
     """
     root = source.resolve()
-    bases = [path.parent] if path.suffix == ".qml" else [source, path.parent]
+    bases = [path.parent] if path.suffix == ".qml" else [path.parent, source]
     for base in bases:
         resolved = (base / relative).resolve()
         if resolved.exists() and resolved.is_relative_to(root):
@@ -189,7 +193,7 @@ def context_property_uses(name: str, code: str) -> list[re.Match[str]]:
         after = code[match.end() :]
         if re.search(r"\bproperty\s+[\w<>.]+\s+$", before):
             continue
-        if re.fullmatch(r"\s*(?:readonly\s+|required\s+)*", before) and re.match(r"\s*:", after):
+        if re.fullmatch(r"\s*(?:readonly\s+|required\s+)*", before) and re.match(r"[ \t]*:", after):
             continue
         uses.append(match)
     return uses
