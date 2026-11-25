@@ -20,7 +20,7 @@ public final class TaskArchivingStore {
     public private(set) var action = TaskArchivingAction.archive
     public private(set) var isSubmitting = false
     public private(set) var error: String?
-    private(set) var taskID = ""
+    public private(set) var taskID = ""
 
     private let client: any TrackerClient
     private let clock: any TrackerClock
