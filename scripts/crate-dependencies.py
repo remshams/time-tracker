@@ -28,6 +28,7 @@ PREFIX = "tracker-"
 
 NODE = re.compile(r'^\s*(?P<alias>\w+)\["(?P<label>[^"]*)"\]')
 EDGE = re.compile(r"^\s*(?P<sources>\w+(?:\s*&\s*\w+)*)\s*-->\s*(?P<targets>\w+(?:\s*&\s*\w+)*)\s*$")
+ARROW = re.compile(r"--|==|-\.")
 ROW = re.compile(r"^\|\s*`(?P<crate>[^`]+)`\s*\|\s*(?P<uses>[^|]*?)\s*\|\s*$")
 
 Edge = tuple[str, str]
@@ -44,6 +45,7 @@ def parse_core(block: str) -> tuple[set[str], set[Edge], list[str]]:
     """Return the crate names, the edges and the problems of the core Mermaid block."""
     aliases: dict[str, str] = {}
     pairs: list[tuple[str, str]] = []
+    unreadable: list[str] = []
     for line in block.splitlines():
         node = NODE.match(line)
         if node:
@@ -54,7 +56,10 @@ def parse_core(block: str) -> tuple[set[str], set[Edge], list[str]]:
             for source in re.split(r"\s*&\s*", edge["sources"]):
                 for target in re.split(r"\s*&\s*", edge["targets"]):
                     pairs.append((source, target))
-    problems: list[str] = []
+        elif ARROW.search(line) and line.strip() != "---":
+            # A labelled, dotted or chained arrow would otherwise drop out of the comparison.
+            unreadable.append(f"The core block has an edge the check can't read: `{line.strip()}`. Write it as `a --> b & c`.")
+    problems: list[str] = list(unreadable)
     edges: set[Edge] = set()
     for source, target in pairs:
         unknown = [alias for alias in (source, target) if alias not in aliases]
@@ -140,16 +145,21 @@ def check(text: str, metadata: dict) -> list[str]:
     return problems
 
 
+class CargoError(Exception):
+    """`cargo metadata` failed, for example because Cargo.lock is out of date."""
+
+
 def load_metadata(path: Path | None) -> dict:
     if path is not None:
         return json.loads(path.read_text(encoding="utf-8"))
     result = subprocess.run(
         ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked"],
         cwd=ROOT,
-        check=True,
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        raise CargoError(result.stderr.strip())
     return json.loads(result.stdout)
 
 
@@ -159,7 +169,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--metadata", type=Path, help="JSON file with `cargo metadata` output, instead of running cargo")
     args = parser.parse_args(argv)
 
-    problems = check(args.doc.read_text(encoding="utf-8"), load_metadata(args.metadata))
+    try:
+        metadata = load_metadata(args.metadata)
+    except (CargoError, OSError) as error:
+        print(f"Can't read the crate graph from cargo metadata: {error}", file=sys.stderr)
+        return 1
+    problems = check(args.doc.read_text(encoding="utf-8"), metadata)
     for problem in problems:
         print(problem, file=sys.stderr)
     if problems:
