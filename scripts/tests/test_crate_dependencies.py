@@ -119,6 +119,13 @@ class CheckTests(unittest.TestCase):
         doc = DOC.replace("| `tracker-tui` | client, domain |", "| `tracker-tui` | client, domain |\n| `tracker-cli` | - |")
         self.assertEqual(problems(doc, metadata({**EDGES, "tracker-cli": []})), [])
 
+    def test_row_for_a_core_crate_fails_once_even_without_crates(self):
+        for uses in ("-", "storage, domain"):
+            with self.subTest(uses=uses):
+                doc = DOC.replace("| `tracker-tui` | client, domain |", f"| `tracker-tui` | client, domain |\n| `tracker-client` | {uses} |")
+                found = [p for p in problems(doc) if "not an application" in p]
+                self.assertEqual(found, ["The applications table has a row for `tracker-client`, which is not an application. Move it to the core block."])
+
     def test_unknown_alias(self):
         doc = DOC.replace("storage --> domain", "storage --> domain & ghost")
         self.assertIn("alias `ghost`", problems(doc)[0])

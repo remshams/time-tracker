@@ -138,9 +138,8 @@ def check(text: str, metadata: dict) -> list[str]:
     for edge in sorted(core_edges):
         if edge[0] in APPLICATIONS:
             problems.append(f"The core block has an edge from the application `{edge[0]}`. Move it to the applications table.")
-    for edge in sorted(table_edges):
-        if edge[0] not in APPLICATIONS:
-            problems.append(f"The applications table has a row for `{edge[0]}`, which is not an application. Move it to the core block.")
+    for name in sorted(table_names - set(APPLICATIONS)):
+        problems.append(f"The applications table has a row for `{name}`, which is not an application. Move it to the core block.")
 
     documented = core_edges | table_edges
     problems += [describe(edge, True) for edge in sorted(cargo_edges - documented)]
