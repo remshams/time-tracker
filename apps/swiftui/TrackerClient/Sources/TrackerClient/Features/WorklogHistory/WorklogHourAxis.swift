@@ -11,9 +11,19 @@ public struct WorklogHourAxis: Equatable, Sendable {
     public let endHour: Int
 
     init(rows: [WorklogDayRow]) {
+        self.init(ranges: rows.map { ($0.startHour, $0.endHour) })
+    }
+
+    /// An axis that fits every span, for a dialog that shows one worklog. Passing the span the dialog opened with
+    /// next to the edited one keeps the scale still, so an edit moves the bar instead.
+    public init(covering spans: [WorklogSpan]) {
+        self.init(ranges: spans.map { ($0.startHour, $0.endHour) })
+    }
+
+    private init(ranges: [(start: Double, end: Double)]) {
         var low = 9
         var high = 17
-        if let first = rows.map(\.startHour).min(), let last = rows.map(\.endHour).max() {
+        if let first = ranges.map(\.start).min(), let last = ranges.map(\.end).max() {
             low = Int(first.rounded(.down))
             high = max(low, Int(last.rounded(.up)))
         }

@@ -155,7 +155,7 @@ private struct WorklogPart {
 }
 
 /// Names days and times in the user's calendar, time zone and locale.
-private struct WorklogDayFormat {
+struct WorklogDayFormat {
     let today: Date
     let calendar: Calendar
     let locale: Locale
@@ -173,8 +173,7 @@ private struct WorklogDayFormat {
         case 0: return "Today"
         case 1: return "Yesterday"
         default:
-            var style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
-                .weekday(.abbreviated).day().month(.abbreviated)
+            var style = self.style.weekday(.abbreviated).day().month(.abbreviated)
             if calendar.component(.year, from: day) != calendar.component(.year, from: today) {
                 style = style.year()
             }
@@ -186,6 +185,11 @@ private struct WorklogDayFormat {
     func key(_ day: Date) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: day)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    /// A format with no fields yet in the user's calendar, time zone and locale.
+    var style: Date.FormatStyle {
+        Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
     }
 
     func time(_ date: Date) -> String {
