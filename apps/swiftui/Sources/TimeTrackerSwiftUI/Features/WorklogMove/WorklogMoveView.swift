@@ -21,7 +21,7 @@ struct WorklogMoveSheet: View {
                 }
             }
 
-            DialogSection(isFocused: searchFocused) {
+            DialogSection(field: $searchFocused) {
                 HStack(spacing: Spacing.small) {
                     TextField(
                         "Search destination tasks",

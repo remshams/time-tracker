@@ -122,16 +122,17 @@ private struct DialogHeader: View {
 }
 
 /// A rounded group of rows in the System Settings style, with hairlines between the rows and helper text under the
-/// group. `isFocused` outlines the group in the accent color while the text field that fills it has focus, so the
-/// whole group reads as the place to type.
+/// group. `field` is the focus of a text field that fills the group: the group outlines itself in the accent color
+/// while the field has focus, and a click anywhere in the group focuses the field, so the whole group reads as the
+/// place to type.
 struct DialogSection<Content: View, Footer: View>: View {
-    var isFocused = false
+    var field: FocusState<Bool>.Binding? = nil
     @ViewBuilder let content: Content
     @ViewBuilder let footer: Footer
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.small) {
-            VStack(alignment: .leading, spacing: 0) {
+            let group = VStack(alignment: .leading, spacing: 0) {
                 Group(subviews: content) { rows in
                     ForEach(rows) { row in
                         if row.id != rows.first?.id {
@@ -145,7 +146,13 @@ struct DialogSection<Content: View, Footer: View>: View {
                 }
             }
             .labeledContentStyle(DialogRowStyle())
-            .dialogGroup(isFocused: isFocused)
+            .dialogGroup(isFocused: field?.wrappedValue == true)
+            // Only a field's group takes clicks, so other groups pass them straight to their controls.
+            if let field {
+                group.contentShape(Rectangle()).onTapGesture { field.wrappedValue = true }
+            } else {
+                group
+            }
 
             footer
                 .font(TextRole.detail)
@@ -157,8 +164,8 @@ struct DialogSection<Content: View, Footer: View>: View {
 }
 
 extension DialogSection where Footer == EmptyView {
-    init(isFocused: Bool = false, @ViewBuilder content: () -> Content) {
-        self.init(isFocused: isFocused, content: content, footer: { EmptyView() })
+    init(field: FocusState<Bool>.Binding? = nil, @ViewBuilder content: () -> Content) {
+        self.init(field: field, content: content, footer: { EmptyView() })
     }
 }
 

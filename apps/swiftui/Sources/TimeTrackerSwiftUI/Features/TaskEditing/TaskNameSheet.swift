@@ -22,7 +22,7 @@ struct TaskNameSheet: View {
             title: title, message: message, systemImage: systemImage, tint: tint, error: error,
             errorIdentifier: "task-name.error", isBusy: isSubmitting
         ) {
-            DialogSection(isFocused: nameFocused) {
+            DialogSection(field: $nameFocused) {
                 TextField("Task name", text: $name, prompt: Text("Task name"))
                     .textFieldStyle(.plain)
                     .font(TextRole.body)
