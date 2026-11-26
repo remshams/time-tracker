@@ -46,9 +46,6 @@ struct WorklogCorrectionSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-            } footer: {
-                Text("Times are in \(correction.timezone.identifier).")
-                    .accessibilityIdentifier("worklog-correction.timezone")
             }
             .disabled(!correction.canEdit)
         } status: {
