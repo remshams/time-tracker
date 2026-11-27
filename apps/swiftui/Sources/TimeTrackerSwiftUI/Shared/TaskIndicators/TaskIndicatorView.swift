@@ -1,8 +1,8 @@
 import SwiftUI
 import TrackerClient
 
-/// The task's color mark in the sidebar: a dot with a halo while the task runs, a filled dot once it has time today,
-/// and a ring otherwise.
+/// The task's color mark wherever a task is listed: a dot with a halo while the task runs, a filled dot once it has
+/// time today, and a ring otherwise.
 struct TaskIndicatorView: View {
     let taskID: String
     let isRunning: Bool

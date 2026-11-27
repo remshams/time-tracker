@@ -337,6 +337,7 @@
 				8C0E2AD77BE57DADA769AAA5 /* Durations */,
 				7A1C0E5B2F4D8A6E9B3C1D82 /* Dialog */,
 				7A1C0E5B2F4D8A6E9B3C1D72 /* IconButtons */,
+				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -385,7 +386,6 @@
 			isa = PBXGroup;
 			children = (
 				67815C35FE40B6535CB0E7B6 /* MenuBar */,
-				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 				402A9F1B1FD9A87989A87012 /* DailyTotals */,
 				F70000000000000000000003 /* ProgressPresentation */,
 				7B61613478C091D18A157689 /* TaskCreation */,

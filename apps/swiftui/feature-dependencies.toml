@@ -28,7 +28,7 @@ uses = [
 ]
 
 [targets.TimeTrackerSwiftUI.nodes."Features/BulkTaskArchiving"]
-uses = ["Features/ProgressPresentation", "Features/TaskIndicators"]
+uses = ["Features/ProgressPresentation"]
 
 [targets.TimeTrackerSwiftUI.nodes."Features/Connection"]
 uses = ["Features/ProgressPresentation"]
@@ -46,7 +46,7 @@ uses = ["Features/TaskCopying", "Infrastructure/Preferences"]
 uses = []
 
 [targets.TimeTrackerSwiftUI.nodes."Features/QuickTrack"]
-uses = ["Features/TaskCopying", "Features/TaskIndicators"]
+uses = ["Features/TaskCopying"]
 
 [targets.TimeTrackerSwiftUI.nodes."Features/Settings"]
 uses = [
@@ -64,7 +64,6 @@ uses = ["Features/ProgressPresentation"]
 uses = [
     "Features/Connection",
     "Features/DailyTotals",
-    "Features/TaskIndicators",
     "Features/WorklogHistory",
 ]
 
@@ -76,9 +75,6 @@ uses = ["Features/TaskEditing"]
 
 [targets.TimeTrackerSwiftUI.nodes."Features/TaskEditing"]
 uses = ["Features/ProgressPresentation"]
-
-[targets.TimeTrackerSwiftUI.nodes."Features/TaskIndicators"]
-uses = []
 
 [targets.TimeTrackerSwiftUI.nodes."Features/TaskRename"]
 uses = ["Features/TaskEditing"]
@@ -96,11 +92,7 @@ uses = ["Features/ProgressPresentation", "Features/WorklogHistory"]
 uses = ["Features/ProgressPresentation"]
 
 [targets.TimeTrackerSwiftUI.nodes."Features/WorklogMove"]
-uses = [
-    "Features/ProgressPresentation",
-    "Features/TaskIndicators",
-    "Features/WorklogHistory",
-]
+uses = ["Features/ProgressPresentation", "Features/WorklogHistory"]
 
 [targets.TimeTrackerSwiftUI.nodes."Infrastructure/MacLifecycle"]
 uses = ["Infrastructure/System"]
