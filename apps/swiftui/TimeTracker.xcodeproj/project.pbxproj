@@ -26,6 +26,7 @@
 		C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */; };
 		9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */; };
 		DEA4B7AF8F9DEC52BA16829B /* TrackerDetailPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 097B78FB74D5269BA3E7B2D0 /* TrackerDetailPresentation.swift */; };
+		7A1C0E5B2F4D8A6E9B3C1D80 /* DialogSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5B2F4D8A6E9B3C1D81 /* DialogSheet.swift */; };
 		7A1C0E5B2F4D8A6E9B3C1D70 /* IconButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5B2F4D8A6E9B3C1D71 /* IconButtonStyle.swift */; };
 		65128E7FA626DF7686DAC227 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F2AAC6F17C5FB540900173 /* DesignTokens.swift */; };
 		ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484979169FE35618CB437645 /* TrackerSidebar.swift */; };
@@ -37,6 +38,7 @@
 		116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */; };
 		7FBEEB35620238CE40748E5C /* TrackingPillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */; };
 		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
+		D1A1000000000000000000B2 /* WorklogSpanPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A1000000000000000000A2 /* WorklogSpanPanel.swift */; };
 		7A1C40E1B2D3F40712A9C6E1 /* WorklogBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C40E1B2D3F40712A9C6E2 /* WorklogBar.swift */; };
 		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
 		009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */; };
@@ -139,6 +141,7 @@
 		1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationDelegate.swift; sourceTree = "<group>"; };
 		A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskPresentationCoordinator.swift; sourceTree = "<group>"; };
 		097B78FB74D5269BA3E7B2D0 /* TrackerDetailPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerDetailPresentation.swift; sourceTree = "<group>"; };
+		7A1C0E5B2F4D8A6E9B3C1D81 /* DialogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DialogSheet.swift; sourceTree = "<group>"; };
 		7A1C0E5B2F4D8A6E9B3C1D71 /* IconButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconButtonStyle.swift; sourceTree = "<group>"; };
 		D6F2AAC6F17C5FB540900173 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		484979169FE35618CB437645 /* TrackerSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebar.swift; sourceTree = "<group>"; };
@@ -155,6 +158,7 @@
 		06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
 		71F20B879B98320D4A7AEDE2 /* TrackingPillView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingPillView.swift; sourceTree = "<group>"; };
 		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
+		D1A1000000000000000000A2 /* WorklogSpanPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogSpanPanel.swift; sourceTree = "<group>"; };
 		7A1C40E1B2D3F40712A9C6E2 /* WorklogBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogBar.swift; sourceTree = "<group>"; };
 		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
 		E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogHistorySection.swift; sourceTree = "<group>"; };
@@ -331,7 +335,9 @@
 			children = (
 				B37F6E685A6DC999026F1A12 /* DesignTokens */,
 				8C0E2AD77BE57DADA769AAA5 /* Durations */,
+				7A1C0E5B2F4D8A6E9B3C1D82 /* Dialog */,
 				7A1C0E5B2F4D8A6E9B3C1D72 /* IconButtons */,
+				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -350,6 +356,14 @@
 				3B97A0AE126FECB273EB49C2 /* DurationLabel.swift */,
 			);
 			path = Durations;
+			sourceTree = "<group>";
+		};
+		7A1C0E5B2F4D8A6E9B3C1D82 /* Dialog */ = {
+			isa = PBXGroup;
+			children = (
+				7A1C0E5B2F4D8A6E9B3C1D81 /* DialogSheet.swift */,
+			);
+			path = Dialog;
 			sourceTree = "<group>";
 		};
 		7A1C0E5B2F4D8A6E9B3C1D72 /* IconButtons */ = {
@@ -372,7 +386,6 @@
 			isa = PBXGroup;
 			children = (
 				67815C35FE40B6535CB0E7B6 /* MenuBar */,
-				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 				402A9F1B1FD9A87989A87012 /* DailyTotals */,
 				F70000000000000000000003 /* ProgressPresentation */,
 				7B61613478C091D18A157689 /* TaskCreation */,
@@ -458,6 +471,7 @@
 			isa = PBXGroup;
 			children = (
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
+				D1A1000000000000000000A2 /* WorklogSpanPanel.swift */,
 				7A1C40E1B2D3F40712A9C6E2 /* WorklogBar.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
 				E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */,
@@ -928,6 +942,7 @@
 				DEA4B7AF8F9DEC52BA16829B /* TrackerDetailPresentation.swift in Sources */,
 				65128E7FA626DF7686DAC227 /* DesignTokens.swift in Sources */,
 				514FB80C5D7E28612F5DEC8E /* DurationLabel.swift in Sources */,
+				7A1C0E5B2F4D8A6E9B3C1D80 /* DialogSheet.swift in Sources */,
 				7A1C0E5B2F4D8A6E9B3C1D70 /* IconButtonStyle.swift in Sources */,
 				772635F03B29C3590CF54E9B /* TodaySummary.swift in Sources */,
 				C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */,
@@ -959,6 +974,7 @@
 				116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */,
 				7FBEEB35620238CE40748E5C /* TrackingPillView.swift in Sources */,
 				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
+				D1A1000000000000000000B2 /* WorklogSpanPanel.swift in Sources */,
 				7A1C40E1B2D3F40712A9C6E1 /* WorklogBar.swift in Sources */,
 				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
 				009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */,

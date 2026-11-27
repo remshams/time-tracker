@@ -34,6 +34,8 @@ enum IconSize {
     static let button: CGFloat = 22
     /// The hover circle of an icon button in the task header.
     static let largeButton: CGFloat = 28
+    /// The round glyph badge in a dialog's header.
+    static let dialogBadge: CGFloat = 44
 }
 
 enum BorderWidth {
@@ -45,6 +47,8 @@ enum BorderWidth {
     static let halo: CGFloat = 3
     /// The "now" needle at the end of a running worklog's bar.
     static let needle: CGFloat = 2
+    /// The outline of a dialog group whose text field has focus.
+    static let focus: CGFloat = 2
 }
 
 /// Animation timing for interaction feedback.
@@ -62,7 +66,10 @@ enum Motion {
 enum TextRole {
     /// The selected task's name at the top of the detail.
     static let display = Font.system(size: 26, weight: .semibold)
+    /// A dialog's title, and the glyph in its badge.
     static let sheetTitle = Font.title2.bold()
+    /// Running text, such as the line under a dialog's title.
+    static let body = Font.body
     /// A text field that is a view's main control, such as Quick Track's search.
     static let prominentInput = Font.title2
     static let sectionTitle = Font.title3.weight(.semibold)
@@ -75,7 +82,7 @@ enum TextRole {
     static let captionEmphasis = Font.caption.weight(.medium)
     /// The tracking pill's task name.
     static let status = Font.body
-    /// A day's total where it is the main figure.
+    /// A day's total, or a dialog's worklog duration, where it is the main figure.
     static let dayTotal = Font.system(.title, design: .rounded, weight: .medium).monospacedDigit()
     /// A small symbol next to status text, such as the stale connection's `wifi.slash`.
     static let statusGlyph = Font.caption.weight(.semibold)

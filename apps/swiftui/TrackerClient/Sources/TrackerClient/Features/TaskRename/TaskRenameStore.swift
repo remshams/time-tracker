@@ -14,7 +14,7 @@ public final class TaskRenameStore {
     public private(set) var name = ""
     public private(set) var isSubmitting = false
     public private(set) var error: String?
-    private(set) var taskID = ""
+    public private(set) var taskID = ""
 
     private let client: any TrackerClient
     private let clock: any TrackerClock

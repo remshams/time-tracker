@@ -6,7 +6,8 @@ struct TaskRenameSheet: View {
 
     var body: some View {
         TaskNameSheet(
-            title: "Edit task name", context: "Task: \(rename.originalName)",
+            title: "Edit task name", message: rename.originalName, systemImage: "pencil",
+            tint: .task(id: rename.taskID), footer: "The task keeps its worklogs and totals.",
             name: Binding(
                 get: { rename.name }, set: { rename.setName($0) }
             ), actionTitle: "Save",

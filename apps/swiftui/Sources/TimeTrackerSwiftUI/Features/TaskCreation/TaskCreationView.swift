@@ -6,7 +6,7 @@ struct TaskCreationSheet: View {
 
     var body: some View {
         TaskNameSheet(
-            title: "New task",
+            title: "New task", message: "Add a task to track time against.", systemImage: "plus",
             name: Binding(
                 get: { creation.name }, set: { creation.setName($0) }
             ), actionTitle: "Create",

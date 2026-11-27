@@ -29,7 +29,9 @@ class WorklogHistoryUITests: TrackerUITestCase {
             HistoryRowBinding(rawValue: bindingName),
             "Unsupported history binding '\(bindingName)'. Use 'index' or 'accessibility'.")
         let task = try fixture.create("History pagination")
-        let now = Date()
+        // The worklogs cover about nine hours. Ending them at 20:00 yesterday keeps them on one day, because the
+        // history splits a worklog that crosses midnight into two rows with different IDs.
+        let now = Calendar.current.startOfDay(for: Date()).addingTimeInterval(-4 * 3600)
         var logs: [FixtureWorklog] = []
         for index in 0..<53 {
             let start = now.addingTimeInterval(-Double(54 - index) * 600)

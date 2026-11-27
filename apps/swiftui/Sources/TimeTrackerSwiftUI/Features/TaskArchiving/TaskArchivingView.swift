@@ -7,48 +7,34 @@ struct TaskArchivingSheet: View {
     var body: some View {
         let isUnarchiving = archiving.action == .unarchive
         let actionTitle = isUnarchiving ? "Unarchive" : "Archive"
-        VStack(alignment: .leading, spacing: Spacing.large) {
-            Text("\(actionTitle) task").font(TextRole.sheetTitle)
-            Text(archiving.taskName)
-                .font(TextRole.heading)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            Text(
-                isUnarchiving
-                    ? "The task will return to Active. Its worklog history will remain available."
-                    : "The task will move to Archived. Its worklog history will remain available."
-            )
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-
-            if let error = archiving.error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .accessibilityIdentifier("task-archive.error")
-                    .foregroundStyle(ColorRole.error)
+        DialogSheet(
+            title: "\(actionTitle) task",
+            message: isUnarchiving ? "Return it to the active tasks." : "Move it out of the active tasks.",
+            systemImage: isUnarchiving ? "tray.and.arrow.up" : "archivebox", tint: .task(id: archiving.taskID),
+            error: archiving.error, errorIdentifier: "task-archive.error", isBusy: archiving.isSubmitting
+        ) {
+            DialogSection {
+                Text(archiving.taskName)
+                    .font(TextRole.heading)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+            } footer: {
+                Text("Its worklog history remains available.")
             }
-
-            HStack(spacing: Spacing.medium) {
-                DelayedProgressIndicator(
-                    isBusy: archiving.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
-                    identifier: "task-archive.progress")
-                Spacer()
-                Button("Cancel") { archiving.cancel() }
-                    .accessibilityIdentifier("task-archive.cancel")
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(archiving.isSubmitting)
-                Button(actionTitle) {
-                    archiving.submit()
-                }
+        } status: {
+            DelayedProgressIndicator(
+                isBusy: archiving.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
+                identifier: "task-archive.progress")
+        } actions: {
+            Button("Cancel") { archiving.cancel() }
+                .accessibilityIdentifier("task-archive.cancel")
+                .keyboardShortcut(.cancelAction)
+                .disabled(archiving.isSubmitting)
+            Button(actionTitle) { archiving.submit() }
                 .accessibilityIdentifier("task-archive.confirm")
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .disabled(!archiving.canSubmit)
-            }
         }
-        .padding(Spacing.xLarge)
-        .frame(width: 480)
-        .interactiveDismissDisabled(archiving.isSubmitting)
     }
 }

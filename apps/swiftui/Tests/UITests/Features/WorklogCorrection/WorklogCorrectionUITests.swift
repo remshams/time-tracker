@@ -11,7 +11,6 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         launch()
         select(task)
         openCorrection(log)
-        XCTAssertTrue(element("worklog-correction.timezone").exists)
         let originalPreview = try XCTUnwrap(element("worklog-correction.duration").value as? String)
         stepMinute("worklog-correction.start")
         waitUntil("Corrected start updates the duration preview") {

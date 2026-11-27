@@ -76,7 +76,7 @@ Remote mode requires `/v1` protocol 6 and the aggregate state routes. Upgrade th
 
 ## Edit worklog times
 
-Right-click a worklog row and choose Edit times, or double-click the row. The sheet shows local dates and times and the time zone used. Completed worklogs expose Start and End with a duration preview. Running worklogs expose Start only and keep tracking after saving. Archived-task history supports the same editor.
+Right-click a worklog row and choose Edit times, or double-click the row. The sheet shows local dates and times. Completed worklogs expose Start and End with a duration preview. Running worklogs expose Start only and keep tracking after saving. Archived-task history supports the same editor.
 
 Changed fields use minute precision. Unchanged fields preserve their stored seconds and fractions. Save rejects future timestamps, an end before the start, and overlapping worklogs for the same task. Errors stay in the sheet with the draft. Enter saves and Escape cancels.
 

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Renders the tracker window offscreen with fixture data into PNGs for design reviews.
 # Pass --quick-track as the second argument to render only the Quick Track dialog.
+# Set SNAPSHOT_FILTER to render only the scenarios whose name starts with it, such as sheet-.
 # It doesn't launch the app, open a visible window or take keyboard focus.
 set -eu
 

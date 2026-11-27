@@ -13,7 +13,7 @@ public final class WorklogCorrectionStore {
     public private(set) var taskName = ""
     public private(set) var isSubmitting = false
     public private(set) var error: String?
-    private(set) var original: WorklogItem?
+    public private(set) var original: WorklogItem?
     private var draftStart = Date(timeIntervalSince1970: 0)
     private var draftEnd: Date?
     private var calendar = Calendar(identifier: .gregorian)

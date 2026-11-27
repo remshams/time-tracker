@@ -40,6 +40,9 @@ private let fixtureHistory: [WorklogItem] = [
     WorklogItem(id: "w6", taskId: "t1", start: stamp(-2 * day - 1 * hour), end: stamp(-2 * day + 1.75 * hour)),
     WorklogItem(id: "w7", taskId: "t1", start: stamp(-4 * day - 3 * hour), end: stamp(-4 * day - 2.5 * hour)),
     WorklogItem(id: "w8", taskId: "t1", start: stamp(-5 * day - 6 * hour), end: stamp(-5 * day - 1 * hour)),
+    // 22:42 to 01:42 UTC, for the dialogs' overnight span. Its scenario opens it in UTC, so it crosses midnight in
+    // every host time zone.
+    WorklogItem(id: "w9", taskId: "t3", start: stamp(-1 * day + 7 * hour), end: stamp(-1 * day + 10 * hour)),
 ]
 
 private let fixtureTotals: [TaskReportTotal] = [
@@ -55,6 +58,8 @@ private struct Scenario {
     let select: String?
     /// Shows every icon button as hovered, for reviewing the hover circle.
     var showsHover = false
+    /// Opens a dialog once the window has loaded. The capture then shows the sheet over the window.
+    var sheet: ((TrackerFeatures) -> Void)? = nil
 }
 
 private let scenarios: [Scenario] = [
@@ -62,6 +67,60 @@ private let scenarios: [Scenario] = [
     Scenario(name: "tracking-hover", tasks: fixtureTasks, active: fixtureActive, select: "t1", showsHover: true),
     Scenario(name: "idle", tasks: fixtureTasks, active: nil, select: "t2"),
     Scenario(name: "empty", tasks: [], active: nil, select: nil),
+    Scenario(
+        name: "sheet-task-new", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { features in
+            features.taskCreation.open()
+            features.taskCreation.setName("Quarterly planning")
+        }),
+    // The context menu renames a task that isn't selected, so the badge takes t4's color, not t1's.
+    Scenario(
+        name: "sheet-task-rename", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.taskRename.open(taskID: "t4") }),
+    // The fixture client rejects every write, so submitting shows the dialog's error.
+    Scenario(
+        name: "sheet-task-rename-error", tasks: fixtureTasks, active: fixtureActive, select: "t2",
+        sheet: { features in
+            features.taskRename.open(taskID: "t2")
+            features.taskRename.setName("Code review and pairing")
+            features.taskRename.submit()
+        }),
+    Scenario(
+        name: "sheet-task-archive", tasks: fixtureTasks, active: fixtureActive, select: "t3",
+        sheet: { $0.taskArchiving.openArchive(taskID: "t3") }),
+    Scenario(
+        name: "sheet-task-unarchive-error", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.taskArchiving.unarchive(taskID: "t8") }),
+    Scenario(
+        name: "sheet-tasks-archive-inactive", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.bulkTaskArchiving.open() }),
+    Scenario(
+        name: "sheet-tasks-archive-inactive-invalid", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { features in
+            features.bulkTaskArchiving.open()
+            features.bulkTaskArchiving.setDays("0")
+        }),
+    Scenario(
+        name: "sheet-worklog-edit", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.worklogCorrection.open(worklogID: "w2") }),
+    Scenario(
+        name: "sheet-worklog-edit-running", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.worklogCorrection.open(worklogID: "w-run") }),
+    Scenario(
+        name: "sheet-worklog-edit-overnight", tasks: fixtureTasks, active: fixtureActive, select: "t3",
+        sheet: { $0.worklogCorrection.open(worklogID: "w9", timezone: TimeZone(identifier: "UTC")!) }),
+    Scenario(
+        name: "sheet-worklog-delete", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.worklogDeletion.open(worklogID: "w2") }),
+    Scenario(
+        name: "sheet-worklog-move", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { features in
+            features.worklogMove.open(worklogID: "w2")
+            features.worklogMove.select(taskID: "t2")
+        }),
+    Scenario(
+        name: "sheet-worklog-move-running", tasks: fixtureTasks, active: fixtureActive, select: "t1",
+        sheet: { $0.worklogMove.open(worklogID: "w-run") }),
 ]
 
 private struct FixtureClient: TrackerClient, ReportClient {
@@ -88,7 +147,8 @@ private struct FixtureClient: TrackerClient, ReportClient {
     }
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult { throw unsupported() }
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
-        throw unsupported()
+        let inactive = tasks.filter { !$0.archived && ["t5", "t6", "t7"].contains($0.id) }
+        return InactiveTaskPreview(asOf: asOf, inactiveDays: inactiveDays, tasks: inactive)
     }
     func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult {
         throw unsupported()
@@ -103,7 +163,9 @@ private struct FixtureClient: TrackerClient, ReportClient {
     func correctWorklog(expected: WorklogItem, replacementStart: String, replacementEnd: String?, occurredAt: String)
         async throws -> WorklogCorrectionResult
     { throw unsupported() }
-    func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate] { [] }
+    func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate] {
+        tasks.filter { !$0.archived && $0.id != sourceTaskID }.map { WorklogMoveCandidate(id: $0.id, name: $0.name) }
+    }
     func searchTasks(query: String) async throws -> [String] {
         tasks.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.map(\.id)
     }
@@ -208,19 +270,31 @@ private func render(_ scenario: Scenario, appearance: NSAppearance.Name, size: N
     window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
     window.orderFrontRegardless()
     spinRunLoop(1.5)
+    if let sheet = scenario.sheet {
+        sheet(features)
+        spinRunLoop(1.5)
+    }
 
     // The check after the capture catches a screen that locked during it, which leaves the image blank.
     let lockedBefore = isScreenLocked()
-    let image = lockedBefore ? nil : windowServerImage(of: window)
+    // A sheet that the window server doesn't return fails the whole capture, so no PNG shows the window without it.
+    let image = lockedBefore ? nil : windowServerImage(of: window).flatMap { base -> CGImage? in
+        guard let sheet = window.attachedSheet else { return base }
+        return windowServerImage(of: sheet).map { composite($0, from: sheet, over: base, of: window) }
+    }
     let lockedAfter = isScreenLocked()
     let flat: Bool
-    let bitmap: NSBitmapImageRep
+    var bitmap: NSBitmapImageRep
     if let image, !lockedAfter {
         flat = false
         bitmap = NSBitmapImageRep(cgImage: image)
     } else if lockedBefore || lockedAfter {
         flat = true
         bitmap = try inProcessImage(of: window)
+        if let sheet = window.attachedSheet, let base = bitmap.cgImage, let overlay = try inProcessImage(of: sheet).cgImage
+        {
+            bitmap = NSBitmapImageRep(cgImage: composite(overlay, from: sheet, over: base, of: window))
+        }
     } else {
         throw BridgeFailure(message: "The window server returned no image for the snapshot window.")
     }
@@ -344,6 +418,23 @@ private func windowServerImage(of window: NSWindow) -> CGImage? {
     )?.takeRetainedValue()
 }
 
+/// Draws a sheet's image over its window's image at the sheet's position. Both images have the same scale.
+private func composite(_ overlay: CGImage, from sheet: NSWindow, over base: CGImage, of window: NSWindow) -> CGImage {
+    let scale = CGFloat(base.width) / window.frame.width
+    guard
+        let context = CGContext(
+            data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return base }
+    let canvas = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+    context.draw(base, in: canvas)
+    // Core Graphics counts from the bottom left, like the window frames.
+    let origin = CGPoint(
+        x: (sheet.frame.minX - window.frame.minX) * scale, y: (sheet.frame.minY - window.frame.minY) * scale)
+    context.draw(overlay, in: CGRect(origin: origin, size: CGSize(width: overlay.width, height: overlay.height)))
+    return context.makeImage() ?? base
+}
+
 /// Draws the window's views into a bitmap. It works while the screen is locked, but only the window server composites
 /// glass, so the sidebar list and the toolbar lose their glass, selection, and colors. `CALayer.render(in:)` is worse:
 /// it leaves the whole sidebar blank.
@@ -397,16 +488,19 @@ struct DesignSnapshots {
         // A later capture can fail, and the agent still needs to know which checks the earlier flat ones skip.
         defer { if !flatFiles.isEmpty { reportFlatSnapshots(flatFiles) } }
         let onlyQuickTrack = arguments.count > 2 && arguments[2] == "--quick-track"
-        for scenario in quickTrackScenarios {
+        // SNAPSHOT_FILTER limits the run to scenarios whose name starts with it, such as "sheet-".
+        let filter = ProcessInfo.processInfo.environment["SNAPSHOT_FILTER"] ?? ""
+        for scenario in quickTrackScenarios where scenario.name.hasPrefix(filter) {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 let (url, flat) = try renderQuickTrack(scenario, appearance: appearance, to: directory)
                 if flat { flatFiles.append(url) }
             }
         }
         if onlyQuickTrack { return }
-        for scenario in scenarios {
+        for scenario in scenarios where scenario.name.hasPrefix(filter) {
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-                for size in windowSizes {
+                // A sheet looks the same at both window sizes, so its scenarios use the default size only.
+                for size in scenario.sheet == nil ? windowSizes : [windowSizes[0]] {
                     let (url, flat) = try render(
                         scenario, appearance: appearance, size: size, to: directory)
                     if flat { flatFiles.append(url) }
